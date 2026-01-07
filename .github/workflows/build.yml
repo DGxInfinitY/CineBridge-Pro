@@ -5,6 +5,12 @@ on:
     tags:
       - 'v*'  # Trigger only when a version tag (e.g. v4.1) is pushed
 
+# -------------------------------------------------------------
+# FIX 1: Grant Write Permissions for Release Uploads (Fixes 403)
+# -------------------------------------------------------------
+permissions:
+  contents: write
+
 jobs:
   # =========================================================
   # 1. WINDOWS BUILD (.exe with FFMPEG bundled)
@@ -25,14 +31,28 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
+      # FIX 2: Robust FFmpeg Search logic (Fixes "Unable to find ffmpeg.exe")
       - name: Download FFmpeg (Windows)
         shell: powershell
         run: |
+          # 1. Download
           Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile "ffmpeg.zip"
-          Expand-Archive -Path "ffmpeg.zip" -DestinationPath "."
-          # Move binaries to root so PyInstaller finds them easily
-          Move-Item -Path "ffmpeg-*-essentials\bin\ffmpeg.exe" -Destination "."
-          Move-Item -Path "ffmpeg-*-essentials\bin\ffprobe.exe" -Destination "."
+          
+          # 2. Extract
+          Expand-Archive -Path "ffmpeg.zip" -DestinationPath "ffmpeg_temp"
+          
+          # 3. Find and Move (Robust Search)
+          $ffmpeg = Get-ChildItem -Path "ffmpeg_temp" -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1
+          $ffprobe = Get-ChildItem -Path "ffmpeg_temp" -Recurse -Filter "ffprobe.exe" | Select-Object -First 1
+          
+          if ($ffmpeg -and $ffprobe) {
+              Move-Item -Path $ffmpeg.FullName -Destination "." -Force
+              Move-Item -Path $ffprobe.FullName -Destination "." -Force
+              Write-Host "✅ FFmpeg binaries moved to root."
+          } else {
+              Write-Error "❌ Could not find ffmpeg.exe or ffprobe.exe in the downloaded zip!"
+              exit 1
+          }
 
       - name: Create Icon (.ico)
         run: |
@@ -61,8 +81,10 @@ jobs:
         with:
           python-version: '3.10'
 
+      # FIX 3: Install ImageMagick to handle SVG conversion (Fixes "sips" error)
       - name: Install Dependencies
         run: |
+          brew install imagemagick
           pip3 install -r requirements.txt
           pip3 install pyinstaller
 
@@ -77,14 +99,23 @@ jobs:
       - name: Create Icon (.icns)
         run: |
           mkdir CineBridgePro.iconset
-          sips -z 16 16     assets/icon.svg --out CineBridgePro.iconset/icon_16x16.png
-          sips -z 32 32     assets/icon.svg --out CineBridgePro.iconset/icon_16x16@2x.png
-          sips -z 32 32     assets/icon.svg --out CineBridgePro.iconset/icon_32x32.png
-          sips -z 64 64     assets/icon.svg --out CineBridgePro.iconset/icon_32x32@2x.png
-          sips -z 128 128   assets/icon.svg --out CineBridgePro.iconset/icon_128x128.png
-          sips -z 256 256   assets/icon.svg --out CineBridgePro.iconset/icon_128x128@2x.png
-          sips -z 256 256   assets/icon.svg --out CineBridgePro.iconset/icon_256x256.png
-          sips -z 512 512   assets/icon.svg --out CineBridgePro.iconset/icon_256x256@2x.png
+          
+          # 1. Convert SVG to High-Res Master PNG using ImageMagick
+          convert -background none -resize 1024x1024 assets/icon.svg master_icon.png
+          
+          # 2. Use sips to create all required sizes from the PNG
+          sips -z 16 16     master_icon.png --out CineBridgePro.iconset/icon_16x16.png
+          sips -z 32 32     master_icon.png --out CineBridgePro.iconset/icon_16x16@2x.png
+          sips -z 32 32     master_icon.png --out CineBridgePro.iconset/icon_32x32.png
+          sips -z 64 64     master_icon.png --out CineBridgePro.iconset/icon_32x32@2x.png
+          sips -z 128 128   master_icon.png --out CineBridgePro.iconset/icon_128x128.png
+          sips -z 256 256   master_icon.png --out CineBridgePro.iconset/icon_128x128@2x.png
+          sips -z 256 256   master_icon.png --out CineBridgePro.iconset/icon_256x256.png
+          sips -z 512 512   master_icon.png --out CineBridgePro.iconset/icon_256x256@2x.png
+          sips -z 512 512   master_icon.png --out CineBridgePro.iconset/icon_512x512.png
+          sips -z 1024 1024 master_icon.png --out CineBridgePro.iconset/icon_512x512@2x.png
+          
+          # 3. Pack into .icns
           iconutil -c icns CineBridgePro.iconset
           mv CineBridgePro.icns assets/icon.icns
 
