@@ -290,25 +290,40 @@ class AsyncTranscoder(QThread):
         self.queue = deque()
         self.is_running = True
         self.is_idle = True
-        self.total_jobs = 0
+        self.total_expected_jobs = 0 # Known total from CopyWorker
         self.completed_jobs = 0
+        self.producer_finished = False # Flag: Has CopyWorker finished scanning/copying?
         
+    def set_total_jobs(self, count):
+        """Called by CopyWorker to set the true total."""
+        self.total_expected_jobs = count
+
     def add_job(self, input_path, output_path, filename):
         self.queue.append({'in': input_path, 'out': output_path, 'name': filename})
-        self.total_jobs += 1
         
+    def set_producer_finished(self):
+        """Called when CopyWorker is done adding files."""
+        self.producer_finished = True
+
     def run(self):
         while self.is_running:
             if not self.queue:
-                self.is_idle = True
-                time.sleep(0.5)
-                continue
+                # Queue is empty. If producer is done, we are truly finished.
+                if self.producer_finished:
+                    self.all_finished_signal.emit()
+                    break
+                else:
+                    self.is_idle = True
+                    time.sleep(0.5)
+                    continue
             
             self.is_idle = False
             job = self.queue.popleft()
             
-            # Start Transcode
-            self.status_signal.emit(f"Transcoding {self.completed_jobs + 1}/{self.total_jobs}: {job['name']}")
+            # Use total_expected_jobs for accurate progress, fallback to completed+queue if not set
+            display_total = self.total_expected_jobs if self.total_expected_jobs > 0 else (self.completed_jobs + len(self.queue) + 1)
+            
+            self.status_signal.emit(f"Transcoding {self.completed_jobs + 1}/{display_total}: {job['name']}")
             self.log_signal.emit(f"🎬 Transcoding Started: {job['name']}")
             
             cmd = TranscodeEngine.build_command(job['in'], job['out'], self.settings, self.use_gpu)
@@ -343,10 +358,6 @@ class AsyncTranscoder(QThread):
                 self.log_signal.emit(f"❌ Exception: {e}")
                 
             self.completed_jobs += 1
-            
-            # Check if queue is empty and we are told to stop eventually
-            if not self.queue and self.completed_jobs >= self.total_jobs:
-                self.all_finished_signal.emit()
 
     def stop(self):
         self.is_running = False
@@ -358,6 +369,7 @@ class CopyWorker(QThread):
     status_signal = pyqtSignal(str)
     speed_signal = pyqtSignal(str) 
     file_ready_signal = pyqtSignal(str, str, str) # src_path, dest_path, filename
+    transcode_count_signal = pyqtSignal(int) # Sends total video count to Transcoder
     finished_signal = pyqtSignal(bool, str)
 
     def __init__(self, source, dest, project_name, sort_by_date, skip_dupes, videos_only, camera_override):
@@ -403,6 +415,10 @@ class CopyWorker(QThread):
         priority_videos = [f for f in found_files if os.path.splitext(f)[1].upper() in self.main_video_exts]
         secondary_files = [f for f in found_files if os.path.splitext(f)[1].upper() not in self.main_video_exts]
         files_to_process = priority_videos if self.videos_only else priority_videos + secondary_files
+        
+        # Calculate Transcode Candidates BEFORE processing
+        transcode_candidates = [f for f in files_to_process if os.path.splitext(f)[1].upper() in ('.MP4', '.MOV', '.MKV', '.AVI')]
+        self.transcode_count_signal.emit(len(transcode_candidates))
         
         total_files = len(files_to_process)
         total_bytes = sum(os.path.getsize(f) for f in files_to_process)
@@ -480,7 +496,7 @@ class CopyWorker(QThread):
         self.is_running = False
 
 class BatchTranscodeWorker(QThread):
-    # [Kept for CONVERT and DELIVERY tabs which are still sync batch operations]
+    # [Kept for CONVERT and DELIVERY tabs]
     progress_signal = pyqtSignal(int)
     log_signal = pyqtSignal(str)
     status_signal = pyqtSignal(str)
@@ -812,9 +828,10 @@ class IngestTab(QWidget):
         self.progress_bar.setTextVisible(True)
         dash_layout.addWidget(self.progress_bar)
         
-        # New Transcode Progress Status (for parallel ops)
+        # New Transcode Progress Status (Hidden by default)
         self.transcode_status_label = QLabel("")
         self.transcode_status_label.setStyleSheet("color: #E67E22; font-weight: bold;")
+        self.transcode_status_label.setVisible(False)
         dash_layout.addWidget(self.transcode_status_label)
 
         self.load_label = QLabel("🔥 CPU Load: 0%")
@@ -865,6 +882,7 @@ class IngestTab(QWidget):
 
     def set_transcode_active(self, active):
         self.load_label.setVisible(active)
+        self.transcode_status_label.setVisible(active)
 
     def browse_source(self):
         d = QFileDialog.getExistingDirectory(self, "Source", self.source_input.text())
@@ -904,13 +922,11 @@ class IngestTab(QWidget):
             self.auto_info_label.setText("No devices")
             
     def on_device_selection_change(self, idx):
-        # FIX: Ensure we update the path immediately so Start Ingest sees the change
         if idx >= 0: 
             self.update_result_ui(self.found_devices[idx], True)
             
     def update_result_ui(self, dev, multi):
         self.current_detected_path = dev['path']
-        # Also update the text field for clarity
         self.source_input.setText(dev['path']) 
         
         border = '#27AE60' if not dev['empty'] else '#F39C12'
@@ -933,7 +949,6 @@ class IngestTab(QWidget):
             self.select_device_box.setStyleSheet(f"background-color: #1e1e1e; color: white; border: 1px solid {border};")
 
     def start_import(self):
-        # Determine source
         src = self.current_detected_path if self.source_tabs.currentIndex() == 0 else self.source_input.text()
         dest = self.dest_input.text()
         if not src or not dest: return QMessageBox.warning(self, "Error", "Set Source/Dest")
@@ -949,7 +964,6 @@ class IngestTab(QWidget):
         tc_settings = self.transcode_widget.get_settings()
         use_gpu = self.transcode_widget.is_gpu_enabled()
         
-        # 1. Start Background Transcoder (if enabled)
         if tc_enabled:
             self.transcode_worker = AsyncTranscoder(tc_settings, use_gpu)
             self.transcode_worker.log_signal.connect(self.append_transcode_log)
@@ -957,8 +971,9 @@ class IngestTab(QWidget):
             self.transcode_worker.all_finished_signal.connect(self.on_all_transcodes_finished)
             self.transcode_worker.start()
             self.set_transcode_active(True)
+        else:
+            self.transcode_status_label.setVisible(False)
         
-        # 2. Start Copy Worker
         self.copy_worker = CopyWorker(
             src, dest, self.project_name_input.text(),
             self.check_date.isChecked(), self.check_dupe.isChecked(),
@@ -970,23 +985,20 @@ class IngestTab(QWidget):
         self.copy_worker.speed_signal.connect(self.speed_label.setText)
         self.copy_worker.finished_signal.connect(self.on_copy_finished)
         
-        # Connect Pipeline: When copy finishes a file, send to Transcoder
         if tc_enabled:
+            # Wire up signal to count total transcode jobs
+            self.copy_worker.transcode_count_signal.connect(self.transcode_worker.set_total_jobs)
             self.copy_worker.file_ready_signal.connect(self.queue_for_transcode)
             
         self.copy_worker.start()
 
     def queue_for_transcode(self, src_path, dest_path, filename):
         if self.transcode_worker:
-            # Determine output path for transcode
-            # Structure: Dest/Date/Camera/videos/Edit_Ready/File_EDIT.mov
             base_dir = os.path.dirname(dest_path)
             tc_dir = os.path.join(base_dir, "Edit_Ready")
             os.makedirs(tc_dir, exist_ok=True)
-            
             name_only = os.path.splitext(filename)[0]
             transcode_dest = os.path.join(tc_dir, f"{name_only}_EDIT.mov")
-            
             self.transcode_worker.add_job(dest_path, transcode_dest, filename)
 
     def cancel_import(self):
@@ -999,12 +1011,16 @@ class IngestTab(QWidget):
 
     def on_copy_finished(self, success, msg):
         if not self.check_transcode.isChecked():
+            # Standard Finish
             self.import_btn.setEnabled(True)
             self.cancel_btn.setEnabled(False)
             self.status_label.setText(msg)
             if success: QMessageBox.information(self, "Done", msg)
         else:
+            # Transcode Mode: Tell transcoder producer is done.
             self.status_label.setText("Copy Complete. Waiting for Transcodes...")
+            if self.transcode_worker:
+                self.transcode_worker.set_producer_finished()
 
     def on_all_transcodes_finished(self):
         self.import_btn.setEnabled(True)
@@ -1281,7 +1297,7 @@ class CineBridgeApp(QMainWindow):
         debug_log("Debug logging active.")
 
     def show_about(self):
-        QMessageBox.information(self, "About CineBridge Pro", "<h3>CineBridge Pro v4.10</h3><p>The Linux DIT & Post-Production Suite.</p><p>Solving the 'Resolve on Linux' problem.</p><p><b>Developed by:</b> Donovan Goodwin</p><p>📧 <a href='mailto:ddg2goodwin@gmail.com'>ddg2goodwin@gmail.com</a></p><p>🌐 <a href='https://github.com/DGxInfinitY'>GitHub: DGxInfinitY</a></p><br><p><i>Created using Gemini AI</i></p>")
+        QMessageBox.information(self, "About CineBridge Pro", "<h3>CineBridge Pro v4.11</h3><p>The Linux DIT & Post-Production Suite.</p><p>Solving the 'Resolve on Linux' problem.</p><p><b>Developed by:</b> Donovan Goodwin</p><p>📧 <a href='mailto:ddg2goodwin@gmail.com'>ddg2goodwin@gmail.com</a></p><p>🌐 <a href='https://github.com/DGxInfinitY'>GitHub: DGxInfinitY</a></p><br><p><i>Created using Gemini AI</i></p>")
 
     def is_system_dark(self):
         try: return QApplication.palette().color(QPalette.ColorRole.Window).lightness() < 128
