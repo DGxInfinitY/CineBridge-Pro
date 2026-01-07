@@ -3,15 +3,14 @@ name: Build CineBridge Pro
 on:
   push:
     tags:
-      - 'v*'  # Trigger only when a version tag (e.g. v4.8) is pushed
+      - 'v*'  # Trigger only when a version tag (e.g. v4.7.2) is pushed
 
-# Grant Write Permissions for Release Uploads
 permissions:
   contents: write
 
 jobs:
   # =========================================================
-  # 1. WINDOWS BUILD (.exe with FFMPEG bundled)
+  # 1. WINDOWS BUILD
   # =========================================================
   build-windows:
     runs-on: windows-latest
@@ -32,28 +31,27 @@ jobs:
       - name: Download FFmpeg (Windows)
         shell: powershell
         run: |
-          # 1. Download
           Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile "ffmpeg.zip"
-          
-          # 2. Extract
           Expand-Archive -Path "ffmpeg.zip" -DestinationPath "ffmpeg_temp"
-          
-          # 3. Find and Move (Robust Search)
           $ffmpeg = Get-ChildItem -Path "ffmpeg_temp" -Recurse -Filter "ffmpeg.exe" | Select-Object -First 1
           $ffprobe = Get-ChildItem -Path "ffmpeg_temp" -Recurse -Filter "ffprobe.exe" | Select-Object -First 1
-          
           if ($ffmpeg -and $ffprobe) {
               Move-Item -Path $ffmpeg.FullName -Destination "." -Force
               Move-Item -Path $ffprobe.FullName -Destination "." -Force
-              Write-Host "✅ FFmpeg binaries moved to root."
           } else {
-              Write-Error "❌ Could not find ffmpeg.exe or ffprobe.exe in the downloaded zip!"
+              Write-Error "❌ FFmpeg not found!"
               exit 1
           }
 
       - name: Create Icon (.ico)
         run: |
           magick convert -background none "assets/icon.svg" -define icon:auto-resize="256,128,64,48,32,16" "assets/icon.ico"
+
+      # NEW: Sync Version Number (Uses Bash on Windows)
+      - name: Sync Version Number
+        shell: bash
+        run: |
+          sed -i "s/CineBridge Pro v[0-9.]*/CineBridge Pro ${{ github.ref_name }}/g" src/cinebridge.py
 
       - name: Build with PyInstaller
         run: |
@@ -66,7 +64,7 @@ jobs:
           files: dist/CineBridgePro.exe
 
   # =========================================================
-  # 2. MACOS BUILD (Zipped .app with FFMPEG bundled)
+  # 2. MACOS BUILD
   # =========================================================
   build-macos:
     runs-on: macos-latest
@@ -95,11 +93,7 @@ jobs:
       - name: Create Icon (.icns)
         run: |
           mkdir CineBridgePro.iconset
-          
-          # 1. Convert SVG to High-Res Master PNG using ImageMagick
           convert -background none -resize 1024x1024 assets/icon.svg master_icon.png
-          
-          # 2. Use sips to create all required sizes from the PNG
           sips -z 16 16     master_icon.png --out CineBridgePro.iconset/icon_16x16.png
           sips -z 32 32     master_icon.png --out CineBridgePro.iconset/icon_16x16@2x.png
           sips -z 32 32     master_icon.png --out CineBridgePro.iconset/icon_32x32.png
@@ -110,10 +104,13 @@ jobs:
           sips -z 512 512   master_icon.png --out CineBridgePro.iconset/icon_256x256@2x.png
           sips -z 512 512   master_icon.png --out CineBridgePro.iconset/icon_512x512.png
           sips -z 1024 1024 master_icon.png --out CineBridgePro.iconset/icon_512x512@2x.png
-          
-          # 3. Pack into .icns
           iconutil -c icns CineBridgePro.iconset
           mv CineBridgePro.icns assets/icon.icns
+
+      # NEW: Sync Version Number
+      - name: Sync Version Number
+        run: |
+          sed -i '' "s/CineBridge Pro v[0-9.]*/CineBridge Pro ${{ github.ref_name }}/g" src/cinebridge.py
 
       - name: Build with PyInstaller
         run: |
@@ -131,7 +128,7 @@ jobs:
           files: dist/CineBridgePro_macOS.zip
 
   # =========================================================
-  # 3. LINUX BUILD (.deb + Portable Binary)
+  # 3. LINUX BUILD
   # =========================================================
   build-linux:
     runs-on: ubuntu-latest
@@ -152,29 +149,30 @@ jobs:
         run: |
           convert -background none -resize 512x512 assets/icon.svg assets/icon.png
 
+      # NEW: Sync Version Number
+      - name: Sync Version Number
+        run: |
+          sed -i "s/CineBridge Pro v[0-9.]*/CineBridge Pro ${{ github.ref_name }}/g" src/cinebridge.py
+
       - name: Build Binary
         run: |
-          # Build the raw binary
           pyinstaller src/cinebridge.py --noconsole --onefile --name "cinebridgepro" --icon "assets/icon.png" --add-data "assets:assets"
 
       - name: Prepare Artifacts
         run: |
-          # 1. Prepare DEB Structure
           mkdir -p dist/deb/usr/local/bin
           mkdir -p dist/deb/usr/share/applications
           mkdir -p dist/deb/usr/share/icons/hicolor/512x512/apps
           mkdir -p dist/deb/DEBIAN
 
-          # Copy Binary for DEB
           cp dist/cinebridgepro dist/deb/usr/local/bin/
           cp assets/icon.png dist/deb/usr/share/icons/hicolor/512x512/apps/cinebridgepro.png
           chmod 755 dist/deb/usr/local/bin/cinebridgepro
 
-          # 2. Prepare Portable Binary (Rename for clarity)
+          # Prepare Portable Binary
           mv dist/cinebridgepro dist/CineBridgePro_Linux_Portable
           chmod +x dist/CineBridgePro_Linux_Portable
 
-          # Create Desktop Entry for DEB
           cat <<EOF > dist/deb/usr/share/applications/cinebridgepro.desktop
           [Desktop Entry]
           Name=CineBridge Pro
@@ -186,8 +184,6 @@ jobs:
           Categories=Video;AudioVideo;
           EOF
 
-          # Create Control File for DEB
-          # Note: Removed 'libpython3.10' dependency for compatibility
           cat <<EOF > dist/deb/DEBIAN/control
           Package: cinebridgepro
           Version: ${{ github.ref_name }}
@@ -200,7 +196,6 @@ jobs:
            CineBridge Pro automates video ingest, proxy generation, and delivery.
           EOF
           
-          # Clean version string for control file
           sed -i 's/Version: v/Version: /g' dist/deb/DEBIAN/control
 
       - name: Build DEB
