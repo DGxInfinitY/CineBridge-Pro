@@ -60,6 +60,22 @@ class FileDropLineEdit(QLineEdit):
 # BACKEND SERVICES
 # =============================================================================
 
+class EnvUtils:
+    """Helper to sanitize environment variables for subprocess calls."""
+    @staticmethod
+    def get_clean_env():
+        env = os.environ.copy()
+        # Fix for Linux PyInstaller LD_LIBRARY_PATH conflict
+        # PyInstaller sets LD_LIBRARY_PATH to the bundle dir, which breaks system binaries (ffmpeg)
+        if hasattr(sys, '_MEIPASS') and platform.system() == 'Linux':
+            if 'LD_LIBRARY_PATH_ORIG' in env:
+                # Restore the original path if PyInstaller saved it
+                env['LD_LIBRARY_PATH'] = env['LD_LIBRARY_PATH_ORIG']
+            elif 'LD_LIBRARY_PATH' in env:
+                # Otherwise just delete the override
+                del env['LD_LIBRARY_PATH']
+        return env
+
 class DependencyManager:
     @staticmethod
     def get_ffmpeg_path():
@@ -96,9 +112,10 @@ class DependencyManager:
         ffmpeg = DependencyManager.get_ffmpeg_path()
         if not ffmpeg: return None
         try:
-            res = subprocess.run([ffmpeg, '-hwaccels'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            # Use get_clean_env() to avoid libcrypto/libssl conflicts
+            res = subprocess.run([ffmpeg, '-hwaccels'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=EnvUtils.get_clean_env())
             output = res.stdout + res.stderr
-            enc_res = subprocess.run([ffmpeg, '-encoders'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
+            enc_res = subprocess.run([ffmpeg, '-encoders'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=EnvUtils.get_clean_env())
             enc_out = enc_res.stdout
             
             if "cuda" in output and "h264_nvenc" in enc_out: return "cuda"
@@ -161,7 +178,8 @@ class TranscodeEngine:
             if platform.system() == 'Windows':
                 startupinfo = subprocess.STARTUPINFO()
                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-            result = subprocess.run(cmd, capture_output=True, text=True, startupinfo=startupinfo)
+            # Use EnvUtils to ensure system libs are found on Linux
+            result = subprocess.run(cmd, capture_output=True, text=True, startupinfo=startupinfo, env=EnvUtils.get_clean_env())
             return float(result.stdout.strip())
         except: return 0
 
@@ -212,7 +230,8 @@ class DriveDetector:
     def safe_list_dir(path, timeout=5):
         if platform.system() == "Linux" and ("gvfs" in path or "mtp" in path.lower()):
             try:
-                result = subprocess.run(['ls', '-1', path], capture_output=True, text=True, timeout=timeout)
+                # Using EnvUtils here too, just in case ls relies on libtinfo/etc
+                result = subprocess.run(['ls', '-1', path], capture_output=True, text=True, timeout=timeout, env=EnvUtils.get_clean_env())
                 if result.returncode == 0:
                     return [os.path.join(path, l.strip()) for l in result.stdout.splitlines() if l.strip()]
             except: return []
@@ -229,7 +248,7 @@ class DriveDetector:
         found = []
         try:
             if platform.system() == "Linux":
-                out = subprocess.check_output(['lsusb'], encoding='utf-8', stderr=subprocess.DEVNULL)
+                out = subprocess.check_output(['lsusb'], encoding='utf-8', stderr=subprocess.DEVNULL, env=EnvUtils.get_clean_env())
                 for l in out.split('\n'):
                     for b in DriveDetector.KNOWN_BRANDS:
                         if b.lower() in l.lower(): found.append(b)
@@ -333,7 +352,6 @@ class BatchTranscodeWorker(QThread):
             filename = os.path.basename(input_path)
             name_only = os.path.splitext(filename)[0]
             
-            # Destination Logic
             target_dir = ""
             if self.mode == "convert":
                 if self.dest and os.path.isdir(self.dest):
@@ -342,7 +360,7 @@ class BatchTranscodeWorker(QThread):
                     target_dir = os.path.join(os.path.dirname(input_path), "Converted")
                 os.makedirs(target_dir, exist_ok=True)
                 out_name = f"{name_only}_CNV.mov"
-            else: # Delivery
+            else: 
                 if self.dest and os.path.isdir(self.dest):
                     target_dir = self.dest
                 else:
@@ -363,7 +381,10 @@ class BatchTranscodeWorker(QThread):
                     startupinfo = subprocess.STARTUPINFO()
                     startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                 
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, startupinfo=startupinfo)
+                # Apply env=EnvUtils.get_clean_env() to fix library conflicts on Linux
+                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
+                                           universal_newlines=True, startupinfo=startupinfo,
+                                           env=EnvUtils.get_clean_env())
                 
                 while True:
                     if not self.is_running:
@@ -522,7 +543,12 @@ class ImportWorker(QThread):
                             if platform.system() == 'Windows':
                                 startupinfo = subprocess.STARTUPINFO()
                                 startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, startupinfo=startupinfo)
+                            
+                            # Use EnvUtils to fix Linux lib conflicts
+                            process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
+                                                       universal_newlines=True, startupinfo=startupinfo,
+                                                       env=EnvUtils.get_clean_env())
+                            
                             while True:
                                 if not self.is_running:
                                     process.kill(); break
@@ -1370,7 +1396,7 @@ class CineBridgeApp(QMainWindow):
 
     def show_about(self):
         QMessageBox.information(self, "About CineBridge Pro", 
-            "<h3>CineBridge Pro v4.1</h3>"
+            "<h3>CineBridge Pro v4.9</h3>"
             "<p>The Linux DIT & Post-Production Suite.</p>"
             "<p>Solving the 'Resolve on Linux' problem.</p>"
             "<p><b>Developed by:</b> Donovan Goodwin</p>"
