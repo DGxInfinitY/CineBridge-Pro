@@ -1,0 +1,186 @@
+name: Build CineBridge Pro
+
+on:
+  push:
+    tags:
+      - 'v*'  # Trigger only when a version tag (e.g. v4.1) is pushed
+
+jobs:
+  # =========================================================
+  # 1. WINDOWS BUILD (.exe with FFMPEG bundled)
+  # =========================================================
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      - name: Download FFmpeg (Windows)
+        shell: powershell
+        run: |
+          Invoke-WebRequest -Uri "https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip" -OutFile "ffmpeg.zip"
+          Expand-Archive -Path "ffmpeg.zip" -DestinationPath "."
+          # Move binaries to root so PyInstaller finds them easily
+          Move-Item -Path "ffmpeg-*-essentials\bin\ffmpeg.exe" -Destination "."
+          Move-Item -Path "ffmpeg-*-essentials\bin\ffprobe.exe" -Destination "."
+
+      - name: Create Icon (.ico)
+        run: |
+          # Use ImageMagick (pre-installed on runner) to convert SVG to ICO
+          magick convert -background none "assets/icon.svg" -define icon:auto-resize="256,128,64,48,32,16" "assets/icon.ico"
+          magick convert -background none "assets/icon.svg" -resize 256x256 "assets/icon.png"
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller src/cinebridge.py --noconsole --onefile --name "CineBridgePro" --icon "assets/icon.ico" --add-data "assets;assets" --add-binary "ffmpeg.exe;." --add-binary "ffprobe.exe;."
+
+      - name: Upload Artifact
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: dist/CineBridgePro.exe
+
+  # =========================================================
+  # 2. MACOS BUILD (Zipped .app with FFMPEG bundled)
+  # =========================================================
+  build-macos:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.10'
+
+      - name: Install Dependencies
+        run: |
+          pip3 install -r requirements.txt
+          pip3 install pyinstaller
+
+      - name: Download FFmpeg (Mac)
+        run: |
+          curl -L -o ffmpeg.zip https://evermeet.cx/ffmpeg/ffmpeg-6.0.zip
+          curl -L -o ffprobe.zip https://evermeet.cx/ffmpeg/ffprobe-6.0.zip
+          unzip ffmpeg.zip
+          unzip ffprobe.zip
+          chmod +x ffmpeg ffprobe
+
+      - name: Create Icon (.icns)
+        run: |
+          mkdir CineBridgePro.iconset
+          sips -z 16 16     assets/icon.svg --out CineBridgePro.iconset/icon_16x16.png
+          sips -z 32 32     assets/icon.svg --out CineBridgePro.iconset/icon_16x16@2x.png
+          sips -z 32 32     assets/icon.svg --out CineBridgePro.iconset/icon_32x32.png
+          sips -z 64 64     assets/icon.svg --out CineBridgePro.iconset/icon_32x32@2x.png
+          sips -z 128 128   assets/icon.svg --out CineBridgePro.iconset/icon_128x128.png
+          sips -z 256 256   assets/icon.svg --out CineBridgePro.iconset/icon_128x128@2x.png
+          sips -z 256 256   assets/icon.svg --out CineBridgePro.iconset/icon_256x256.png
+          sips -z 512 512   assets/icon.svg --out CineBridgePro.iconset/icon_256x256@2x.png
+          iconutil -c icns CineBridgePro.iconset
+          mv CineBridgePro.icns assets/icon.icns
+          # Create PNG for internal usage
+          sips -z 512 512 assets/icon.svg --out assets/icon.png
+
+      - name: Build with PyInstaller
+        run: |
+          pyinstaller src/cinebridge.py --noconsole --onefile --windowed --name "CineBridgePro" --icon "assets/icon.icns" --add-data "assets:assets" --add-binary "ffmpeg:." --add-binary "ffprobe:."
+
+      - name: Zip Application
+        run: |
+          cd dist
+          zip -r CineBridgePro_macOS.zip CineBridgePro.app
+
+      - name: Upload Artifact
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: dist/CineBridgePro_macOS.zip
+
+  # =========================================================
+  # 3. LINUX BUILD (.deb with FFMPEG dependency)
+  # =========================================================
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+
+      - name: Install System Deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y python3-pip imagemagick
+
+      - name: Install Python Deps
+        run: |
+          pip3 install -r requirements.txt
+          pip3 install pyinstaller
+
+      - name: Create Icon (.png)
+        run: |
+          convert -background none -resize 512x512 assets/icon.svg assets/icon.png
+
+      - name: Build Binary
+        run: |
+          # Note: We do NOT bundle ffmpeg here. We rely on system dependency.
+          pyinstaller src/cinebridge.py --noconsole --onefile --name "cinebridgepro" --icon "assets/icon.png" --add-data "assets:assets"
+
+      - name: Create DEB Package Structure
+        run: |
+          mkdir -p dist/deb/usr/local/bin
+          mkdir -p dist/deb/usr/share/applications
+          mkdir -p dist/deb/usr/share/icons/hicolor/512x512/apps
+          mkdir -p dist/deb/DEBIAN
+
+          # Copy Binary and Icon
+          cp dist/cinebridgepro dist/deb/usr/local/bin/
+          cp assets/icon.png dist/deb/usr/share/icons/hicolor/512x512/apps/cinebridgepro.png
+          chmod 755 dist/deb/usr/local/bin/cinebridgepro
+
+          # Create Desktop Entry
+          cat <<EOF > dist/deb/usr/share/applications/cinebridgepro.desktop
+          [Desktop Entry]
+          Name=CineBridge Pro
+          Comment=DIT and Transcoding Suite
+          Exec=/usr/local/bin/cinebridgepro
+          Icon=cinebridgepro
+          Terminal=false
+          Type=Application
+          Categories=Video;AudioVideo;
+          EOF
+
+          # Create Control File (Defines dependencies)
+          # Note: Depends on ffmpeg
+          cat <<EOF > dist/deb/DEBIAN/control
+          Package: cinebridgepro
+          Version: ${{ github.ref_name }}
+          Section: video
+          Priority: optional
+          Architecture: amd64
+          Depends: ffmpeg, python3, libpython3.10
+          Maintainer: Donovan Goodwin <ddg2goodwin@gmail.com>
+          Description: Open Source DIT & Post-Production Suite
+           CineBridge Pro automates video ingest, proxy generation, and delivery.
+          EOF
+          
+          # Fix Version String if it starts with 'v' (Debian doesn't like 'v4.1', needs '4.1')
+          sed -i 's/Version: v/Version: /g' dist/deb/DEBIAN/control
+
+      - name: Build DEB
+        run: |
+          dpkg-deb --build dist/deb cinebridgepro_linux_amd64.deb
+
+      - name: Upload Artifact
+        uses: softprops/action-gh-release@v1
+        if: startsWith(github.ref, 'refs/tags/')
+        with:
+          files: cinebridgepro_linux_amd64.deb
