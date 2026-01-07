@@ -3,11 +3,9 @@ name: Build CineBridge Pro
 on:
   push:
     tags:
-      - 'v*'  # Trigger only when a version tag (e.g. v4.1) is pushed
+      - 'v*'  # Trigger only when a version tag (e.g. v4.8) is pushed
 
-# -------------------------------------------------------------
-# FIX 1: Grant Write Permissions for Release Uploads (Fixes 403)
-# -------------------------------------------------------------
+# Grant Write Permissions for Release Uploads
 permissions:
   contents: write
 
@@ -31,7 +29,6 @@ jobs:
           pip install -r requirements.txt
           pip install pyinstaller
 
-      # FIX 2: Robust FFmpeg Search logic (Fixes "Unable to find ffmpeg.exe")
       - name: Download FFmpeg (Windows)
         shell: powershell
         run: |
@@ -81,7 +78,6 @@ jobs:
         with:
           python-version: '3.10'
 
-      # FIX 3: Install ImageMagick to handle SVG conversion (Fixes "sips" error)
       - name: Install Dependencies
         run: |
           brew install imagemagick
@@ -191,13 +187,14 @@ jobs:
           EOF
 
           # Create Control File for DEB
+          # Note: Removed 'libpython3.10' dependency for compatibility
           cat <<EOF > dist/deb/DEBIAN/control
           Package: cinebridgepro
           Version: ${{ github.ref_name }}
           Section: video
           Priority: optional
           Architecture: amd64
-          Depends: ffmpeg, python3, libpython3.10
+          Depends: ffmpeg, python3
           Maintainer: Donovan Goodwin <ddg2goodwin@gmail.com>
           Description: Open Source DIT & Post-Production Suite
            CineBridge Pro automates video ingest, proxy generation, and delivery.
