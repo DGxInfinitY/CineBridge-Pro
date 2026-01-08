@@ -14,27 +14,26 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QHBoxLayout, QLabel, QLineEdit, QPushButton, 
                              QFileDialog, QProgressBar, QTextEdit, QMessageBox, 
                              QCheckBox, QGroupBox, QComboBox, QTabWidget, QFrame, 
-                             QSizePolicy, QMenuBar, QMenu, QSplitter, QFormLayout,
-                             QListWidget, QAbstractItemView)
-from PyQt6.QtGui import QAction, QPalette, QColor, QActionGroup, QIcon, QFont, QDragEnterEvent, QDropEvent
+                             QSizePolicy, QSplitter, QFormLayout, QDialog,
+                             QListWidget, QAbstractItemView, QToolButton, QRadioButton, QButtonGroup)
+from PyQt6.QtGui import QAction, QPalette, QColor, QIcon, QFont, QDragEnterEvent, QDropEvent
 from PyQt6.QtCore import QThread, pyqtSignal, Qt, QSettings, QTimer, QMimeData, QObject
 
-# Try to import psutil
 try:
     import psutil
     PSUTIL_AVAILABLE = True
 except ImportError:
     PSUTIL_AVAILABLE = False
 
-# Global Debug Flag
 DEBUG_MODE = False
+GUI_LOG_QUEUE = []
 
 def debug_log(msg):
-    if DEBUG_MODE: print(f"[DEBUG] {msg}")
-
-# =============================================================================
-# BACKEND UTILS
-# =============================================================================
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    formatted_msg = f"[DEBUG {timestamp}] {msg}"
+    if DEBUG_MODE: 
+        print(formatted_msg)
+        GUI_LOG_QUEUE.append(formatted_msg)
 
 class EnvUtils:
     @staticmethod
@@ -99,13 +98,10 @@ class TranscodeEngine:
         a_codec = settings.get('a_codec', 'pcm_s16le')
         cmd = [ffmpeg_bin, '-y']
         hw_method = DependencyManager.detect_hw_accel() if use_gpu else None
-        
         if hw_method == "cuda": cmd.extend(['-hwaccel', 'cuda'])
         elif hw_method == "qsv": cmd.extend(['-hwaccel', 'qsv', '-c:v', 'h264_qsv'])
         elif hw_method == "vaapi": cmd.extend(['-hwaccel', 'vaapi', '-hwaccel_device', '/dev/dri/renderD128', '-hwaccel_output_format', 'yuv420p'])
-
         cmd.extend(['-i', input_path])
-
         if v_codec in ['dnxhd', 'prores_ks']:
             cmd.extend(['-c:v', v_codec, '-profile:v', v_profile])
             if v_codec == 'dnxhd': cmd.extend(['-pix_fmt', 'yuv422p'])
@@ -118,7 +114,6 @@ class TranscodeEngine:
             else:
                 cmd.extend(['-c:v', v_codec, '-preset', 'fast', '-crf', '18'])
                 if v_codec == 'libx264': cmd.extend(['-pix_fmt', 'yuv420p'])
-        
         if a_codec == 'pcm_s16le': cmd.extend(['-c:a', 'pcm_s16le', '-ar', '48000'])
         elif a_codec == 'aac': cmd.extend(['-c:a', 'aac', '-b:a', '320k'])
         cmd.append(output_path)
@@ -155,13 +150,22 @@ class TranscodeEngine:
         return progress, status_str
 
 class DriveDetector:
-    KNOWN_BRANDS = ["GoPro", "DJI", "Insta360", "Canon", "Sony", "Nikon", "Fujifilm", "Android"]
-    NETWORK_PROTOCOLS = ["sftp", "smb", "ftp", "dav", "afp", "nfs"]
+    IGNORED_KEYWORDS = ["boot", "recovery", "snap", "loop", "var", "tmp", "sys"]
+
     @staticmethod
     def is_network_mount(path):
-        for proto in DriveDetector.NETWORK_PROTOCOLS:
-            if f"{proto}:" in path.lower() or f"/{proto}" in path.lower(): return True
+        # 1. WHITELIST: Always allow MTP (Android) and PTP (Cameras)
+        path_lower = path.lower()
+        if "mtp" in path_lower or "gphoto" in path_lower or "usb" in path_lower:
+            return False 
+            
+        # 2. BLACKLIST: Common network protocols
+        network_sigs = ["smb", "sftp", "ftp", "dav", "afp", "nfs", "ssh"]
+        for sig in network_sigs:
+            if sig in path_lower:
+                return True
         return False
+
     @staticmethod
     def safe_list_dir(path, timeout=5):
         if platform.system() == "Linux" and ("gvfs" in path or "mtp" in path.lower()):
@@ -173,133 +177,175 @@ class DriveDetector:
         else:
             try: return [os.path.join(path, f) for f in os.listdir(path)] if os.path.isdir(path) else []
             except: return []
+            
     @staticmethod
     def safe_exists(path): return os.path.exists(path)
+
     @staticmethod
     def get_potential_mounts():
         mounts = []
         user = os.environ.get('USER') or os.environ.get('USERNAME')
-        for p in [f"/media/{user}", f"/run/media/{user}", "/media", "/mnt", "/Volumes"]:
-            if os.path.exists(p):
+        system = platform.system()
+        if system == "Linux":
+            search_roots = [f"/media/{user}", f"/run/media/{user}"]
+            uid = os.getuid(); gvfs = f"/run/user/{uid}/gvfs"
+            if os.path.exists(gvfs): search_roots.append(gvfs)
+            for root in search_roots:
+                if os.path.exists(root):
+                    try:
+                        with os.scandir(root) as it:
+                            for entry in it:
+                                # APPLY NETWORK FILTER HERE
+                                if entry.is_dir() and not any(x in entry.name.lower() for x in DriveDetector.IGNORED_KEYWORDS):
+                                    if not DriveDetector.is_network_mount(entry.path):
+                                        mounts.append(entry.path)
+                    except: pass
+        elif system == "Darwin":
+            if os.path.exists("/Volumes"):
                 try:
-                    with os.scandir(p) as it:
+                    with os.scandir("/Volumes") as it:
                         for entry in it:
-                            if entry.is_dir(): mounts.append(entry.path)
+                            if entry.is_dir() and not entry.is_symlink(): mounts.append(entry.path)
                 except: pass
-        if platform.system() == "Linux":
-            try:
-                uid = os.getuid()
-                gvfs = f"/run/user/{uid}/gvfs"
-                if os.path.exists(gvfs):
-                    for m in DriveDetector.safe_list_dir(gvfs):
-                        mounts.append(m)
-                        for sub in DriveDetector.safe_list_dir(m): mounts.append(sub)
-            except: pass
+        elif system == "Windows":
+            import string
+            drives = ['%s:\\' % d for d in string.ascii_uppercase if os.path.exists('%s:\\' % d)]
+            for d in drives:
+                if d.upper() != "C:\\": mounts.append(d)
         return mounts
+    
     @staticmethod
-    def find_camera_root_in_path(base_path):
-        if DriveDetector.safe_exists(os.path.join(base_path, "DCIM")): return base_path
-        children = DriveDetector.safe_list_dir(base_path, timeout=4)
-        for child in children:
-            if DriveDetector.safe_exists(os.path.join(child, "DCIM")): return child
-            c_name = os.path.basename(child).lower()
-            if any(x in c_name for x in ["disk", "volume", "store", "gopro"]):
-                grand = DriveDetector.safe_list_dir(child, timeout=4)
-                for g in grand:
-                    if DriveDetector.safe_exists(os.path.join(g, "DCIM")): return g
-        return None
+    def get_usb_hardware_hints():
+        hints = set()
+        try:
+            if platform.system() == "Linux":
+                res = subprocess.run(['lsusb'], capture_output=True, text=True, timeout=2, env=EnvUtils.get_clean_env())
+                if res.stdout:
+                    for line in res.stdout.splitlines():
+                        parts = line.split(":", 2)
+                        if len(parts) > 2:
+                            desc = parts[2].strip()
+                            if "root hub" not in desc.lower() and "linux foundation" not in desc.lower(): hints.add(desc)
+        except: pass
+        return hints
 
-# =============================================================================
-# WORKERS
-# =============================================================================
+    @staticmethod
+    def fingerprint_device(mount_path, usb_hints):
+        friendly_name = "External Storage"
+        content_path = mount_path
+        
+        # --- NEW TARGETED SCANNING FOR MTP ---
+        # 1. Android Specific Drill-Down
+        found_dcim = False
+        candidates = ["Internal shared storage", "Internal Storage", "sdcard"]
+        
+        root_subs = DriveDetector.safe_list_dir(mount_path)
+        internal_storage_path = None
+        
+        for sub in root_subs:
+             base = os.path.basename(sub).lower()
+             if any(x.lower() in base.lower() for x in candidates):
+                 internal_storage_path = sub
+                 break
+        
+        search_root = internal_storage_path if internal_storage_path else mount_path
+        dcim_path = os.path.join(search_root, "DCIM")
+        
+        if DriveDetector.safe_exists(dcim_path):
+            found_dcim = True
+            # Look for Camera folder
+            camera_path = os.path.join(dcim_path, "Camera")
+            if DriveDetector.safe_exists(camera_path):
+                content_path = camera_path # TARGET ACQUIRED
+                friendly_name = "Android Device"
+                
+                # Apply Hardware Hint
+                for hint in usb_hints:
+                    h_low = hint.lower()
+                    if any(x in h_low for x in ['pixel', 'google', 'galaxy', 'samsung', 'android']):
+                        friendly_name = hint
+                        break
+            else:
+                 # Check for Action Cams in DCIM
+                for item in DriveDetector.safe_list_dir(dcim_path):
+                    base = os.path.basename(item).upper()
+                    if "GOPRO" in base:
+                        content_path = item; friendly_name = "GoPro Camera"; break
+                    if "DJI" in base or "100MEDIA" in base:
+                        content_path = item; friendly_name = "DJI Drone"; break
+                
+                if friendly_name == "External Storage": friendly_name = "Digital Camera"
+
+        elif DriveDetector.safe_exists(os.path.join(mount_path, "PRIVATE", "AVCHD")):
+             friendly_name = "Pro Camera (Sony/Panasonic)"
+             content_path = os.path.join(mount_path, "PRIVATE", "AVCHD")
+        
+        return friendly_name, content_path
 
 class ScanWorker(QThread):
     finished_signal = pyqtSignal(list)
     def run(self):
         results = []
         try:
+            usb_hints = DriveDetector.get_usb_hardware_hints()
+            if DEBUG_MODE: debug_log(f"USB Hints Found: {usb_hints}")
             candidates = sorted(list(set(DriveDetector.get_potential_mounts())))
+            
             for mount in candidates:
-                if DriveDetector.is_network_mount(mount): continue
-                root = DriveDetector.find_camera_root_in_path(mount)
-                if not root: continue
-                dcim = os.path.join(root, "DCIM")
-                files = DriveDetector.safe_list_dir(dcim)
-                has_files = any(x.lower().endswith(('.mp4','.mov','.jpg')) for x in files)
-                if not has_files:
-                    for sub in files:
-                        if os.path.isdir(sub) or "gvfs" in sub:
-                            if any(x.lower().endswith(('.mp4','.mov','.jpg')) for x in DriveDetector.safe_list_dir(sub)):
-                                has_files = True; break
-                d_type = "Generic"
-                if any("GOPRO" in f.upper() for f in files): d_type = "GoPro"
-                elif any("DJI" in f.upper() for f in files): d_type = "DJI"
-                results.append({'path': root, 'type': d_type, 'empty': not has_files})
+                if mount == "/" or mount == "/home": continue 
+                # Note: Network filtering moved to get_potential_mounts for efficiency
+                
+                has_files = False
+                try: 
+                    if len(DriveDetector.safe_list_dir(mount)) > 0: has_files = True
+                except: pass
+                
+                name, true_path = DriveDetector.fingerprint_device(mount, usb_hints)
+                
+                # Verify the targeted path actually has stuff
+                # FALLBACK: If "Sniper" path is empty, revert to mount root so device is still listable
+                if true_path != mount:
+                     try: 
+                         if len(DriveDetector.safe_list_dir(true_path)) == 0:
+                             if DEBUG_MODE: debug_log(f"Targeted path {true_path} empty, reverting to {mount}")
+                             true_path = mount # Revert
+                         else:
+                             has_files = True
+                     except: 
+                         true_path = mount
+                
+                results.append({'path': true_path, 'display_name': name, 'root': mount, 'empty': not has_files})
+            
             final = []
             seen = set()
             for r in sorted(results, key=lambda x: len(x['path']), reverse=True):
-                if not any(s.startswith(r['path']) for s in seen):
-                    final.append(r); seen.add(r['path'])
+                if r['path'] not in seen: final.append(r); seen.add(r['path'])
             self.finished_signal.emit(final)
-        except: self.finished_signal.emit([])
+        except Exception as e:
+            debug_log(f"Scan Error: {e}")
+            self.finished_signal.emit([])
 
 class AsyncTranscoder(QThread):
-    log_signal = pyqtSignal(str)
-    status_signal = pyqtSignal(str) 
-    metrics_signal = pyqtSignal(str) 
-    progress_signal = pyqtSignal(int)
-    all_finished_signal = pyqtSignal()
-
+    log_signal = pyqtSignal(str); status_signal = pyqtSignal(str); metrics_signal = pyqtSignal(str); progress_signal = pyqtSignal(int); all_finished_signal = pyqtSignal()
     def __init__(self, settings, use_gpu):
-        super().__init__()
-        self.settings = settings
-        self.use_gpu = use_gpu
-        self.queue = deque()
-        self.is_running = True
-        self.is_idle = True
-        self.total_expected_jobs = 0 
-        self.completed_jobs = 0
-        self.producer_finished = False
-        
-    def set_total_jobs(self, count):
-        self.total_expected_jobs = count
-
-    def add_job(self, input_path, output_path, filename):
-        self.queue.append({'in': input_path, 'out': output_path, 'name': filename})
-        
-    def set_producer_finished(self):
-        self.producer_finished = True
-
+        super().__init__(); self.settings = settings; self.use_gpu = use_gpu; self.queue = deque(); self.is_running = True; self.is_idle = True; self.total_expected_jobs = 0; self.completed_jobs = 0; self.producer_finished = False
+    def set_total_jobs(self, count): self.total_expected_jobs = count
+    def add_job(self, input_path, output_path, filename): self.queue.append({'in': input_path, 'out': output_path, 'name': filename})
+    def set_producer_finished(self): self.producer_finished = True
     def run(self):
         while self.is_running:
             if not self.queue:
-                if self.producer_finished:
-                    self.all_finished_signal.emit()
-                    break
-                else:
-                    self.is_idle = True
-                    time.sleep(0.5)
-                    continue
-            
-            self.is_idle = False
-            job = self.queue.popleft()
-            
+                if self.producer_finished: self.all_finished_signal.emit(); break
+                else: self.is_idle = True; time.sleep(0.5); continue
+            self.is_idle = False; job = self.queue.popleft()
             display_total = self.total_expected_jobs if self.total_expected_jobs > 0 else (self.completed_jobs + len(self.queue) + 1)
-            
-            # Send Initial Status
             base_status = f"Transcoding {self.completed_jobs + 1}/{display_total}: {job['name']}"
-            self.status_signal.emit(base_status)
-            self.log_signal.emit(f"🎬 Transcoding Started: {job['name']}")
-            
-            cmd = TranscodeEngine.build_command(job['in'], job['out'], self.settings, self.use_gpu)
-            duration = TranscodeEngine.get_duration(job['in'])
-            
+            self.status_signal.emit(base_status); self.log_signal.emit(f"🎬 Transcoding Started: {job['name']}")
+            cmd = TranscodeEngine.build_command(job['in'], job['out'], self.settings, self.use_gpu); duration = TranscodeEngine.get_duration(job['in'])
             try:
-                startupinfo = None
-                if platform.system() == 'Windows':
-                    startupinfo = subprocess.STARTUPINFO(); startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, 
-                                           universal_newlines=True, startupinfo=startupinfo, env=EnvUtils.get_clean_env())
+                startupinfo = None; 
+                if platform.system() == 'Windows': startupinfo = subprocess.STARTUPINFO(); startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, startupinfo=startupinfo, env=EnvUtils.get_clean_env())
                 while True:
                     if not self.is_running: process.kill(); break
                     line = process.stderr.readline()
@@ -309,38 +355,18 @@ class AsyncTranscoder(QThread):
                         if duration > 0:
                             pct, speed_str = TranscodeEngine.parse_progress(line, duration)
                             if pct > 0: self.progress_signal.emit(pct)
-                            if speed_str: 
-                                self.metrics_signal.emit(f"{base_status} | {speed_str}")
-                            
+                            if speed_str: self.metrics_signal.emit(f"{base_status} | {speed_str}")
                 if process.returncode == 0: self.log_signal.emit(f"✅ Transcode Finished: {job['name']}")
                 else: self.log_signal.emit(f"❌ Transcode Failed: {job['name']}")
             except Exception as e: self.log_signal.emit(f"❌ Exception: {e}")
             self.completed_jobs += 1
-
-    def stop(self):
-        self.is_running = False
+    def stop(self): self.is_running = False
 
 class CopyWorker(QThread):
-    log_signal = pyqtSignal(str)
-    progress_signal = pyqtSignal(int)
-    status_signal = pyqtSignal(str)
-    speed_signal = pyqtSignal(str) 
-    file_ready_signal = pyqtSignal(str, str, str)
-    transcode_count_signal = pyqtSignal(int)
-    finished_signal = pyqtSignal(bool, str)
-
+    log_signal = pyqtSignal(str); progress_signal = pyqtSignal(int); status_signal = pyqtSignal(str); speed_signal = pyqtSignal(str); file_ready_signal = pyqtSignal(str, str, str); transcode_count_signal = pyqtSignal(int); finished_signal = pyqtSignal(bool, str)
     def __init__(self, source, dest, project_name, sort_by_date, skip_dupes, videos_only, camera_override):
-        super().__init__()
-        self.source = source
-        self.dest = dest
-        self.project_name = project_name.strip()
-        self.sort_by_date = sort_by_date
-        self.skip_dupes = skip_dupes
-        self.videos_only = videos_only
-        self.camera_override = camera_override
-        self.is_running = True
+        super().__init__(); self.source = source; self.dest = dest; self.project_name = project_name.strip(); self.sort_by_date = sort_by_date; self.skip_dupes = skip_dupes; self.videos_only = videos_only; self.camera_override = camera_override; self.is_running = True
         self.main_video_exts = {'.MP4', '.MOV', '.MKV', '.INSV', '.360'}
-
     def get_mmt_category(self, filename):
         ext = os.path.splitext(filename.upper())[1]
         if ext in self.main_video_exts: return "videos"
@@ -348,33 +374,41 @@ class CopyWorker(QThread):
         if ext in ['.DNG', '.GPR']: return "raw"
         if ext in ['.WAV', '.MP3']: return "audios"
         return "misc"
-
     def get_media_date(self, file_path):
         try: return datetime.fromtimestamp(os.path.getmtime(file_path)).strftime("%Y-%m-%d")
         except: return "Unsorted"
-
     def run(self):
-        detected_cam = self.camera_override
+        detected_cam = self.camera_override; 
         if detected_cam == "auto": detected_cam = "Generic_Device"
         self.log_signal.emit(f"System: Analyzing source...")
         final_dest = self.dest
         if self.project_name: final_dest = os.path.join(self.dest, self.project_name)
         valid_exts = ('.MP4', '.MOV', '.LRV', '.THM', '.JPG', '.JPEG', '.DNG', '.GPR', '.SRT', '.WAV', '.INSV', '.INSP', '.360', '.AAE')
         found_files = []
+        
+        # --- FIXED SCAN LOOP FOR FEEDBACK ---
+        count_scanned = 0
         for root, dirs, files in os.walk(self.source):
+            if not self.is_running: break
             for file in files:
-                if file.upper().endswith(valid_exts): found_files.append(os.path.join(root, file))
+                if file.upper().endswith(valid_exts): 
+                    found_files.append(os.path.join(root, file))
+                    count_scanned += 1
+                    if count_scanned % 50 == 0:
+                        self.status_signal.emit(f"Analyzing Source... Found {count_scanned} files")
+        # ------------------------------------
+
         priority_videos = [f for f in found_files if os.path.splitext(f)[1].upper() in self.main_video_exts]
         secondary_files = [f for f in found_files if os.path.splitext(f)[1].upper() not in self.main_video_exts]
         files_to_process = priority_videos if self.videos_only else priority_videos + secondary_files
         
-        # Calculate Transcode Candidates
         transcode_candidates = [f for f in files_to_process if os.path.splitext(f)[1].upper() in ('.MP4', '.MOV', '.MKV', '.AVI')]
         self.transcode_count_signal.emit(len(transcode_candidates))
         
         total_files = len(files_to_process)
         total_bytes = sum(os.path.getsize(f) for f in files_to_process)
         bytes_processed = 0
+        
         if total_files == 0:
             self.finished_signal.emit(False, "No media found.")
             return
@@ -410,9 +444,7 @@ class CopyWorker(QThread):
                             buf = fsrc.read(chunk_size)
                             if not buf: break
                             fdst.write(buf)
-                            len_buf = len(buf)
-                            copied_this_file += len_buf
-                            bytes_since_last_time += len_buf
+                            len_buf = len(buf); copied_this_file += len_buf; bytes_since_last_time += len_buf
                             current_time = time.time()
                             if current_time - last_time >= 0.5:
                                 speed_mbps = (bytes_since_last_time / (current_time - last_time)) / (1024 * 1024)
@@ -543,18 +575,84 @@ class TranscodeSettingsWidget(QGroupBox):
     def is_gpu_enabled(self): return self.chk_gpu.isChecked()
     def set_gpu_checked(self, checked): self.chk_gpu.blockSignals(True); self.chk_gpu.setChecked(checked); self.chk_gpu.blockSignals(False)
 
+class JobReportDialog(QDialog):
+    def __init__(self, title, report_text, parent=None):
+        super().__init__(parent); self.setWindowTitle(title); self.setMinimumWidth(500); self.resize(600, 400); layout = QVBoxLayout()
+        self.text_edit = QTextEdit(); self.text_edit.setReadOnly(True); self.text_edit.setHtml(f"<div style='font-family: Consolas; font-size: 14px;'>{report_text}</div>")
+        layout.addWidget(self.text_edit); ok_btn = QPushButton("OK"); ok_btn.clicked.connect(self.accept); layout.addWidget(ok_btn); self.setLayout(layout)
+
+class FFmpegInfoDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent); self.setWindowTitle("FFmpeg & Hardware Support"); self.setMinimumWidth(600); self.resize(650, 500); layout = QVBoxLayout()
+        self.text_edit = QTextEdit(); self.text_edit.setReadOnly(True); self.text_edit.setStyleSheet("font-family: Consolas; font-size: 12px; background-color: #f0f0f0; color: #333;")
+        layout.addWidget(self.text_edit); ok_btn = QPushButton("Close"); ok_btn.clicked.connect(self.accept); layout.addWidget(ok_btn); self.setLayout(layout); self.run_check()
+    def run_check(self):
+        report = "<h2>FFmpeg Configuration Report</h2><hr>"; ffmpeg_bin = DependencyManager.get_ffmpeg_path()
+        if not ffmpeg_bin: self.text_edit.setHtml("<h3 style='color:red'>Critical Error: FFmpeg binary not found!</h3>"); return
+        report += f"<p><b>Binary Path:</b> {ffmpeg_bin}</p>"
+        is_bundled = "_MEIPASS" in ffmpeg_bin or "bin" in os.path.dirname(ffmpeg_bin)
+        source_type = "Bundled (App Local)" if is_bundled else "System (Global Path)"
+        report += f"<p><b>Source Type:</b> <span style='color:blue'>{source_type}</span></p>"
+        try:
+            res = subprocess.run([ffmpeg_bin, '-version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=EnvUtils.get_clean_env())
+            version_line = res.stdout.splitlines()[0] if res.stdout else "Unknown"; report += f"<p><b>Version:</b> {version_line}</p>"
+        except Exception as e: report += f"<p style='color:red'>Error getting version: {e}</p>"
+        report += "<hr><h3>Hardware Acceleration (APIs)</h3>"
+        try:
+            res = subprocess.run([ffmpeg_bin, '-hwaccels'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=EnvUtils.get_clean_env())
+            accels = [x.strip() for x in res.stdout.splitlines()[1:] if x.strip()] if res.stdout else []
+            if accels:
+                report += "<ul>"; [report.__iadd__(f"<li>{acc}</li>") for acc in accels]; report += "</ul>"
+            else: report += "<p>No hardware acceleration methods detected.</p>"
+        except: report += "<p>Failed to check hwaccels.</p>"
+        report += "<hr><h3>Hardware Encoders (Codecs)</h3>"
+        target_encoders = {"h264_nvenc": "NVIDIA (NVENC)", "hevc_nvenc": "NVIDIA (NVENC HEVC)", "h264_qsv": "Intel QuickSync (QSV)", "h264_vaapi": "Linux VAAPI (AMD/Intel)", "h264_videotoolbox": "MacOS VideoToolbox"}
+        try:
+            res = subprocess.run([ffmpeg_bin, '-encoders'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=EnvUtils.get_clean_env())
+            output = res.stdout; report += "<ul>"
+            for enc, name in target_encoders.items():
+                if enc in output: report += f"<li><b style='color:green'>[AVAILABLE]</b> {enc} ({name})</li>"
+                else: report += f"<li><span style='color:gray'>[MISSING] {enc} ({name})</span></li>"
+            report += "</ul>"
+        except: report += "<p>Failed to check encoders.</p>"
+        report += "<hr><h3>CineBridge Active Strategy</h3>"
+        active_prof = DependencyManager.detect_hw_accel()
+        if active_prof: msg = f"CineBridge is currently configured to use: <b style='color:#E67E22; font-size:14px'>{active_prof.upper()}</b>"
+        else: msg = "CineBridge will use: <b>Software Encoding (CPU)</b>"
+        report += f"<p>{msg}</p>"; self.text_edit.setHtml(report)
+
+class SettingsDialog(QDialog):
+    def __init__(self, parent):
+        super().__init__(parent); self.parent_app = parent; self.setWindowTitle("CineBridge Settings"); self.setMinimumWidth(500); layout = QVBoxLayout()
+        theme_group = QGroupBox("Appearance"); theme_lay = QVBoxLayout(); self.rb_sys = QRadioButton("System Default"); self.rb_dark = QRadioButton("Dark Mode"); self.rb_light = QRadioButton("Light Mode")
+        mode = parent.settings.value("theme_mode", "system")
+        if mode == "dark": self.rb_dark.setChecked(True)
+        elif mode == "light": self.rb_light.setChecked(True)
+        else: self.rb_sys.setChecked(True)
+        bg = QButtonGroup(self); bg.addButton(self.rb_sys); bg.addButton(self.rb_dark); bg.addButton(self.rb_light)
+        self.rb_sys.toggled.connect(lambda: parent.set_theme("system")); self.rb_dark.toggled.connect(lambda: parent.set_theme("dark")); self.rb_light.toggled.connect(lambda: parent.set_theme("light"))
+        theme_lay.addWidget(self.rb_sys); theme_lay.addWidget(self.rb_dark); theme_lay.addWidget(self.rb_light); theme_group.setLayout(theme_lay); layout.addWidget(theme_group)
+        view_group = QGroupBox("View Options"); view_lay = QVBoxLayout(); self.chk_copy = QCheckBox("Show Copy Log"); self.chk_trans = QCheckBox("Show Transcode Log")
+        self.chk_copy.setChecked(parent.tab_ingest.copy_log.isVisible()); self.chk_trans.setChecked(parent.tab_ingest.transcode_log.isVisible())
+        self.chk_copy.toggled.connect(self.apply_view_options); self.chk_trans.toggled.connect(self.apply_view_options)
+        view_lay.addWidget(self.chk_copy); view_lay.addWidget(self.chk_trans); view_group.setLayout(view_lay); layout.addWidget(view_group)
+        sys_group = QGroupBox("System"); sys_lay = QVBoxLayout()
+        self.btn_ffmpeg = QPushButton("Check FFmpeg Support"); self.btn_ffmpeg.clicked.connect(self.show_ffmpeg_info); sys_lay.addWidget(self.btn_ffmpeg)
+        self.chk_debug = QCheckBox("Enable Debug Mode"); self.chk_debug.setChecked(DEBUG_MODE); self.chk_debug.toggled.connect(parent.toggle_debug); sys_lay.addWidget(self.chk_debug)
+        self.btn_reset = QPushButton("Reset to Default Settings"); self.btn_reset.setStyleSheet("color: red;"); self.btn_reset.clicked.connect(parent.reset_to_defaults); sys_lay.addWidget(self.btn_reset)
+        sys_group.setLayout(sys_lay); layout.addWidget(sys_group)
+        self.btn_about = QPushButton("About CineBridge Pro"); self.btn_about.clicked.connect(parent.show_about); layout.addWidget(self.btn_about)
+        layout.addStretch(); close_btn = QPushButton("Close"); close_btn.clicked.connect(self.accept); layout.addWidget(close_btn); self.setLayout(layout)
+    def apply_view_options(self): self.parent_app.tab_ingest.toggle_logs(self.chk_copy.isChecked(), self.chk_trans.isChecked())
+    def show_ffmpeg_info(self): dlg = FFmpegInfoDialog(self); dlg.exec()
+
 class IngestTab(QWidget):
     def __init__(self, parent_app):
-        super().__init__()
-        self.app = parent_app 
-        self.layout = QVBoxLayout(); self.layout.setSpacing(10); self.layout.setContentsMargins(20, 20, 20, 20); self.setLayout(self.layout)
-        self.copy_worker = None; self.transcode_worker = None; self.scan_worker = None
-        self.found_devices = []; self.current_detected_path = None
+        super().__init__(); self.app = parent_app; self.layout = QVBoxLayout(); self.layout.setSpacing(10); self.layout.setContentsMargins(20, 20, 20, 20); self.setLayout(self.layout)
+        self.copy_worker = None; self.transcode_worker = None; self.scan_worker = None; self.found_devices = []; self.current_detected_path = None
         self.setup_ui(); self.load_tab_settings()
         self.sys_monitor = SystemMonitor(); self.sys_monitor.cpu_signal.connect(self.update_load_display); self.sys_monitor.start()
-        self.scan_watchdog = QTimer(); self.scan_watchdog.setSingleShot(True); self.scan_watchdog.timeout.connect(self.on_scan_timeout)
-        QTimer.singleShot(500, self.run_auto_scan)
-
+        self.scan_watchdog = QTimer(); self.scan_watchdog.setSingleShot(True); self.scan_watchdog.timeout.connect(self.on_scan_timeout); QTimer.singleShot(500, self.run_auto_scan)
     def setup_ui(self):
         io_container = QWidget(); io_layout = QHBoxLayout(); io_layout.setContentsMargins(0,0,0,0); io_container.setLayout(io_layout)
         source_group = QGroupBox("1. Source Media"); source_inner = QVBoxLayout(); self.source_tabs = QTabWidget(); self.tab_auto = QWidget(); auto_lay = QVBoxLayout()
@@ -573,81 +671,42 @@ class IngestTab(QWidget):
         dest_group = QGroupBox("2. Destination"); dest_inner = QVBoxLayout()
         self.project_name_input = QLineEdit(); self.project_name_input.setPlaceholderText("Project Name")
         self.dest_input = QLineEdit(); self.browse_dest_btn = QPushButton("Browse"); self.browse_dest_btn.clicked.connect(self.browse_dest)
-        dest_inner.addWidget(QLabel("Project Name:")); dest_inner.addWidget(self.project_name_input)
-        dest_inner.addWidget(QLabel("Location:")); dest_inner.addWidget(self.dest_input); dest_inner.addWidget(self.browse_dest_btn); dest_inner.addStretch()
+        dest_inner.addWidget(QLabel("Project Name:")); dest_inner.addWidget(self.project_name_input); dest_inner.addWidget(QLabel("Location:")); dest_inner.addWidget(self.dest_input); dest_inner.addWidget(self.browse_dest_btn); dest_inner.addStretch()
         dest_group.setLayout(dest_inner); io_layout.addWidget(source_group); io_layout.addWidget(dest_group); self.layout.addWidget(io_container)
-
         settings_group = QGroupBox("3. Processing Settings"); settings_layout = QVBoxLayout(); rules_row = QHBoxLayout()
-        self.device_combo = QComboBox(); self.device_combo.addItems(["auto", "GoPro", "DJI", "Insta360", "Generic Storage"])
-        rules_row.addWidget(QLabel("Logic:")); rules_row.addWidget(self.device_combo)
-        self.check_date = QCheckBox("Sort Date"); self.check_dupe = QCheckBox("Skip Dupes")
-        self.check_videos_only = QCheckBox("Video Only"); self.check_transcode = QCheckBox("Enable Transcode")
-        self.check_transcode.setStyleSheet("color: #E67E22; font-weight: bold;"); self.check_transcode.toggled.connect(self.toggle_transcode_ui)
-        rules_row.addWidget(self.check_date); rules_row.addWidget(self.check_dupe); rules_row.addWidget(self.check_videos_only); rules_row.addWidget(self.check_transcode)
-        settings_layout.addLayout(rules_row)
-        self.transcode_widget = TranscodeSettingsWidget(mode="general"); self.transcode_widget.setVisible(False)
-        settings_layout.addWidget(self.transcode_widget); settings_group.setLayout(settings_layout); self.layout.addWidget(settings_group)
-
+        self.device_combo = QComboBox(); self.device_combo.addItems(["auto", "GoPro", "DJI", "Insta360", "Generic Storage"]); rules_row.addWidget(QLabel("Logic:")); rules_row.addWidget(self.device_combo)
+        self.check_date = QCheckBox("Sort Date"); self.check_dupe = QCheckBox("Skip Dupes"); self.check_videos_only = QCheckBox("Video Only"); self.check_transcode = QCheckBox("Enable Transcode"); self.check_transcode.setStyleSheet("color: #E67E22; font-weight: bold;"); self.check_transcode.toggled.connect(self.toggle_transcode_ui)
+        rules_row.addWidget(self.check_date); rules_row.addWidget(self.check_dupe); rules_row.addWidget(self.check_videos_only); rules_row.addWidget(self.check_transcode); settings_layout.addLayout(rules_row)
+        self.transcode_widget = TranscodeSettingsWidget(mode="general"); self.transcode_widget.setVisible(False); settings_layout.addWidget(self.transcode_widget); settings_group.setLayout(settings_layout); self.layout.addWidget(settings_group)
         dash_frame = QFrame(); dash_frame.setObjectName("DashFrame"); dash_layout = QVBoxLayout(); dash_frame.setLayout(dash_layout)
-        top_row = QHBoxLayout(); self.status_label = QLabel("READY TO INGEST"); self.status_label.setObjectName("StatusLabel")
-        self.speed_label = QLabel(""); self.speed_label.setObjectName("SpeedLabel")
+        top_row = QHBoxLayout(); self.status_label = QLabel("READY TO INGEST"); self.status_label.setObjectName("StatusLabel"); self.speed_label = QLabel(""); self.speed_label.setObjectName("SpeedLabel")
         top_row.addWidget(self.status_label, 1); top_row.addWidget(self.speed_label); dash_layout.addLayout(top_row)
         self.progress_bar = QProgressBar(); self.progress_bar.setTextVisible(True); dash_layout.addWidget(self.progress_bar)
-        self.transcode_status_label = QLabel(""); self.transcode_status_label.setStyleSheet("color: #E67E22; font-weight: bold;"); self.transcode_status_label.setVisible(False)
-        dash_layout.addWidget(self.transcode_status_label)
-        self.load_label = QLabel("🔥 CPU Load: 0%"); self.load_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.load_label.setStyleSheet("color: #E74C3C; font-weight: bold; font-size: 11px;"); self.load_label.setVisible(False) 
-        dash_layout.addWidget(self.load_label); self.layout.addWidget(dash_frame)
-
+        self.transcode_status_label = QLabel(""); self.transcode_status_label.setStyleSheet("color: #E67E22; font-weight: bold;"); self.transcode_status_label.setVisible(False); dash_layout.addWidget(self.transcode_status_label)
+        self.load_label = QLabel("🔥 CPU Load: 0%"); self.load_label.setAlignment(Qt.AlignmentFlag.AlignCenter); self.load_label.setStyleSheet("color: #E74C3C; font-weight: bold; font-size: 11px;"); self.load_label.setVisible(False); dash_layout.addWidget(self.load_label); self.layout.addWidget(dash_frame)
         btn_layout = QHBoxLayout()
         self.import_btn = QPushButton("START INGEST"); self.import_btn.setObjectName("StartBtn"); self.import_btn.clicked.connect(self.start_import)
         self.cancel_btn = QPushButton("STOP"); self.cancel_btn.setObjectName("StopBtn"); self.cancel_btn.clicked.connect(self.cancel_import); self.cancel_btn.setEnabled(False)
         btn_layout.addWidget(self.import_btn); btn_layout.addWidget(self.cancel_btn); self.layout.addLayout(btn_layout)
-
-        # LOGS
         self.splitter = QSplitter(Qt.Orientation.Vertical)
-        self.copy_log = QTextEdit(); self.copy_log.setReadOnly(True); self.copy_log.setMinimumHeight(50)
-        self.copy_log.setStyleSheet("background-color: #1e1e1e; color: #2ECC71; font-family: Consolas; font-size: 11px;")
-        self.copy_log.setPlaceholderText("Copy Log...")
-        self.transcode_log = QTextEdit(); self.transcode_log.setReadOnly(True); self.transcode_log.setMinimumHeight(50)
-        self.transcode_log.setStyleSheet("background-color: #2c2c2c; color: #3498DB; font-family: Consolas; font-size: 11px;")
-        self.transcode_log.setPlaceholderText("Transcode Log...")
-        self.splitter.addWidget(self.copy_log); self.splitter.addWidget(self.transcode_log)
-        self.layout.addWidget(self.splitter, 1) # Stretch factor to resize
-        
-        # Default Log View (Only Copy Log)
+        self.copy_log = QTextEdit(); self.copy_log.setReadOnly(True); self.copy_log.setMinimumHeight(50); self.copy_log.setStyleSheet("background-color: #1e1e1e; color: #2ECC71; font-family: Consolas; font-size: 11px;"); self.copy_log.setPlaceholderText("Copy Log...")
+        self.transcode_log = QTextEdit(); self.transcode_log.setReadOnly(True); self.transcode_log.setMinimumHeight(50); self.transcode_log.setStyleSheet("background-color: #2c2c2c; color: #3498DB; font-family: Consolas; font-size: 11px;"); self.transcode_log.setPlaceholderText("Transcode Log..."); self.splitter.addWidget(self.copy_log); self.splitter.addWidget(self.transcode_log); self.layout.addWidget(self.splitter, 1)
         self.transcode_log.setVisible(False)
-
-    def toggle_logs(self, show_copy, show_transcode):
-        self.copy_log.setVisible(show_copy)
-        self.transcode_log.setVisible(show_transcode)
-        if not show_copy and not show_transcode: self.splitter.setVisible(False)
-        else: self.splitter.setVisible(True)
-
-    def toggle_transcode_ui(self, checked):
-        self.transcode_widget.setVisible(checked)
-        self.transcode_status_label.setVisible(checked)
-        if checked: self.import_btn.setText("START INGEST AND TRANSCODE")
-        else: self.import_btn.setText("START INGEST")
-
+    def toggle_logs(self, show_copy, show_transcode): self.copy_log.setVisible(show_copy); self.transcode_log.setVisible(show_transcode); self.splitter.setVisible(show_copy or show_transcode)
+    def toggle_transcode_ui(self, checked): self.transcode_widget.setVisible(checked); self.transcode_status_label.setVisible(checked); self.import_btn.setText("START INGEST AND TRANSCODE" if checked else "START INGEST")
     def update_load_display(self, value): self.load_label.setText(f"🔥 CPU Load: {value}%")
     def set_transcode_active(self, active): self.load_label.setVisible(active); self.transcode_status_label.setVisible(active)
     def browse_source(self): 
-        d = QFileDialog.getExistingDirectory(self, "Source", self.source_input.text())
+        d = QFileDialog.getExistingDirectory(self, "Source", self.source_input.text()); 
         if d: self.source_input.setText(d)
     def browse_dest(self): 
-        d = QFileDialog.getExistingDirectory(self, "Dest", self.dest_input.text())
+        d = QFileDialog.getExistingDirectory(self, "Dest", self.dest_input.text()); 
         if d: self.dest_input.setText(d)
     def append_copy_log(self, text): self.copy_log.append(text); sb = self.copy_log.verticalScrollBar(); sb.setValue(sb.maximum())
     def append_transcode_log(self, text): self.transcode_log.append(text); sb = self.transcode_log.verticalScrollBar(); sb.setValue(sb.maximum())
-
-    def run_auto_scan(self):
-        self.auto_info_label.setText("Scanning..."); self.result_card.setVisible(False); self.select_device_box.setVisible(False)
-        self.scan_btn.setEnabled(False); self.scan_watchdog.start(30000)
-        self.scan_worker = ScanWorker(); self.scan_worker.finished_signal.connect(self.on_scan_finished); self.scan_worker.start()
-    def on_scan_timeout(self):
-        if self.scan_worker.isRunning(): self.scan_worker.terminate()
-        self.auto_info_label.setText("Scan Timed Out")
+    def run_auto_scan(self): self.auto_info_label.setText("Scanning..."); self.result_card.setVisible(False); self.select_device_box.setVisible(False); self.scan_btn.setEnabled(False); self.scan_watchdog.start(30000); self.scan_worker = ScanWorker(); self.scan_worker.finished_signal.connect(self.on_scan_finished); self.scan_worker.start()
+    def on_scan_timeout(self): 
+        if self.scan_worker.isRunning(): self.scan_worker.terminate(); self.auto_info_label.setText("Scan Timed Out")
     def on_scan_finished(self, results):
         self.scan_watchdog.stop(); self.found_devices = results; self.scan_btn.setEnabled(True)
         if results: self.auto_info_label.setText("✅ Scan Complete"); self.update_result_ui(results[0], len(results)>1)
@@ -655,99 +714,60 @@ class IngestTab(QWidget):
     def on_device_selection_change(self, idx): 
         if idx >= 0: self.update_result_ui(self.found_devices[idx], True)
     def update_result_ui(self, dev, multi):
-        self.current_detected_path = dev['path']; self.source_input.setText(dev['path']) 
-        border = '#27AE60' if not dev['empty'] else '#F39C12'; bg = '#2e3b33' if not dev['empty'] else '#4d3d2a'
-        path_short = dev['path']; msg = f"✅ {dev['type']}" if not dev['empty'] else f"⚠️ {dev['type']} (Empty)"
+        self.current_detected_path = dev['path']; self.source_input.setText(dev['path']); name = dev.get('display_name', dev.get('type', 'Unknown')); path_short = dev['path']; msg = f"✅ {name}" if not dev['empty'] else f"⚠️ {name} (Empty)"
         if len(path_short) > 35: path_short = path_short[:15] + "..." + path_short[-15:]
-        self.result_label.setText(f"<h3 style='color:{border}'>{msg}</h3><span style='color:white;'>{path_short}</span>")
-        self.result_card.setStyleSheet(f"background-color: {bg}; border: 2px solid {border};"); self.result_card.setVisible(True)
+        self.result_label.setText(f"<h3 style='color:{'#27AE60' if not dev['empty'] else '#F39C12'}'>{msg}</h3><span style='color:white;'>{path_short}</span>")
+        self.result_card.setStyleSheet(f"background-color: {'#2e3b33' if not dev['empty'] else '#4d3d2a'}; border: 2px solid {'#27AE60' if not dev['empty'] else '#F39C12'};"); self.result_card.setVisible(True)
         if multi:
             self.select_device_box.setVisible(True); self.select_device_box.blockSignals(True); self.select_device_box.clear()
-            for d in self.found_devices: self.select_device_box.addItem(f"{d['type']} ({'Empty' if d['empty'] else 'Data'})")
-            self.select_device_box.setCurrentIndex(self.found_devices.index(dev)); self.select_device_box.blockSignals(False)
-            self.select_device_box.setStyleSheet(f"background-color: #1e1e1e; color: white; border: 1px solid {border};")
-
+            for d in self.found_devices: self.select_device_box.addItem(f"{d.get('display_name', d.get('type', 'Unknown'))} ({'Empty' if d['empty'] else 'Data'})")
+            self.select_device_box.setCurrentIndex(self.found_devices.index(dev)); self.select_device_box.blockSignals(False); self.select_device_box.setStyleSheet(f"background-color: #1e1e1e; color: white; border: 1px solid {'#27AE60' if not dev['empty'] else '#F39C12'};")
     def start_import(self):
-        src = self.current_detected_path if self.source_tabs.currentIndex() == 0 else self.source_input.text()
-        dest = self.dest_input.text()
+        src = self.current_detected_path if self.source_tabs.currentIndex() == 0 else self.source_input.text(); dest = self.dest_input.text()
         if not src or not dest: return QMessageBox.warning(self, "Error", "Set Source/Dest")
-        self.save_tab_settings(); self.import_btn.setEnabled(False); self.cancel_btn.setEnabled(True)
-        self.status_label.setText("INITIALIZING..."); self.copy_log.clear(); self.transcode_log.clear()
+        self.save_tab_settings(); self.import_btn.setEnabled(False); self.cancel_btn.setEnabled(True); self.status_label.setText("INITIALIZING..."); self.copy_log.clear(); self.transcode_log.clear()
+        if DEBUG_MODE and GUI_LOG_QUEUE:
+            for msg in GUI_LOG_QUEUE: self.append_copy_log(msg)
+            GUI_LOG_QUEUE.clear()
         tc_enabled = self.check_transcode.isChecked(); tc_settings = self.transcode_widget.get_settings(); use_gpu = self.transcode_widget.is_gpu_enabled()
         if tc_enabled:
-            self.transcode_worker = AsyncTranscoder(tc_settings, use_gpu)
-            self.transcode_worker.log_signal.connect(self.append_transcode_log)
-            self.transcode_worker.status_signal.connect(self.transcode_status_label.setText)
-            self.transcode_worker.metrics_signal.connect(self.transcode_status_label.setText) # Connect new metric signal
-            self.transcode_worker.all_finished_signal.connect(self.on_all_transcodes_finished)
-            self.transcode_worker.start(); self.set_transcode_active(True)
+            self.transcode_worker = AsyncTranscoder(tc_settings, use_gpu); self.transcode_worker.log_signal.connect(self.append_transcode_log); self.transcode_worker.status_signal.connect(self.transcode_status_label.setText); self.transcode_worker.metrics_signal.connect(self.transcode_status_label.setText); self.transcode_worker.all_finished_signal.connect(self.on_all_transcodes_finished); self.transcode_worker.start(); self.set_transcode_active(True)
         else: self.transcode_status_label.setVisible(False)
         self.copy_worker = CopyWorker(src, dest, self.project_name_input.text(), self.check_date.isChecked(), self.check_dupe.isChecked(), self.check_videos_only.isChecked(), self.device_combo.currentText())
-        self.copy_worker.log_signal.connect(self.append_copy_log); self.copy_worker.progress_signal.connect(self.progress_bar.setValue)
-        self.copy_worker.status_signal.connect(self.status_label.setText); self.copy_worker.speed_signal.connect(self.speed_label.setText)
-        self.copy_worker.finished_signal.connect(self.on_copy_finished)
-        if tc_enabled:
-            self.copy_worker.transcode_count_signal.connect(self.transcode_worker.set_total_jobs)
-            self.copy_worker.file_ready_signal.connect(self.queue_for_transcode)
+        self.copy_worker.log_signal.connect(self.append_copy_log); self.copy_worker.progress_signal.connect(self.progress_bar.setValue); self.copy_worker.status_signal.connect(self.status_label.setText); self.copy_worker.speed_signal.connect(self.speed_label.setText); self.copy_worker.finished_signal.connect(self.on_copy_finished)
+        if tc_enabled: self.copy_worker.transcode_count_signal.connect(self.transcode_worker.set_total_jobs); self.copy_worker.file_ready_signal.connect(self.queue_for_transcode)
         self.copy_worker.start()
-
     def queue_for_transcode(self, src_path, dest_path, filename):
         if self.transcode_worker:
-            base_dir = os.path.dirname(dest_path); tc_dir = os.path.join(base_dir, "Edit_Ready"); os.makedirs(tc_dir, exist_ok=True)
-            name_only = os.path.splitext(filename)[0]; transcode_dest = os.path.join(tc_dir, f"{name_only}_EDIT.mov")
-            self.transcode_worker.add_job(dest_path, transcode_dest, filename)
+            base_dir = os.path.dirname(dest_path); tc_dir = os.path.join(base_dir, "Edit_Ready"); os.makedirs(tc_dir, exist_ok=True); name_only = os.path.splitext(filename)[0]; transcode_dest = os.path.join(tc_dir, f"{name_only}_EDIT.mov"); self.transcode_worker.add_job(dest_path, transcode_dest, filename)
     def cancel_import(self):
         if self.copy_worker: self.copy_worker.stop(); self.copy_worker.wait()
         if self.transcode_worker: self.transcode_worker.stop(); self.transcode_worker.wait()
         self.status_label.setText("CANCELLED"); self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False); self.set_transcode_active(False)
     def on_copy_finished(self, success, msg):
         if not self.check_transcode.isChecked():
-            self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False); self.status_label.setText(msg)
+            self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False); self.status_label.setText(msg); 
             if success: QMessageBox.information(self, "Done", msg)
         else:
-            self.status_label.setText("Copy Complete. Waiting for Transcodes...")
+            self.status_label.setText("Copy Complete. Waiting for Transcodes..."); 
             if self.transcode_worker: self.transcode_worker.set_producer_finished()
     def on_all_transcodes_finished(self):
-        self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False); self.set_transcode_active(False)
-        self.transcode_status_label.setText("All Transcodes Complete!"); QMessageBox.information(self, "Done", "Ingest & Transcoding Complete!")
+        self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False); self.set_transcode_active(False); self.transcode_status_label.setText("All Transcodes Complete!"); dlg = JobReportDialog("Job Complete", "All ingest and transcode operations finished successfully.", self); dlg.exec()
     def save_tab_settings(self):
-        s = self.app.settings; s.setValue("last_source", self.source_input.text()); s.setValue("last_dest", self.dest_input.text())
-        s.setValue("sort_date", self.check_date.isChecked()); s.setValue("skip_dupe", self.check_dupe.isChecked())
-        s.setValue("videos_only", self.check_videos_only.isChecked()); s.setValue("transcode_dnx", self.check_transcode.isChecked())
+        s = self.app.settings; s.setValue("last_source", self.source_input.text()); s.setValue("last_dest", self.dest_input.text()); s.setValue("sort_date", self.check_date.isChecked()); s.setValue("skip_dupe", self.check_dupe.isChecked()); s.setValue("videos_only", self.check_videos_only.isChecked()); s.setValue("transcode_dnx", self.check_transcode.isChecked())
     def load_tab_settings(self):
-        s = self.app.settings; self.source_input.setText(s.value("last_source", "")); self.dest_input.setText(s.value("last_dest", ""))
-        self.check_date.setChecked(s.value("sort_date", True, type=bool)); self.check_dupe.setChecked(s.value("skip_dupe", True, type=bool))
-        self.check_videos_only.setChecked(s.value("videos_only", False, type=bool)); self.check_transcode.setChecked(s.value("transcode_dnx", False, type=bool))
-        self.toggle_transcode_ui(self.check_transcode.isChecked())
+        s = self.app.settings; self.source_input.setText(s.value("last_source", "")); self.dest_input.setText(s.value("last_dest", "")); self.check_date.setChecked(s.value("sort_date", True, type=bool)); self.check_dupe.setChecked(s.value("skip_dupe", True, type=bool)); self.check_videos_only.setChecked(s.value("videos_only", False, type=bool)); self.check_transcode.setChecked(s.value("transcode_dnx", False, type=bool)); self.toggle_transcode_ui(self.check_transcode.isChecked())
 
 class ConvertTab(QWidget):
     def __init__(self):
-        super().__init__()
-        self.setAcceptDrops(True); layout = QVBoxLayout(); layout.setSpacing(15); layout.setContentsMargins(20, 20, 20, 20); self.setLayout(layout); self.is_processing = False
+        super().__init__(); self.setAcceptDrops(True); layout = QVBoxLayout(); layout.setSpacing(15); layout.setContentsMargins(20, 20, 20, 20); self.setLayout(layout); self.is_processing = False
         self.settings = TranscodeSettingsWidget("Batch Conversion Settings", mode="general"); layout.addWidget(self.settings)
-        out_group = QGroupBox("Output Location (Optional)"); out_lay = QHBoxLayout()
-        self.out_input = QLineEdit(); self.out_input.setPlaceholderText("Default: Creates 'Converted' folder next to source files")
-        self.btn_browse_out = QPushButton("Browse..."); self.btn_browse_out.clicked.connect(self.browse_dest)
-        self.btn_clear_out = QPushButton("Reset"); self.btn_clear_out.clicked.connect(self.out_input.clear)
-        out_lay.addWidget(self.out_input); out_lay.addWidget(self.btn_browse_out); out_lay.addWidget(self.btn_clear_out); out_group.setLayout(out_lay); layout.addWidget(out_group)
-        input_group = QGroupBox("Input Files"); input_lay = QVBoxLayout()
-        self.btn_browse = QPushButton("Select Video Files..."); self.btn_browse.clicked.connect(self.browse_files); input_lay.addWidget(self.btn_browse)
-        self.drop_area = QLabel("\n⬇️\n\nDRAG & DROP VIDEO FILES HERE\n\n"); self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.drop_area.setStyleSheet("""QLabel { border: 3px dashed #666; border-radius: 10px; background-color: #2b2b2b; color: #aaa; font-weight: bold; } QLabel:hover { border-color: #3498DB; background-color: #333; color: white; }""")
-        input_lay.addWidget(self.drop_area, 1); input_group.setLayout(input_lay); layout.addWidget(input_group, 1)
-        queue_group = QGroupBox("Job Queue"); queue_lay = QVBoxLayout()
-        self.list = QListWidget(); self.list.setMaximumHeight(80); self.list.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly); queue_lay.addWidget(self.list)
-        dash_row = QHBoxLayout(); self.status_label = QLabel("Waiting..."); self.status_label.setStyleSheet("color: #888;")
-        self.load_label = QLabel(""); self.load_label.setStyleSheet("color: #E74C3C; font-weight: bold;"); self.load_label.setVisible(False)
-        dash_row.addWidget(self.status_label); dash_row.addStretch(); dash_row.addWidget(self.load_label); queue_lay.addLayout(dash_row)
-        self.pbar = QProgressBar(); self.pbar.setTextVisible(True); queue_lay.addWidget(self.pbar)
-        h = QHBoxLayout(); b_clr = QPushButton("Clear Queue"); b_clr.clicked.connect(self.list.clear)
-        self.btn_go = QPushButton("START BATCH"); self.btn_go.setObjectName("StartBtn"); self.btn_go.clicked.connect(self.on_btn_click)
-        h.addWidget(b_clr); h.addWidget(self.btn_go); queue_lay.addLayout(h); queue_group.setLayout(queue_lay); layout.addWidget(queue_group)
-        self.sys_monitor = SystemMonitor(); self.sys_monitor.cpu_signal.connect(lambda v: self.load_label.setText(f"🔥 CPU: {v}%")); self.sys_monitor.start()
+        out_group = QGroupBox("Output Location (Optional)"); out_lay = QHBoxLayout(); self.out_input = QLineEdit(); self.out_input.setPlaceholderText("Default: Creates 'Converted' folder next to source files"); self.btn_browse_out = QPushButton("Browse..."); self.btn_browse_out.clicked.connect(self.browse_dest); self.btn_clear_out = QPushButton("Reset"); self.btn_clear_out.clicked.connect(self.out_input.clear); out_lay.addWidget(self.out_input); out_lay.addWidget(self.btn_browse_out); out_lay.addWidget(self.btn_clear_out); out_group.setLayout(out_lay); layout.addWidget(out_group)
+        input_group = QGroupBox("Input Files"); input_lay = QVBoxLayout(); self.btn_browse = QPushButton("Select Video Files..."); self.btn_browse.clicked.connect(self.browse_files); input_lay.addWidget(self.btn_browse); self.drop_area = QLabel("\n⬇️\n\nDRAG & DROP VIDEO FILES HERE\n\n"); self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter); self.drop_area.setStyleSheet("""QLabel { border: 3px dashed #666; border-radius: 10px; background-color: #2b2b2b; color: #aaa; font-weight: bold; } QLabel:hover { border-color: #3498DB; background-color: #333; color: white; }"""); input_lay.addWidget(self.drop_area, 1); input_group.setLayout(input_lay); layout.addWidget(input_group, 1)
+        queue_group = QGroupBox("Job Queue"); queue_lay = QVBoxLayout(); self.list = QListWidget(); self.list.setMaximumHeight(80); self.list.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly); queue_lay.addWidget(self.list); dash_row = QHBoxLayout(); self.status_label = QLabel("Waiting..."); self.status_label.setStyleSheet("color: #888;"); self.load_label = QLabel(""); self.load_label.setStyleSheet("color: #E74C3C; font-weight: bold;"); self.load_label.setVisible(False); dash_row.addWidget(self.status_label); dash_row.addStretch(); dash_row.addWidget(self.load_label); queue_lay.addLayout(dash_row); self.pbar = QProgressBar(); self.pbar.setTextVisible(True); queue_lay.addWidget(self.pbar); h = QHBoxLayout(); b_clr = QPushButton("Clear Queue"); b_clr.clicked.connect(self.list.clear); self.btn_go = QPushButton("START BATCH"); self.btn_go.setObjectName("StartBtn"); self.btn_go.clicked.connect(self.on_btn_click); h.addWidget(b_clr); h.addWidget(self.btn_go); queue_lay.addLayout(h); queue_group.setLayout(queue_lay); layout.addWidget(queue_group); self.sys_monitor = SystemMonitor(); self.sys_monitor.cpu_signal.connect(lambda v: self.load_label.setText(f"🔥 CPU: {v}%")); self.sys_monitor.start()
     def browse_files(self): files, _ = QFileDialog.getOpenFileNames(self, "Select Videos", "", "Video Files (*.mp4 *.mov *.mkv *.avi)"); [self.list.addItem(f) for f in files]
     def browse_dest(self): 
-        d = QFileDialog.getExistingDirectory(self, "Select Output Folder"); 
+        d = QFileDialog.getExistingDirectory(self, "Select Output Folder")
         if d: self.out_input.setText(d)
     def dragEnterEvent(self, e): 
         if e.mimeData().hasUrls(): e.accept()
@@ -767,19 +787,15 @@ class ConvertTab(QWidget):
         if not files: return QMessageBox.warning(self, "Empty", "Queue is empty.")
         self.toggle_ui_state(True); dest_folder = self.out_input.text().strip(); use_gpu = self.settings.is_gpu_enabled()
         self.worker = BatchTranscodeWorker(files, dest_folder, self.settings.get_settings(), mode="convert", use_gpu=use_gpu)
-        self.worker.progress_signal.connect(self.pbar.setValue); self.worker.status_signal.connect(self.status_label.setText)
-        self.worker.log_signal.connect(lambda s: self.status_label.setText(s)); self.worker.finished_signal.connect(self.on_finished); self.worker.start()
+        self.worker.progress_signal.connect(self.pbar.setValue); self.worker.status_signal.connect(self.status_label.setText); self.worker.log_signal.connect(lambda s: self.status_label.setText(s)); self.worker.finished_signal.connect(self.on_finished); self.worker.start()
     def stop(self):
-        if self.worker: self.worker.stop(); self.status_label.setText("Stopping...")
+        if self.worker: self.worker.stop(); self.status.setText("Stopping...")
     def on_finished(self):
-        self.toggle_ui_state(False); self.status_label.setText("Batch Complete!"); dest = self.out_input.text()
-        msg = f"Files saved to:\n{dest}" if dest else "Files saved to 'Converted' folder next to the source file(s)."
-        QMessageBox.information(self, "Batch Complete", msg)
+        self.toggle_ui_state(False); self.status.setText("Batch Complete!"); dest = self.out_input.text(); msg = f"Files saved to:\n{dest}" if dest else "Files saved to 'Converted' folder next to the source file(s)."; QMessageBox.information(self, "Batch Complete", msg)
 
 class DeliveryTab(QWidget):
     def __init__(self):
-        super().__init__()
-        self.setAcceptDrops(True); layout = QVBoxLayout(); layout.setSpacing(15); layout.setContentsMargins(20, 20, 20, 20); self.setLayout(layout); self.is_processing = False
+        super().__init__(); self.setAcceptDrops(True); layout = QVBoxLayout(); layout.setSpacing(15); layout.setContentsMargins(20, 20, 20, 20); self.setLayout(layout); self.is_processing = False
         self.settings = TranscodeSettingsWidget("Delivery Settings", mode="delivery"); self.settings.preset_combo.setCurrentText("H.264 / AVC (Standard)"); layout.addWidget(self.settings)
         form_group = QGroupBox("Input/Output"); fl = QFormLayout()
         self.inp_file = FileDropLineEdit(); self.inp_file.setPlaceholderText("Drag Master File Here or Browse")
@@ -788,17 +804,14 @@ class DeliveryTab(QWidget):
         b2 = QPushButton("Select Output Folder"); b2.clicked.connect(lambda: self.inp_dest.setText(QFileDialog.getExistingDirectory(self, "Select Output Folder")))
         r1 = QHBoxLayout(); r1.addWidget(self.inp_file); r1.addWidget(b1); r2 = QHBoxLayout(); r2.addWidget(self.inp_dest); r2.addWidget(b2)
         fl.addRow("Master File:", r1); fl.addRow("Output Location:", r2); form_group.setLayout(fl); layout.addWidget(form_group)
-        self.drop_area = QLabel("\n⬇️\n\nDRAG MASTER FILE HERE\n\n"); self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.drop_area.setStyleSheet("""QLabel { border: 3px dashed #666; border-radius: 10px; background-color: #2b2b2b; color: #aaa; font-weight: bold; } QLabel:hover { border-color: #3498DB; background-color: #333; color: white; }""")
-        layout.addWidget(self.drop_area, 1); layout.addStretch()
+        self.drop_area = QLabel("\n⬇️\n\nDRAG MASTER FILE HERE\n\n"); self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter); self.drop_area.setStyleSheet("""QLabel { border: 3px dashed #666; border-radius: 10px; background-color: #2b2b2b; color: #aaa; font-weight: bold; } QLabel:hover { border-color: #3498DB; background-color: #333; color: white; }"""); layout.addWidget(self.drop_area, 1); layout.addStretch()
         dash_frame = QFrame(); dash_frame.setObjectName("DashFrame"); dl = QVBoxLayout(dash_frame)
-        self.status = QLabel("Ready to Render"); dl.addWidget(self.status); self.pbar = QProgressBar(); self.pbar.setTextVisible(True); dl.addWidget(self.pbar)
-        layout.addWidget(dash_frame); self.btn_go = QPushButton("RENDER"); self.btn_go.setObjectName("StartBtn"); self.btn_go.setMinimumHeight(50)
-        self.btn_go.clicked.connect(self.on_btn_click); layout.addWidget(self.btn_go)
+        self.status = QLabel("Ready to Render"); dl.addWidget(self.status); self.pbar = QProgressBar(); self.pbar.setTextVisible(True); dl.addWidget(self.pbar); layout.addWidget(dash_frame)
+        self.btn_go = QPushButton("RENDER"); self.btn_go.setObjectName("StartBtn"); self.btn_go.setMinimumHeight(50); self.btn_go.clicked.connect(self.on_btn_click); layout.addWidget(self.btn_go)
     def dragEnterEvent(self, e): 
         if e.mimeData().hasUrls(): e.accept()
     def dropEvent(self, e):
-        urls = e.mimeData().urls(); 
+        urls = e.mimeData().urls() 
         if urls:
             fpath = urls[0].toLocalFile()
             if fpath.lower().endswith(('.mp4','.mov','.mkv','.avi')): self.inp_file.setText(fpath)
@@ -818,68 +831,54 @@ class DeliveryTab(QWidget):
     def stop(self):
         if self.worker: self.worker.stop(); self.status.setText("Stopping...")
     def on_finished(self):
-        self.toggle_ui_state(False); self.status.setText("Delivery Render Complete!"); dest = self.inp_dest.text()
-        msg = f"File saved to:\n{dest}" if dest else "File saved to 'Final_Render' folder next to the master file."
-        QMessageBox.information(self, "Render Complete", msg)
+        self.toggle_ui_state(False); self.status.setText("Delivery Render Complete!"); dest = self.inp_dest.text(); msg = f"File saved to:\n{dest}" if dest else "File saved to 'Final_Render' folder next to the master file."; QMessageBox.information(self, "Render Complete", msg)
 
 class CineBridgeApp(QMainWindow):
     def __init__(self):
-        super().__init__()
-        self.setWindowTitle("CineBridge Pro: Open Source DIT Suite"); self.setGeometry(100, 100, 1100, 850); self.settings = QSettings("CineBridgePro", "Config")
+        super().__init__(); self.setWindowTitle("CineBridge Pro: Open Source DIT Suite"); self.setGeometry(100, 100, 1100, 850); self.settings = QSettings("CineBridgePro", "Config")
         if hasattr(sys, '_MEIPASS'): base_dir = sys._MEIPASS
         else: base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         icon_svg = os.path.join(base_dir, "assets", "icon.svg"); icon_png = os.path.join(base_dir, "assets", "icon.png")
         if os.path.exists(icon_svg): self.setWindowIcon(QIcon(icon_svg))
         elif os.path.exists(icon_png): self.setWindowIcon(QIcon(icon_png))
-        
-        menu = self.menuBar()
-        view = menu.addMenu("View")
-        theme_menu = view.addMenu("Theme")
-        self.act_sys = QAction("System", self, checkable=True); self.act_sys.triggered.connect(lambda: self.set_theme("system"))
-        self.act_dark = QAction("Dark", self, checkable=True); self.act_dark.triggered.connect(lambda: self.set_theme("dark"))
-        self.act_light = QAction("Light", self, checkable=True); self.act_light.triggered.connect(lambda: self.set_theme("light"))
-        grp = QActionGroup(self); grp.addAction(self.act_sys); grp.addAction(self.act_dark); grp.addAction(self.act_light)
-        theme_menu.addActions([self.act_sys, self.act_dark, self.act_light])
-        
-        # --- NEW LOG VIEW MENU ---
-        log_menu = view.addMenu("Logs")
-        self.act_show_copy = QAction("Show Copy Log", self, checkable=True, checked=True)
-        self.act_show_copy.triggered.connect(self.update_log_visibility)
-        self.act_show_trans = QAction("Show Transcode Log", self, checkable=True, checked=False) # Default to HIDDEN
-        self.act_show_trans.triggered.connect(self.update_log_visibility)
-        log_menu.addAction(self.act_show_copy); log_menu.addAction(self.act_show_trans)
-        # -------------------------
-
-        help_menu = menu.addMenu("Help"); self.act_debug = QAction("Debug Mode", self, checkable=True); self.act_debug.triggered.connect(self.toggle_debug)
-        help_menu.addAction(self.act_debug); help_menu.addSeparator(); help_menu.addAction(QAction("About", self, triggered=self.show_about))
-
-        self.tabs = QTabWidget(); self.tabs.setTabPosition(QTabWidget.TabPosition.North)
-        self.tabs.setStyleSheet("QTabBar::tab { height: 40px; width: 150px; font-weight: bold; }")
-        self.tab_ingest = IngestTab(self); self.tab_convert = ConvertTab(); self.tab_delivery = DeliveryTab()
-        self.tabs.addTab(self.tab_ingest, "📥 INGEST"); self.tabs.addTab(self.tab_convert, "🛠️ CONVERT"); self.tabs.addTab(self.tab_delivery, "🚀 DELIVERY")
-        self.setCentralWidget(self.tabs)
-        self.tab_ingest.transcode_widget.chk_gpu.toggled.connect(self.sync_gpu_toggle)
-        self.tab_convert.settings.chk_gpu.toggled.connect(self.sync_gpu_toggle)
-        self.tab_delivery.settings.chk_gpu.toggled.connect(self.sync_gpu_toggle)
-        saved_gpu = self.settings.value("use_gpu_accel", False, type=bool); self.sync_gpu_toggle(saved_gpu)
-        self.theme_mode = self.settings.value("theme_mode", "light"); self.set_theme(self.theme_mode)
-
-    def update_log_visibility(self):
-        self.tab_ingest.toggle_logs(self.act_show_copy.isChecked(), self.act_show_trans.isChecked())
-
+        self.tabs = QTabWidget(); self.tabs.setTabPosition(QTabWidget.TabPosition.North); self.tabs.setStyleSheet("QTabBar::tab { height: 40px; width: 150px; font-weight: bold; }")
+        self.settings_btn = QToolButton(); self.settings_btn.setText("⚙"); self.settings_btn.setStyleSheet("QToolButton { font-size: 20px; border: none; background: transparent; padding: 5px; } QToolButton:hover { color: #3498DB; }"); self.settings_btn.clicked.connect(self.open_settings); self.tabs.setCornerWidget(self.settings_btn, Qt.Corner.TopRightCorner)
+        self.tab_ingest = IngestTab(self); self.tab_convert = ConvertTab(); self.tab_delivery = DeliveryTab(); self.tabs.addTab(self.tab_ingest, "📥 INGEST"); self.tabs.addTab(self.tab_convert, "🛠️ CONVERT"); self.tabs.addTab(self.tab_delivery, "🚀 DELIVERY"); self.setCentralWidget(self.tabs)
+        self.tab_ingest.transcode_widget.chk_gpu.toggled.connect(self.sync_gpu_toggle); self.tab_convert.settings.chk_gpu.toggled.connect(self.sync_gpu_toggle); self.tab_delivery.settings.chk_gpu.toggled.connect(self.sync_gpu_toggle)
+        saved_gpu = self.settings.value("use_gpu_accel", False, type=bool); self.sync_gpu_toggle(saved_gpu); self.theme_mode = self.settings.value("theme_mode", "light"); self.set_theme(self.theme_mode)
+        self.theme_timer = QTimer(self); self.theme_timer.timeout.connect(self.check_system_theme); self.theme_timer.start(2000)
+    def check_system_theme(self):
+        if self.theme_mode != "system": return
+        system_is_dark = self.is_system_dark(); current_app_is_dark = getattr(self, 'current_applied_is_dark', None)
+        if current_app_is_dark is None or system_is_dark != current_app_is_dark: self.set_theme("system")
+    def is_system_dark(self):
+        if platform.system() == "Linux":
+            try:
+                res = subprocess.run(["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"], capture_output=True, text=True, timeout=0.5, env=EnvUtils.get_clean_env())
+                if "prefer-dark" in res.stdout: return True
+                res2 = subprocess.run(["gsettings", "get", "org.gnome.desktop.interface", "gtk-theme"], capture_output=True, text=True, timeout=0.5, env=EnvUtils.get_clean_env())
+                if "dark" in res2.stdout.lower(): return True
+            except: pass
+        try: return QApplication.palette().color(QPalette.ColorRole.Window).lightness() < 128
+        except: return False
+    def open_settings(self): dlg = SettingsDialog(self); dlg.exec()
+    def update_log_visibility(self): pass
+    def reset_to_defaults(self):
+        reply = QMessageBox.question(self, "Confirm Reset", "Are you sure you want to reset all settings to default? This cannot be undone.", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
+        if reply == QMessageBox.StandardButton.Yes:
+            self.settings.clear(); self.settings.sync(); self.set_theme("light"); self.tab_ingest.chk_date.setChecked(True); self.tab_ingest.chk_dupe.setChecked(True); self.tab_ingest.chk_videos_only.setChecked(False); self.tab_ingest.chk_transcode.setChecked(False); self.tab_ingest.toggle_logs(True, False); self.sync_gpu_toggle(False); QMessageBox.information(self, "Reset", "Settings have been reset to defaults.")
     def sync_gpu_toggle(self, checked):
         for widget in [self.tab_ingest.transcode_widget, self.tab_convert.settings, self.tab_delivery.settings]: widget.set_gpu_checked(checked)
         self.settings.setValue("use_gpu_accel", checked)
-    def toggle_debug(self): global DEBUG_MODE; DEBUG_MODE = self.act_debug.isChecked(); debug_log("Debug logging active.")
-    def show_about(self): QMessageBox.information(self, "About CineBridge Pro", "<h3>CineBridge Pro v4.13.1</h3><p>The Linux DIT & Post-Production Suite.</p><p>Solving the 'Resolve on Linux' problem.</p><p><b>Developed by:</b> Donovan Goodwin</p><p>📧 <a href='mailto:ddg2goodwin@gmail.com'>ddg2goodwin@gmail.com</a></p><p>🌐 <a href='https://github.com/DGxInfinitY'>GitHub: DGxInfinitY</a></p><br><p><i>Created using Gemini AI</i></p>")
-    def is_system_dark(self):
-        try: return QApplication.palette().color(QPalette.ColorRole.Window).lightness() < 128
-        except: return False
+    def toggle_debug(self): global DEBUG_MODE; DEBUG_MODE = not DEBUG_MODE; debug_log("Debug logging active.")
+    def show_about(self): dlg = JobReportDialog("About CineBridge Pro", "<h3>CineBridge Pro v4.12.5</h3><p>The Linux DIT & Post-Production Suite.</p><p>Solving the 'Resolve on Linux' problem.</p><p><b>Developed by:</b> Donovan Goodwin with help from Gemini AI</p><p>📧 <a href='mailto:ddg2goodwin@gmail.com'>ddg2goodwin@gmail.com</a></p><p>🌐 <a href='https://github.com/DGxInfinitY'>GitHub: DGxInfinitY</a></p>", self); dlg.exec()
     def set_theme(self, mode):
-        self.theme_mode = mode; self.settings.setValue("theme_mode", mode); is_dark = (mode == "dark") or (mode == "system" and self.is_system_dark())
+        self.theme_mode = mode; self.settings.setValue("theme_mode", mode); is_dark = False
+        if mode == "dark": is_dark = True
+        elif mode == "system": is_dark = self.is_system_dark()
+        self.current_applied_is_dark = is_dark
         style = """QMainWindow, QWidget { background-color: #F0F2F5; color: #333; font-family: 'Segoe UI'; font-size: 14px; } QGroupBox { background: #FFF; border: 1px solid #CCC; border-radius: 5px; margin-top: 20px; font-weight: bold; } QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; color: #2980B9; } QLineEdit, QComboBox, QTextEdit, QListWidget { background: #FFF; border: 1px solid #CCC; color: #333; } QPushButton { background: #E0E0E0; border: 1px solid #CCC; color: #333; padding: 8px; } QPushButton:hover { background: #D0D0D0; } QPushButton#StartBtn { background: #3498DB; color: white; font-weight: bold; } QPushButton#StopBtn { background: #E74C3C; color: white; font-weight: bold; } QTabWidget::pane { border: 1px solid #CCC; } QTabBar::tab { background: #E0E0E0; color: #555; border: 1px solid #CCC; } QTabBar::tab:selected { background: #FFF; color: #2980B9; border-top: 2px solid #2980B9; } QFrame#ResultCard, QFrame#DashFrame { background-color: #FFF; border-radius: 8px; }"""
         if is_dark: style = """QMainWindow, QWidget { background-color: #2b2b2b; color: #e0e0e0; font-family: 'Segoe UI'; font-size: 14px; } QGroupBox { background: #333; border: 1px solid #444; border-radius: 5px; margin-top: 20px; font-weight: bold; } QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; color: #3498DB; } QLineEdit, QComboBox, QTextEdit, QListWidget { background: #1e1e1e; border: 1px solid #555; color: white; } QPushButton { background: #444; border: 1px solid #555; color: white; padding: 8px; } QPushButton:hover { background: #555; } QPushButton#StartBtn { background: #2980B9; font-weight: bold; } QPushButton#StopBtn { background: #C0392B; font-weight: bold; } QTabWidget::pane { border: 1px solid #444; } QTabBar::tab { background: #222; color: #888; border: 1px solid #444; } QTabBar::tab:selected { background: #333; color: #3498DB; border-top: 2px solid #3498DB; } QFrame#ResultCard, QFrame#DashFrame { background-color: #1e1e1e; border-radius: 8px; }"""
-        self.act_dark.setChecked(True) if is_dark else self.act_light.setChecked(True)
         self.setStyleSheet(style)
         if hasattr(self, 'tab_ingest') and self.tab_ingest.result_card.isVisible():
              if self.tab_ingest.current_detected_path:
