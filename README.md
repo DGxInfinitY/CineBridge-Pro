@@ -31,78 +31,16 @@
 
 ## 📦 Installation
 
-### Prerequisites
-* **Python 3.10+**
-* **FFmpeg** (Must be installed and on your system PATH)
+### 📥 Releases (Pre-Compiled)
+Don't want to mess with Python? Download the standalone executable for your operating system.
 
-### Quick Start (Linux/Ubuntu)
+* **[Download Latest Release (Linux AppImage / Windows .exe)](https://github.com/DGxInfinitY/CineBridge-Pro/releases/latest)**
+* *Note: AppImages on Linux may require you to right-click -> Properties -> Permissions -> "Allow executing file as program".*
 
-1.  **Clone the Repository:**
-    ```bash
-    git clone [https://github.com/DGxInfinitY/CineBridge-Pro.git](https://github.com/DGxInfinitY/CineBridge-Pro.git)
-    cd CineBridge-Pro
-    ```
+### 🛠️ Manual Build (Source Code)
+If you want the absolute latest features or need to modify the code, run it directly from source.
 
-2.  **Install Dependencies:**
-    ```bash
-    pip install PyQt6 psutil xxhash
-    ```
-    * `PyQt6`: The GUI framework.
-    * `psutil`: For system monitoring (CPU load).
-    * `xxhash`: For ultra-fast checksum verification (optional, falls back to MD5 if missing).
-
-3.  **Run the Application:**
-    ```bash
-    python3 src/cinebridge.py
-    ```
-
----
-
-## ⚙️ Configuration
-
-Click the **Gear Icon (⚙)** in the top right to access the Control Panel:
-* **Theme:** Toggle between Light, Dark, or Auto (System Sync).
-* **View Options:** Show/Hide detailed logs for Copying and Transcoding.
-* **FFmpeg Inspector:** Check if your system supports Hardware Acceleration (NVENC/QSV).
-* **Hardware Override:** Manually force GoPro/Android detection if auto-scan misses it.
-
----
-
-## 📝 Change Log
-
-### v4.13.5 (Current Release)
-* **New Feature:** Added Native OS Notifications (Linux/macOS/Windows) and sound alerts when jobs complete.
-* **New Feature:** Added "Verify Copy" toggle using xxHash64 (fast) or MD5 (fallback).
-* **New Feature:** Added Pre-Flight Storage Check. The app now warns you if the destination is full before starting.
-* **Improvement:** MTP "Sniper Mode" significantly speeds up scanning for Android phones and GoPros.
-* **Improvement:** Restored Smart Network Filtering to prevent NAS drives from cluttering the device list.
-* **Bug Fix:** Fixed an issue where the transfer speed indicator would freeze after completion.
-* **Bug Fix:** Settings (Log View) now persist correctly after closing the app.
-* **UI Polish:** Standardized all success/error popups with a modern, theme-aware design.
-
-### v4.12.x Series
-* **Device Intelligence:** Major upgrade to the `DriveDetector` logic to handle USB descriptors and non-standard folder structures.
-* **Hardware Hints:** Uses `lsusb`/`wmic` to identify devices even if their folder structure is empty.
-
-### v4.11.x Series
-* **New UI:** Complete visual overhaul with "Fusion" style.
-* **Dashboard:** Added real-time CPU load monitoring and progress bars.
-* **FFmpeg Status:** Added a diagnostic tool to verify codec support.
-
----
-
-## 🤝 Contributing
-
-Contributions are welcome! Please feel free to submit a Pull Request.
-
-1.  Fork the Project
-2.  Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
-3.  Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
-4.  Push to the Branch (`git push origin feature/AmazingFeature`)
-5.  Open a Pull Request
-
----
-
-## 📄 License
-
-Distributed under the MIT License. See `LICENSE` for more information.
+**1. Clone the Repository:**
+```bash
+git clone [https://github.com/DGxInfinitY/CineBridge-Pro.git](https://github.com/DGxInfinitY/CineBridge-Pro.git)
+cd CineBridge-Pro
