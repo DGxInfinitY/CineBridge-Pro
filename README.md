@@ -36,7 +36,7 @@
 ### 📥 Releases (Pre-Compiled)
 Don't want to touch code? Download the standalone executable for your OS.
 
-* **[Download Latest Release (Linux AppImage / Windows .exe)](https://github.com/DGxInfinitY/CineBridge-Pro/releases/latest)**
+* **[Download Latest Release Here](https://github.com/DGxInfinitY/CineBridge-Pro/releases/latest)**
 
 ### 🛠️ Manual Build (For Developers)
 
