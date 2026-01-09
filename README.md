@@ -1,91 +1,108 @@
-# 🌉 CineBridge Pro
-### The Open Source DIT & Post-Production Suite
+# CineBridge Pro: The Linux DIT Suite
 
-<p align="center">
-  <img src="assets/icon.svg" width="150" height="150" alt="CineBridge Pro Logo">
-</p>
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
+[![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey.svg)]()
 
-<p align="center">
-  <a href="#-download">Download</a> •
-  <a href="#-features">Features</a> •
-  <a href="#-why-cinebridge">Why CineBridge?</a> •
-  <a href="#-build-from-source">Build from Source</a>
-</p>
+**CineBridge Pro** is an open-source Digital Imaging Technician (DIT) tool designed to solve the "Resolve on Linux" problem. It handles secure media offloading, checksum verification, and edit-ready transcoding (DNxHR/ProRes) in a single, streamlined interface.
 
----
+![CineBridge Pro Screenshot](assets/screenshot.png) ---
 
-## 📥 Download
-Pre-compiled binaries are available for **Linux (.deb)** and **Windows (.exe)**.
+## 🚀 Key Features
 
-### [🚀 Click Here to Download Latest Release](https://github.com/DGxInfinitY/cinebridge/releases/latest)
+### 📥 Intelligent Ingest
+* **Auto-Detection:** Instantly recognizes GoPros, DJI Drones, Android Phones (MTP), and Professional Cameras.
+* **"Sniper Mode":** Targeted scanning for massive MTP devices (like Pixel phones) to avoid hanging on thousands of system files.
+* **Checksum Verification:** Bit-for-bit verification using **xxHash64** (fastest) or MD5 (compatibility).
+* **Organization:** Automatically sorts footage by Date and Camera Type into a structured folder hierarchy.
+* **Pre-Flight Storage Check:** Prevents ingest if the destination drive lacks sufficient space.
 
-> **Note:** macOS builds are currently experimental. Please build from source if a release is unavailable.
+### 🛠️ Transcoding Engine
+* **Linux-Friendly Codecs:** Converts H.264/H.265 footage into **DNxHR** or **ProRes** for smooth editing in DaVinci Resolve on Linux (Free Version).
+* **Hardware Acceleration:** Supports NVIDIA (NVENC), Intel (QSV), and VAAPI for blazing fast encoding.
+* **Batch Mode:** Drag-and-drop interface for bulk converting existing footage.
 
----
-
-## 🎬 Why CineBridge?
-CineBridge Pro was born out of frustration with video ingestion on Linux. Managing footage from GoPros, Drones, and Cinema Cameras on Ubuntu often meant dealing with slow transfer speeds, messy file structures, and codecs (like H.265) that stutter or wont even work in DaVinci Resolve on Linux (Free Version).
-
-**CineBridge Pro solves this by automating the entire workflow:**
-1.  **Ingest:** Auto-detects your camera cards and offloads footage into organized, date-stamped folders.
-2.  **Transcode:** Automatically converts difficult codecs into **Edit-Ready DNxHR or ProRes** proxies during the copy process.
-3.  **Deliver:** Provides a simple "Delivery Tab" to render your massive master files into web-optimized H.264/H.265 for YouTube or clients.
-
-It creates a seamless bridge between your camera and your NLE (Non-Linear Editor).
+### 🛡️ Safety & Reliability
+* **Native Notifications:** System alerts (Toast/Notify) and sounds when long jobs finish.
+* **Logging:** Detailed logs for every file copied and every frame transcoded.
+* **Theme Aware:** Automatically syncs with your system's Dark/Light mode preferences.
 
 ---
 
-## ✨ Features
-* **Smart Ingest:** Auto-detects cameras (GoPro, DJI, Insta360) and drives.
-* **Recursive Scanning:** Finds media files deep inside obscure folder structures.
-* **Auto-Organization:** Sorts media by `Date / Camera / FileType` (Video, Photo, Raw).
-* **Hybrid Transcoding:** Uses **NVIDIA (CUDA), Intel (QSV), or AMD (VAAPI)** hardware acceleration to decode footage, ensuring maximum speed.
-* **Edit-Ready Proxies:** Generates professional DNxHR (Linux-friendly) or ProRes (Mac-friendly) intermediate files.
-* **Duplicate Detection:** Skips files that have already been backed up.
-* **Batch Convert:** Drag-and-drop tab for mass transcoding existing footage.
-* **Delivery Tab:** One-click rendering for final delivery (YouTube 4K, 1080p, Socials).
-
----
-
-## 🛠 Build from Source
-
-If you prefer to run the raw Python code or build it yourself, follow these steps.
+## 📦 Installation
 
 ### Prerequisites
 * **Python 3.10+**
-* **FFmpeg** (Must be installed on your system path)
+* **FFmpeg** (Must be installed and on your system PATH)
 
-### 🐧 Linux (Ubuntu/Debian)
-1.  **Install System Dependencies:**
+### Quick Start (Linux/Ubuntu)
+
+1.  **Clone the Repository:**
     ```bash
-    sudo apt update
-    sudo apt install python3-pip ffmpeg
+    git clone [https://github.com/DGxInfinitY/CineBridge-Pro.git](https://github.com/DGxInfinitY/CineBridge-Pro.git)
+    cd CineBridge-Pro
     ```
-2.  **Clone & Install Requirements:**
+
+2.  **Install Dependencies:**
     ```bash
-    git clone [https://github.com/YourUsername/CineBridgePro.git](https://github.com/YourUsername/CineBridgePro.git)
-    cd CineBridgePro
-    pip install -r requirements.txt
+    pip install PyQt6 psutil xxhash
     ```
-3.  **Run:**
+    * `PyQt6`: The GUI framework.
+    * `psutil`: For system monitoring (CPU load).
+    * `xxhash`: For ultra-fast checksum verification (optional, falls back to MD5 if missing).
+
+3.  **Run the Application:**
     ```bash
     python3 src/cinebridge.py
     ```
 
-### 🪟 Windows
-1.  **Install FFmpeg:** Download from [gyan.dev](https://www.gyan.dev/ffmpeg/builds/) and add `ffmpeg.exe` to your System PATH (or place it in a `bin/` folder inside `src/`).
-2.  **Install Python:** Download Python 3.10+ from python.org.
-3.  **Install Dependencies:**
-    Open PowerShell/Command Prompt:
-    ```powershell
-    pip install -r requirements.txt
-    ```
-4.  **Run:**
-    ```powershell
-    python src/cinebridge.py
-    ```
+---
 
-### 🍎 macOS
-1.  **Install FFmpeg:**
-    ```bash
-    brew install ffmpeg
+## ⚙️ Configuration
+
+Click the **Gear Icon (⚙)** in the top right to access the Control Panel:
+* **Theme:** Toggle between Light, Dark, or Auto (System Sync).
+* **View Options:** Show/Hide detailed logs for Copying and Transcoding.
+* **FFmpeg Inspector:** Check if your system supports Hardware Acceleration (NVENC/QSV).
+* **Hardware Override:** Manually force GoPro/Android detection if auto-scan misses it.
+
+---
+
+## 📝 Change Log
+
+### v4.13.5 (Current Release)
+* **New Feature:** Added Native OS Notifications (Linux/macOS/Windows) and sound alerts when jobs complete.
+* **New Feature:** Added "Verify Copy" toggle using xxHash64 (fast) or MD5 (fallback).
+* **New Feature:** Added Pre-Flight Storage Check. The app now warns you if the destination is full before starting.
+* **Improvement:** MTP "Sniper Mode" significantly speeds up scanning for Android phones and GoPros.
+* **Improvement:** Restored Smart Network Filtering to prevent NAS drives from cluttering the device list.
+* **Bug Fix:** Fixed an issue where the transfer speed indicator would freeze after completion.
+* **Bug Fix:** Settings (Log View) now persist correctly after closing the app.
+* **UI Polish:** Standardized all success/error popups with a modern, theme-aware design.
+
+### v4.12.x Series
+* **Device Intelligence:** Major upgrade to the `DriveDetector` logic to handle USB descriptors and non-standard folder structures.
+* **Hardware Hints:** Uses `lsusb`/`wmic` to identify devices even if their folder structure is empty.
+
+### v4.11.x Series
+* **New UI:** Complete visual overhaul with "Fusion" style.
+* **Dashboard:** Added real-time CPU load monitoring and progress bars.
+* **FFmpeg Status:** Added a diagnostic tool to verify codec support.
+
+---
+
+## 🤝 Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
+
+1.  Fork the Project
+2.  Create your Feature Branch (`git checkout -b feature/AmazingFeature`)
+3.  Commit your Changes (`git commit -m 'Add some AmazingFeature'`)
+4.  Push to the Branch (`git push origin feature/AmazingFeature`)
+5.  Open a Pull Request
+
+---
+
+## 📄 License
+
+Distributed under the MIT License. See `LICENSE` for more information.
