@@ -6,8 +6,15 @@ import time
 import platform
 import signal
 import subprocess
+import hashlib
 from datetime import datetime
 from collections import deque
+
+try:
+    import xxhash
+    HAS_XXHASH = True
+except ImportError:
+    HAS_XXHASH = False
 
 # PyQt6 Imports
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout, 
@@ -34,6 +41,10 @@ def debug_log(msg):
     if DEBUG_MODE: 
         print(formatted_msg)
         GUI_LOG_QUEUE.append(formatted_msg)
+
+# =============================================================================
+# BACKEND UTILS
+# =============================================================================
 
 class EnvUtils:
     @staticmethod
@@ -149,17 +160,44 @@ class TranscodeEngine:
         if parts: status_str = " | ".join(parts)
         return progress, status_str
 
+# =============================================================================
+# NOTIFICATION SYSTEM
+# =============================================================================
+class SystemNotifier:
+    @staticmethod
+    def notify(title, message):
+        """Triggers a cross-platform system notification and sound."""
+        QApplication.beep()
+        system = platform.system()
+        try:
+            if system == "Linux":
+                subprocess.Popen(['notify-send', '-a', 'CineBridge Pro', title, message])
+            elif system == "Darwin":
+                script = f'display notification "{message}" with title "{title}"'
+                subprocess.run(["osascript", "-e", script])
+            elif system == "Windows":
+                ps_script = f"""
+                [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null;
+                $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02);
+                $xml = $template.GetXml();
+                $text = $template.GetElementsByTagName("text");
+                $text[0].AppendChild($template.CreateTextNode("{title}")) > $null;
+                $text[1].AppendChild($template.CreateTextNode("{message}")) > $null;
+                $toast = [Windows.UI.Notifications.ToastNotification]::new($template);
+                [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("CineBridge Pro").Show($toast);
+                """
+                subprocess.Popen(["powershell", "-Command", ps_script], creationflags=subprocess.CREATE_NO_WINDOW)
+        except Exception as e:
+            debug_log(f"Notification failed: {e}")
+
 class DriveDetector:
     IGNORED_KEYWORDS = ["boot", "recovery", "snap", "loop", "var", "tmp", "sys"]
 
     @staticmethod
     def is_network_mount(path):
-        # 1. WHITELIST: Always allow MTP (Android) and PTP (Cameras)
         path_lower = path.lower()
         if "mtp" in path_lower or "gphoto" in path_lower or "usb" in path_lower:
             return False 
-            
-        # 2. BLACKLIST: Common network protocols
         network_sigs = ["smb", "sftp", "ftp", "dav", "afp", "nfs", "ssh"]
         for sig in network_sigs:
             if sig in path_lower:
@@ -195,7 +233,6 @@ class DriveDetector:
                     try:
                         with os.scandir(root) as it:
                             for entry in it:
-                                # APPLY NETWORK FILTER HERE
                                 if entry.is_dir() and not any(x in entry.name.lower() for x in DriveDetector.IGNORED_KEYWORDS):
                                     if not DriveDetector.is_network_mount(entry.path):
                                         mounts.append(entry.path)
@@ -234,52 +271,55 @@ class DriveDetector:
         friendly_name = "External Storage"
         content_path = mount_path
         
-        # --- NEW TARGETED SCANNING FOR MTP ---
-        # 1. Android Specific Drill-Down
-        found_dcim = False
         candidates = ["Internal shared storage", "Internal Storage", "sdcard"]
-        
         root_subs = DriveDetector.safe_list_dir(mount_path)
         internal_storage_path = None
-        
         for sub in root_subs:
              base = os.path.basename(sub).lower()
              if any(x.lower() in base.lower() for x in candidates):
                  internal_storage_path = sub
                  break
-        
         search_root = internal_storage_path if internal_storage_path else mount_path
-        dcim_path = os.path.join(search_root, "DCIM")
+
+        dcim_node = None
+        for child in DriveDetector.safe_list_dir(search_root):
+             if os.path.basename(child).lower() == "dcim":
+                 dcim_node = child
+                 break
         
-        if DriveDetector.safe_exists(dcim_path):
-            found_dcim = True
-            # Look for Camera folder
-            camera_path = os.path.join(dcim_path, "Camera")
-            if DriveDetector.safe_exists(camera_path):
-                content_path = camera_path # TARGET ACQUIRED
+        if dcim_node:
+            camera_node = None
+            for item in DriveDetector.safe_list_dir(dcim_node):
+                if os.path.basename(item).lower() == "camera":
+                    camera_node = item
+                    break
+            
+            if camera_node:
+                content_path = camera_node
                 friendly_name = "Android Device"
-                
-                # Apply Hardware Hint
                 for hint in usb_hints:
                     h_low = hint.lower()
                     if any(x in h_low for x in ['pixel', 'google', 'galaxy', 'samsung', 'android']):
-                        friendly_name = hint
-                        break
+                        friendly_name = hint; break
             else:
-                 # Check for Action Cams in DCIM
-                for item in DriveDetector.safe_list_dir(dcim_path):
+                for item in DriveDetector.safe_list_dir(dcim_node):
                     base = os.path.basename(item).upper()
                     if "GOPRO" in base:
                         content_path = item; friendly_name = "GoPro Camera"; break
                     if "DJI" in base or "100MEDIA" in base:
                         content_path = item; friendly_name = "DJI Drone"; break
-                
                 if friendly_name == "External Storage": friendly_name = "Digital Camera"
 
         elif DriveDetector.safe_exists(os.path.join(mount_path, "PRIVATE", "AVCHD")):
              friendly_name = "Pro Camera (Sony/Panasonic)"
              content_path = os.path.join(mount_path, "PRIVATE", "AVCHD")
-        
+             
+        if friendly_name in ["External Storage", "Digital Camera"]:
+             for hint in usb_hints:
+                 if "gopro" in hint.lower() or "hero" in hint.lower():
+                     friendly_name = "GoPro Camera"
+                     if dcim_node: content_path = dcim_node
+                     break
         return friendly_name, content_path
 
 class ScanWorker(QThread):
@@ -290,32 +330,19 @@ class ScanWorker(QThread):
             usb_hints = DriveDetector.get_usb_hardware_hints()
             if DEBUG_MODE: debug_log(f"USB Hints Found: {usb_hints}")
             candidates = sorted(list(set(DriveDetector.get_potential_mounts())))
-            
             for mount in candidates:
                 if mount == "/" or mount == "/home": continue 
-                # Note: Network filtering moved to get_potential_mounts for efficiency
-                
                 has_files = False
                 try: 
                     if len(DriveDetector.safe_list_dir(mount)) > 0: has_files = True
                 except: pass
-                
                 name, true_path = DriveDetector.fingerprint_device(mount, usb_hints)
-                
-                # Verify the targeted path actually has stuff
-                # FALLBACK: If "Sniper" path is empty, revert to mount root so device is still listable
                 if true_path != mount:
                      try: 
-                         if len(DriveDetector.safe_list_dir(true_path)) == 0:
-                             if DEBUG_MODE: debug_log(f"Targeted path {true_path} empty, reverting to {mount}")
-                             true_path = mount # Revert
-                         else:
-                             has_files = True
-                     except: 
-                         true_path = mount
-                
+                         if len(DriveDetector.safe_list_dir(true_path)) > 0: has_files = True
+                         else: true_path = mount 
+                     except: pass
                 results.append({'path': true_path, 'display_name': name, 'root': mount, 'empty': not has_files})
-            
             final = []
             seen = set()
             for r in sorted(results, key=lambda x: len(x['path']), reverse=True):
@@ -345,7 +372,8 @@ class AsyncTranscoder(QThread):
             try:
                 startupinfo = None; 
                 if platform.system() == 'Windows': startupinfo = subprocess.STARTUPINFO(); startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, startupinfo=startupinfo, env=EnvUtils.get_clean_env())
+                # FIX: Use DEVNULL for stdout to prevent buffer deadlocks
+                process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, universal_newlines=True, startupinfo=startupinfo, env=EnvUtils.get_clean_env())
                 while True:
                     if not self.is_running: process.kill(); break
                     line = process.stderr.readline()
@@ -364,9 +392,13 @@ class AsyncTranscoder(QThread):
 
 class CopyWorker(QThread):
     log_signal = pyqtSignal(str); progress_signal = pyqtSignal(int); status_signal = pyqtSignal(str); speed_signal = pyqtSignal(str); file_ready_signal = pyqtSignal(str, str, str); transcode_count_signal = pyqtSignal(int); finished_signal = pyqtSignal(bool, str)
-    def __init__(self, source, dest, project_name, sort_by_date, skip_dupes, videos_only, camera_override):
-        super().__init__(); self.source = source; self.dest = dest; self.project_name = project_name.strip(); self.sort_by_date = sort_by_date; self.skip_dupes = skip_dupes; self.videos_only = videos_only; self.camera_override = camera_override; self.is_running = True
+    # New Signal for Storage Check
+    storage_check_signal = pyqtSignal(int, int, bool) # needed, free, is_enough
+    
+    def __init__(self, source, dest, project_name, sort_by_date, skip_dupes, videos_only, camera_override, verify_copy):
+        super().__init__(); self.source = source; self.dest = dest; self.project_name = project_name.strip(); self.sort_by_date = sort_by_date; self.skip_dupes = skip_dupes; self.videos_only = videos_only; self.camera_override = camera_override; self.verify_copy = verify_copy; self.is_running = True
         self.main_video_exts = {'.MP4', '.MOV', '.MKV', '.INSV', '.360'}
+    
     def get_mmt_category(self, filename):
         ext = os.path.splitext(filename.upper())[1]
         if ext in self.main_video_exts: return "videos"
@@ -374,9 +406,31 @@ class CopyWorker(QThread):
         if ext in ['.DNG', '.GPR']: return "raw"
         if ext in ['.WAV', '.MP3']: return "audios"
         return "misc"
+    
     def get_media_date(self, file_path):
         try: return datetime.fromtimestamp(os.path.getmtime(file_path)).strftime("%Y-%m-%d")
         except: return "Unsorted"
+        
+    def calculate_hash(self, file_path):
+        chunk_size = 1024 * 1024 * 4 
+        try:
+            if HAS_XXHASH: hash_algo = xxhash.xxh64(); algo_name = "xxHash64"
+            else: hash_algo = hashlib.md5(); algo_name = "MD5"
+            with open(file_path, 'rb') as f:
+                while chunk := f.read(chunk_size): hash_algo.update(chunk)
+            return hash_algo.hexdigest(), algo_name
+        except Exception as e: return None, str(e)
+    
+    def get_free_space(self, path):
+        # Handle case where project folder doesn't exist yet by checking parent
+        check_path = path
+        while not os.path.exists(check_path):
+            parent = os.path.dirname(check_path)
+            if parent == check_path: break # hit root
+            check_path = parent
+        try: return shutil.disk_usage(check_path).free
+        except: return 0
+
     def run(self):
         detected_cam = self.camera_override; 
         if detected_cam == "auto": detected_cam = "Generic_Device"
@@ -386,7 +440,6 @@ class CopyWorker(QThread):
         valid_exts = ('.MP4', '.MOV', '.LRV', '.THM', '.JPG', '.JPEG', '.DNG', '.GPR', '.SRT', '.WAV', '.INSV', '.INSP', '.360', '.AAE')
         found_files = []
         
-        # --- FIXED SCAN LOOP FOR FEEDBACK ---
         count_scanned = 0
         for root, dirs, files in os.walk(self.source):
             if not self.is_running: break
@@ -396,7 +449,6 @@ class CopyWorker(QThread):
                     count_scanned += 1
                     if count_scanned % 50 == 0:
                         self.status_signal.emit(f"Analyzing Source... Found {count_scanned} files")
-        # ------------------------------------
 
         priority_videos = [f for f in found_files if os.path.splitext(f)[1].upper() in self.main_video_exts]
         secondary_files = [f for f in found_files if os.path.splitext(f)[1].upper() not in self.main_video_exts]
@@ -408,6 +460,22 @@ class CopyWorker(QThread):
         total_files = len(files_to_process)
         total_bytes = sum(os.path.getsize(f) for f in files_to_process)
         bytes_processed = 0
+        
+        # --- PRE-FLIGHT STORAGE CHECK ---
+        free_bytes = self.get_free_space(final_dest)
+        
+        # Check if we have enough space (adding 50MB buffer)
+        is_enough = free_bytes > (total_bytes + 50*1024*1024)
+        self.storage_check_signal.emit(total_bytes, free_bytes, is_enough)
+        
+        if not is_enough:
+             needed_gb = total_bytes / (1024**3)
+             free_gb = free_bytes / (1024**3)
+             err_msg = f"❌ Insufficient Storage! Needed: {needed_gb:.2f} GB, Available: {free_gb:.2f} GB"
+             self.log_signal.emit(err_msg)
+             self.finished_signal.emit(False, err_msg)
+             return
+        # ------------------------------------
         
         if total_files == 0:
             self.finished_signal.emit(False, "No media found.")
@@ -436,6 +504,7 @@ class CopyWorker(QThread):
             
             self.status_signal.emit(f"Copying {idx + 1}/{total_files}: {filename}")
             try:
+                # COPY PHASE
                 with open(src_path, 'rb') as fsrc:
                     with open(dest_path, 'wb') as fdst:
                         copied_this_file = 0; chunk_size = 1024 * 1024 * 4
@@ -452,7 +521,20 @@ class CopyWorker(QThread):
                                 last_time = current_time; bytes_since_last_time = 0
                             if total_bytes > 0: self.progress_signal.emit(int(((bytes_processed + copied_this_file) / total_bytes) * 100))
                 shutil.copystat(src_path, dest_path)
-                self.log_signal.emit(f"✔️ Copied: {filename}")
+                
+                # VERIFICATION PHASE
+                if self.verify_copy and self.is_running:
+                    self.status_signal.emit(f"Verifying {idx + 1}/{total_files}: {filename}")
+                    src_hash, algo = self.calculate_hash(src_path)
+                    dest_hash, _ = self.calculate_hash(dest_path)
+                    
+                    if src_hash and dest_hash and src_hash == dest_hash:
+                        self.log_signal.emit(f"✅ Verified ({algo}): {filename}")
+                    else:
+                        self.log_signal.emit(f"❌ VERIFICATION FAILED: {filename}")
+                else:
+                    self.log_signal.emit(f"✔️ Copied: {filename}")
+
                 if filename.upper().endswith(('.MP4', '.MOV', '.MKV', '.AVI')):
                     self.file_ready_signal.emit(src_path, dest_path, filename)
             except Exception as e: self.log_signal.emit(f"❌ Error {filename}: {e}")
@@ -485,7 +567,8 @@ class BatchTranscodeWorker(QThread):
             try:
                 startupinfo = None; 
                 if platform.system() == 'Windows': startupinfo = subprocess.STARTUPINFO(); startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                process = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, universal_newlines=True, startupinfo=startupinfo, env=EnvUtils.get_clean_env())
+                # FIX: Use DEVNULL here too
+                process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, universal_newlines=True, startupinfo=startupinfo, env=EnvUtils.get_clean_env())
                 while True:
                     if not self.is_running: process.kill(); break
                     line = process.stderr.readline()
@@ -578,13 +661,21 @@ class TranscodeSettingsWidget(QGroupBox):
 class JobReportDialog(QDialog):
     def __init__(self, title, report_text, parent=None):
         super().__init__(parent); self.setWindowTitle(title); self.setMinimumWidth(500); self.resize(600, 400); layout = QVBoxLayout()
-        self.text_edit = QTextEdit(); self.text_edit.setReadOnly(True); self.text_edit.setHtml(f"<div style='font-family: Consolas; font-size: 14px;'>{report_text}</div>")
+        # Theme-aware styling for report
+        self.text_edit = QTextEdit(); self.text_edit.setReadOnly(True)
+        # Using a div with specific class or inline style that adapts is tricky in simple HTML.
+        # Instead, we set the widget stylesheet to handle background/text color, and use minimal HTML.
+        # We assume the parent app has already set a global stylesheet (QTextEdit will inherit).
+        # We add some padding/margins via HTML container.
+        self.text_edit.setHtml(f"<div style='font-family: Consolas, monospace; font-size: 13px; padding: 10px;'>{report_text}</div>")
         layout.addWidget(self.text_edit); ok_btn = QPushButton("OK"); ok_btn.clicked.connect(self.accept); layout.addWidget(ok_btn); self.setLayout(layout)
 
 class FFmpegInfoDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent); self.setWindowTitle("FFmpeg & Hardware Support"); self.setMinimumWidth(600); self.resize(650, 500); layout = QVBoxLayout()
-        self.text_edit = QTextEdit(); self.text_edit.setReadOnly(True); self.text_edit.setStyleSheet("font-family: Consolas; font-size: 12px; background-color: #f0f0f0; color: #333;")
+        self.text_edit = QTextEdit(); self.text_edit.setReadOnly(True); 
+        # Removed hardcoded background color to respect dark mode
+        self.text_edit.setStyleSheet("font-family: Consolas; font-size: 12px;")
         layout.addWidget(self.text_edit); ok_btn = QPushButton("Close"); ok_btn.clicked.connect(self.accept); layout.addWidget(ok_btn); self.setLayout(layout); self.run_check()
     def run_check(self):
         report = "<h2>FFmpeg Configuration Report</h2><hr>"; ffmpeg_bin = DependencyManager.get_ffmpeg_path()
@@ -643,7 +734,10 @@ class SettingsDialog(QDialog):
         sys_group.setLayout(sys_lay); layout.addWidget(sys_group)
         self.btn_about = QPushButton("About CineBridge Pro"); self.btn_about.clicked.connect(parent.show_about); layout.addWidget(self.btn_about)
         layout.addStretch(); close_btn = QPushButton("Close"); close_btn.clicked.connect(self.accept); layout.addWidget(close_btn); self.setLayout(layout)
-    def apply_view_options(self): self.parent_app.tab_ingest.toggle_logs(self.chk_copy.isChecked(), self.chk_trans.isChecked())
+    def apply_view_options(self): 
+        self.parent_app.tab_ingest.toggle_logs(self.chk_copy.isChecked(), self.chk_trans.isChecked())
+        self.parent_app.settings.setValue("show_copy_log", self.chk_copy.isChecked())
+        self.parent_app.settings.setValue("show_trans_log", self.chk_trans.isChecked())
     def show_ffmpeg_info(self): dlg = FFmpegInfoDialog(self); dlg.exec()
 
 class IngestTab(QWidget):
@@ -676,11 +770,13 @@ class IngestTab(QWidget):
         settings_group = QGroupBox("3. Processing Settings"); settings_layout = QVBoxLayout(); rules_row = QHBoxLayout()
         self.device_combo = QComboBox(); self.device_combo.addItems(["auto", "GoPro", "DJI", "Insta360", "Generic Storage"]); rules_row.addWidget(QLabel("Logic:")); rules_row.addWidget(self.device_combo)
         self.check_date = QCheckBox("Sort Date"); self.check_dupe = QCheckBox("Skip Dupes"); self.check_videos_only = QCheckBox("Video Only"); self.check_transcode = QCheckBox("Enable Transcode"); self.check_transcode.setStyleSheet("color: #E67E22; font-weight: bold;"); self.check_transcode.toggled.connect(self.toggle_transcode_ui)
-        rules_row.addWidget(self.check_date); rules_row.addWidget(self.check_dupe); rules_row.addWidget(self.check_videos_only); rules_row.addWidget(self.check_transcode); settings_layout.addLayout(rules_row)
+        self.check_verify = QCheckBox("Verify Copy"); self.check_verify.setStyleSheet("color: #27AE60; font-weight: bold;"); self.check_verify.setToolTip("Performs hash verification (xxHash/MD5) after copy.")
+        rules_row.addWidget(self.check_date); rules_row.addWidget(self.check_dupe); rules_row.addWidget(self.check_videos_only); rules_row.addWidget(self.check_verify); rules_row.addWidget(self.check_transcode); settings_layout.addLayout(rules_row)
         self.transcode_widget = TranscodeSettingsWidget(mode="general"); self.transcode_widget.setVisible(False); settings_layout.addWidget(self.transcode_widget); settings_group.setLayout(settings_layout); self.layout.addWidget(settings_group)
         dash_frame = QFrame(); dash_frame.setObjectName("DashFrame"); dash_layout = QVBoxLayout(); dash_frame.setLayout(dash_layout)
         top_row = QHBoxLayout(); self.status_label = QLabel("READY TO INGEST"); self.status_label.setObjectName("StatusLabel"); self.speed_label = QLabel(""); self.speed_label.setObjectName("SpeedLabel")
         top_row.addWidget(self.status_label, 1); top_row.addWidget(self.speed_label); dash_layout.addLayout(top_row)
+        self.storage_bar = QProgressBar(); self.storage_bar.setFormat("Destination Storage: %v%"); self.storage_bar.setStyleSheet("QProgressBar::chunk { background-color: #3498DB; }"); self.storage_bar.setVisible(False); dash_layout.addWidget(self.storage_bar)
         self.progress_bar = QProgressBar(); self.progress_bar.setTextVisible(True); dash_layout.addWidget(self.progress_bar)
         self.transcode_status_label = QLabel(""); self.transcode_status_label.setStyleSheet("color: #E67E22; font-weight: bold;"); self.transcode_status_label.setVisible(False); dash_layout.addWidget(self.transcode_status_label)
         self.load_label = QLabel("🔥 CPU Load: 0%"); self.load_label.setAlignment(Qt.AlignmentFlag.AlignCenter); self.load_label.setStyleSheet("color: #E74C3C; font-weight: bold; font-size: 11px;"); self.load_label.setVisible(False); dash_layout.addWidget(self.load_label); self.layout.addWidget(dash_frame)
@@ -729,14 +825,24 @@ class IngestTab(QWidget):
         if DEBUG_MODE and GUI_LOG_QUEUE:
             for msg in GUI_LOG_QUEUE: self.append_copy_log(msg)
             GUI_LOG_QUEUE.clear()
+        self.storage_bar.setVisible(False) # Reset storage bar visibility
         tc_enabled = self.check_transcode.isChecked(); tc_settings = self.transcode_widget.get_settings(); use_gpu = self.transcode_widget.is_gpu_enabled()
         if tc_enabled:
             self.transcode_worker = AsyncTranscoder(tc_settings, use_gpu); self.transcode_worker.log_signal.connect(self.append_transcode_log); self.transcode_worker.status_signal.connect(self.transcode_status_label.setText); self.transcode_worker.metrics_signal.connect(self.transcode_status_label.setText); self.transcode_worker.all_finished_signal.connect(self.on_all_transcodes_finished); self.transcode_worker.start(); self.set_transcode_active(True)
         else: self.transcode_status_label.setVisible(False)
-        self.copy_worker = CopyWorker(src, dest, self.project_name_input.text(), self.check_date.isChecked(), self.check_dupe.isChecked(), self.check_videos_only.isChecked(), self.device_combo.currentText())
+        self.copy_worker = CopyWorker(src, dest, self.project_name_input.text(), self.check_date.isChecked(), self.check_dupe.isChecked(), self.check_videos_only.isChecked(), self.device_combo.currentText(), self.check_verify.isChecked())
         self.copy_worker.log_signal.connect(self.append_copy_log); self.copy_worker.progress_signal.connect(self.progress_bar.setValue); self.copy_worker.status_signal.connect(self.status_label.setText); self.copy_worker.speed_signal.connect(self.speed_label.setText); self.copy_worker.finished_signal.connect(self.on_copy_finished)
+        self.copy_worker.storage_check_signal.connect(self.update_storage_display_bar)
         if tc_enabled: self.copy_worker.transcode_count_signal.connect(self.transcode_worker.set_total_jobs); self.copy_worker.file_ready_signal.connect(self.queue_for_transcode)
         self.copy_worker.start()
+    def update_storage_display_bar(self, needed, free, is_enough):
+        self.storage_bar.setVisible(True); needed_gb = needed / (1024**3); free_gb = free / (1024**3)
+        if is_enough:
+            percent_usage = int((needed / free) * 100) if free > 0 else 100
+            self.storage_bar.setValue(percent_usage); self.storage_bar.setFormat(f"Storage: Will use {needed_gb:.2f} GB of {free_gb:.2f} GB Free"); self.storage_bar.setStyleSheet("QProgressBar::chunk { background-color: #27AE60; }")
+        else:
+            self.storage_bar.setValue(100); self.storage_bar.setFormat(f"⚠️ INSUFFICIENT SPACE! Need {needed_gb:.2f} GB, Have {free_gb:.2f} GB"); self.storage_bar.setStyleSheet("QProgressBar::chunk { background-color: #C0392B; }")
+        if not is_enough: SystemNotifier.notify("Ingest Failed", "Insufficient storage space on destination drive.")
     def queue_for_transcode(self, src_path, dest_path, filename):
         if self.transcode_worker:
             base_dir = os.path.dirname(dest_path); tc_dir = os.path.join(base_dir, "Edit_Ready"); os.makedirs(tc_dir, exist_ok=True); name_only = os.path.splitext(filename)[0]; transcode_dest = os.path.join(tc_dir, f"{name_only}_EDIT.mov"); self.transcode_worker.add_job(dest_path, transcode_dest, filename)
@@ -745,18 +851,26 @@ class IngestTab(QWidget):
         if self.transcode_worker: self.transcode_worker.stop(); self.transcode_worker.wait()
         self.status_label.setText("CANCELLED"); self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False); self.set_transcode_active(False)
     def on_copy_finished(self, success, msg):
+        self.speed_label.setText(""); 
+        if success: SystemNotifier.notify("Ingest Complete", "All files copied successfully.")
+        else: SystemNotifier.notify("Ingest Failed", "Operation failed or cancelled.")
         if not self.check_transcode.isChecked():
             self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False); self.status_label.setText(msg); 
-            if success: QMessageBox.information(self, "Done", msg)
+            if success: dlg = JobReportDialog("Ingest Complete", f"<h3>Ingest Successful</h3><p>{msg}</p>", self); dlg.exec()
+            elif "Insufficient Storage" in msg: QMessageBox.critical(self, "Error", msg)
         else:
             self.status_label.setText("Copy Complete. Waiting for Transcodes..."); 
-            if self.transcode_worker: self.transcode_worker.set_producer_finished()
+            if self.transcode_worker: 
+                self.transcode_worker.set_producer_finished()
+                if not self.transcode_worker.queue and self.transcode_worker.is_idle: self.transcode_worker.all_finished_signal.emit()
     def on_all_transcodes_finished(self):
-        self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False); self.set_transcode_active(False); self.transcode_status_label.setText("All Transcodes Complete!"); dlg = JobReportDialog("Job Complete", "All ingest and transcode operations finished successfully.", self); dlg.exec()
+        SystemNotifier.notify("Job Complete", "Ingest and Transcoding finished."); self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False); self.set_transcode_active(False); self.transcode_status_label.setText("All Transcodes Complete!"); dlg = JobReportDialog("Job Complete", "<h3>Job Complete</h3><p>All ingest and transcode operations finished successfully.</p>", self); dlg.exec()
     def save_tab_settings(self):
-        s = self.app.settings; s.setValue("last_source", self.source_input.text()); s.setValue("last_dest", self.dest_input.text()); s.setValue("sort_date", self.check_date.isChecked()); s.setValue("skip_dupe", self.check_dupe.isChecked()); s.setValue("videos_only", self.check_videos_only.isChecked()); s.setValue("transcode_dnx", self.check_transcode.isChecked())
+        s = self.app.settings; s.setValue("last_source", self.source_input.text()); s.setValue("last_dest", self.dest_input.text()); s.setValue("sort_date", self.check_date.isChecked()); s.setValue("skip_dupe", self.check_dupe.isChecked()); s.setValue("videos_only", self.check_videos_only.isChecked()); s.setValue("transcode_dnx", self.check_transcode.isChecked()); s.setValue("verify_copy", self.check_verify.isChecked())
+        s.setValue("show_copy_log", self.copy_log.isVisible()); s.setValue("show_trans_log", self.transcode_log.isVisible())
     def load_tab_settings(self):
-        s = self.app.settings; self.source_input.setText(s.value("last_source", "")); self.dest_input.setText(s.value("last_dest", "")); self.check_date.setChecked(s.value("sort_date", True, type=bool)); self.check_dupe.setChecked(s.value("skip_dupe", True, type=bool)); self.check_videos_only.setChecked(s.value("videos_only", False, type=bool)); self.check_transcode.setChecked(s.value("transcode_dnx", False, type=bool)); self.toggle_transcode_ui(self.check_transcode.isChecked())
+        s = self.app.settings; self.source_input.setText(s.value("last_source", "")); self.dest_input.setText(s.value("last_dest", "")); self.check_date.setChecked(s.value("sort_date", True, type=bool)); self.check_dupe.setChecked(s.value("skip_dupe", True, type=bool)); self.check_videos_only.setChecked(s.value("videos_only", False, type=bool)); self.check_transcode.setChecked(s.value("transcode_dnx", False, type=bool)); self.check_verify.setChecked(s.value("verify_copy", False, type=bool))
+        show_copy = s.value("show_copy_log", True, type=bool); show_trans = s.value("show_trans_log", False, type=bool); self.toggle_logs(show_copy, show_trans); self.toggle_transcode_ui(self.check_transcode.isChecked())
 
 class ConvertTab(QWidget):
     def __init__(self):
@@ -791,7 +905,8 @@ class ConvertTab(QWidget):
     def stop(self):
         if self.worker: self.worker.stop(); self.status.setText("Stopping...")
     def on_finished(self):
-        self.toggle_ui_state(False); self.status.setText("Batch Complete!"); dest = self.out_input.text(); msg = f"Files saved to:\n{dest}" if dest else "Files saved to 'Converted' folder next to the source file(s)."; QMessageBox.information(self, "Batch Complete", msg)
+        SystemNotifier.notify("Batch Complete", "Transcoding batch finished.")
+        self.toggle_ui_state(False); self.status.setText("Batch Complete!"); dest = self.out_input.text(); msg = f"Files saved to:\n{dest}" if dest else "Files saved to 'Converted' folder next to the source file(s)."; dlg = JobReportDialog("Batch Complete", f"<h3>Batch Successful</h3><p>{msg}</p>", self); dlg.exec()
 
 class DeliveryTab(QWidget):
     def __init__(self):
@@ -831,7 +946,8 @@ class DeliveryTab(QWidget):
     def stop(self):
         if self.worker: self.worker.stop(); self.status.setText("Stopping...")
     def on_finished(self):
-        self.toggle_ui_state(False); self.status.setText("Delivery Render Complete!"); dest = self.inp_dest.text(); msg = f"File saved to:\n{dest}" if dest else "File saved to 'Final_Render' folder next to the master file."; QMessageBox.information(self, "Render Complete", msg)
+        SystemNotifier.notify("Render Complete", "Delivery render finished.")
+        self.toggle_ui_state(False); self.status.setText("Delivery Render Complete!"); dest = self.inp_dest.text(); msg = f"File saved to:\n{dest}" if dest else "File saved to 'Final_Render' folder next to the master file."; dlg = JobReportDialog("Render Complete", f"<h3>Render Successful</h3><p>{msg}</p>", self); dlg.exec()
 
 class CineBridgeApp(QMainWindow):
     def __init__(self):
@@ -847,6 +963,17 @@ class CineBridgeApp(QMainWindow):
         self.tab_ingest.transcode_widget.chk_gpu.toggled.connect(self.sync_gpu_toggle); self.tab_convert.settings.chk_gpu.toggled.connect(self.sync_gpu_toggle); self.tab_delivery.settings.chk_gpu.toggled.connect(self.sync_gpu_toggle)
         saved_gpu = self.settings.value("use_gpu_accel", False, type=bool); self.sync_gpu_toggle(saved_gpu); self.theme_mode = self.settings.value("theme_mode", "light"); self.set_theme(self.theme_mode)
         self.theme_timer = QTimer(self); self.theme_timer.timeout.connect(self.check_system_theme); self.theme_timer.start(2000)
+    
+    # --- NEW CLOSE EVENT HANDLER ---
+    def closeEvent(self, event):
+        """Forces a save of all critical settings before the app dies."""
+        self.tab_ingest.save_tab_settings()
+        self.settings.setValue("show_copy_log", self.tab_ingest.copy_log.isVisible())
+        self.settings.setValue("show_trans_log", self.tab_ingest.transcode_log.isVisible())
+        self.settings.sync() 
+        event.accept()
+    # --------------------------------
+
     def check_system_theme(self):
         if self.theme_mode != "system": return
         system_is_dark = self.is_system_dark(); current_app_is_dark = getattr(self, 'current_applied_is_dark', None)
@@ -871,7 +998,7 @@ class CineBridgeApp(QMainWindow):
         for widget in [self.tab_ingest.transcode_widget, self.tab_convert.settings, self.tab_delivery.settings]: widget.set_gpu_checked(checked)
         self.settings.setValue("use_gpu_accel", checked)
     def toggle_debug(self): global DEBUG_MODE; DEBUG_MODE = not DEBUG_MODE; debug_log("Debug logging active.")
-    def show_about(self): dlg = JobReportDialog("About CineBridge Pro", "<h3>CineBridge Pro v4.12.5</h3><p>The Linux DIT & Post-Production Suite.</p><p>Solving the 'Resolve on Linux' problem.</p><p><b>Developed by:</b> Donovan Goodwin with help from Gemini AI</p><p>📧 <a href='mailto:ddg2goodwin@gmail.com'>ddg2goodwin@gmail.com</a></p><p>🌐 <a href='https://github.com/DGxInfinitY'>GitHub: DGxInfinitY</a></p>", self); dlg.exec()
+    def show_about(self): dlg = JobReportDialog("About CineBridge Pro", "<h3>CineBridge Pro v4.13.5</h3><p>The Linux DIT & Post-Production Suite.</p><p>Solving the 'Resolve on Linux' problem.</p><p><b>Developed by:</b> Donovan Goodwin with help from Gemini AI</p><p>📧 <a href='mailto:ddg2goodwin@gmail.com'>ddg2goodwin@gmail.com</a></p><p>🌐 <a href='https://github.com/DGxInfinitY'>GitHub: DGxInfinitY</a></p>", self); dlg.exec()
     def set_theme(self, mode):
         self.theme_mode = mode; self.settings.setValue("theme_mode", mode); is_dark = False
         if mode == "dark": is_dark = True
