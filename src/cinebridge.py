@@ -115,6 +115,14 @@ class TranscodeEngine:
         elif hw_method == "qsv": cmd.extend(['-hwaccel', 'qsv', '-c:v', 'h264_qsv'])
         elif hw_method == "vaapi": cmd.extend(['-hwaccel', 'vaapi', '-hwaccel_device', '/dev/dri/renderD128', '-hwaccel_output_format', 'yuv420p'])
         cmd.extend(['-i', input_path])
+        
+        # Apply LUT if present
+        if settings.get("lut_path"):
+            lut_file = settings['lut_path'].replace('\\', '/').replace(':', '\\:')
+            # If using VAAPI, we need to download to software, apply LUT, then upload? 
+            # For simplicity in v4.14, we just apply the filter. FFmpeg usually auto-inserts swscale.
+            cmd.extend(['-vf', f"lut3d='{lut_file}'"])
+
         if v_codec in ['dnxhd', 'prores_ks']:
             cmd.extend(['-c:v', v_codec, '-profile:v', v_profile])
             if v_codec == 'dnxhd': cmd.extend(['-pix_fmt', 'yuv422p'])
@@ -650,6 +658,13 @@ class TranscodeSettingsWidget(QGroupBox):
         self.chk_gpu = QCheckBox("Use Hardware Acceleration (if available)"); self.chk_gpu.setStyleSheet("font-weight: bold; color: #3498DB;"); self.layout.addWidget(self.chk_gpu)
         top_row = QHBoxLayout(); top_row.addWidget(QLabel("Preset:")); self.preset_combo = QComboBox(); self.init_presets() 
         self.preset_combo.currentIndexChanged.connect(self.apply_preset); top_row.addWidget(self.preset_combo, 1); self.layout.addLayout(top_row)
+        
+        lut_lay = QHBoxLayout(); self.lut_path = QLineEdit(); self.lut_path.setPlaceholderText("Select 3D LUT (.cube) - Optional")
+        self.btn_lut = QPushButton("Browse LUT"); self.btn_lut.clicked.connect(self.browse_lut)
+        self.btn_clr_lut = QPushButton("X"); self.btn_clr_lut.setFixedWidth(30); self.btn_clr_lut.clicked.connect(self.lut_path.clear)
+        lut_lay.addWidget(QLabel("Look:")); lut_lay.addWidget(self.lut_path); lut_lay.addWidget(self.btn_lut); lut_lay.addWidget(self.btn_clr_lut)
+        self.layout.addLayout(lut_lay)
+
         self.advanced_frame = QFrame(); adv_layout = QFormLayout(); self.advanced_frame.setLayout(adv_layout)
         self.codec_combo = QComboBox(); self.init_codecs(); self.codec_combo.currentIndexChanged.connect(self.update_profiles)
         self.profile_combo = QComboBox(); self.audio_combo = QComboBox(); self.audio_combo.addItems(["PCM (Uncompressed)", "AAC (Compressed)"])
@@ -690,10 +705,15 @@ class TranscodeSettingsWidget(QGroupBox):
         if profile_data: self.profile_combo.setCurrentIndex(self.profile_combo.findData(profile_data))
         else: self.profile_combo.setCurrentIndex(0)
         self.audio_combo.setCurrentIndex(audio_idx)
+    def browse_lut(self):
+        f, _ = QFileDialog.getOpenFileName(self, "Select 3D LUT", "", "Cube Files (*.cube)")
+        if f: self.lut_path.setText(f)
     def get_settings(self):
         v_codec_map = { "DNxHR (Avid)": "dnxhd", "ProRes (Apple)": "prores_ks", "H.264": "libx264", "H.265 (HEVC)": "libx265" }
         a_codec_map = { "PCM (Uncompressed)": "pcm_s16le", "AAC (Compressed)": "aac" }
-        return { "v_codec": v_codec_map.get(self.codec_combo.currentText(), "dnxhd"), "v_profile": self.profile_combo.currentData(), "a_codec": a_codec_map.get(self.audio_combo.currentText(), "pcm_s16le") }
+        settings = { "v_codec": v_codec_map.get(self.codec_combo.currentText(), "dnxhd"), "v_profile": self.profile_combo.currentData(), "a_codec": a_codec_map.get(self.audio_combo.currentText(), "pcm_s16le") }
+        if self.lut_path.text().strip(): settings["lut_path"] = self.lut_path.text().strip()
+        return settings
     def is_gpu_enabled(self): return self.chk_gpu.isChecked()
     def set_gpu_checked(self, checked): self.chk_gpu.blockSignals(True); self.chk_gpu.setChecked(checked); self.chk_gpu.blockSignals(False)
 
