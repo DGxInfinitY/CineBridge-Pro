@@ -956,7 +956,10 @@ class AboutDialog(QDialog):
         logo_label = QLabel(); logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         if hasattr(sys, '_MEIPASS'): base_dir = sys._MEIPASS
         else: base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        logo_path = os.path.join(base_dir, "assets", "icon.png")
+        logo_path = os.path.join(base_dir, "assets", "icon.svg")
+        if not os.path.exists(logo_path):
+            logo_path = os.path.join(base_dir, "assets", "icon.png")
+        
         if os.path.exists(logo_path):
             pixmap = QPixmap(logo_path); logo_label.setPixmap(pixmap.scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         layout.addWidget(logo_label)
