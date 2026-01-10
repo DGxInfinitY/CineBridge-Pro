@@ -62,14 +62,25 @@ class EnvUtils:
 class DependencyManager:
     @staticmethod
     def get_ffmpeg_path():
+        # 1. Check Custom User Path
+        settings = QSettings("CineBridgePro", "Config")
+        custom_path = settings.value("ffmpeg_custom_path", "")
+        if custom_path and os.path.exists(custom_path):
+            return custom_path
+
+        # 2. Check Bundled (PyInstaller)
         if hasattr(sys, '_MEIPASS'):
             bundle_path = os.path.join(sys._MEIPASS, "ffmpeg")
             if platform.system() == "Windows": bundle_path += ".exe"
             if os.path.exists(bundle_path): return bundle_path
+        
+        # 3. Check Local Bin Folder
         script_dir = os.path.dirname(os.path.abspath(__file__))
         local_bin = os.path.join(script_dir, "bin", "ffmpeg")
         if platform.system() == "Windows": local_bin += ".exe"
         if os.path.exists(local_bin): return local_bin
+        
+        # 4. Check System PATH
         system_bin = shutil.which("ffmpeg")
         if system_bin: return system_bin
         return None
@@ -761,47 +772,75 @@ class JobReportDialog(QDialog):
         self.text_edit.setHtml(f"<div style='font-family: Consolas, monospace; font-size: 13px; padding: 10px;'>{report_text}</div>")
         layout.addWidget(self.text_edit); ok_btn = QPushButton("OK"); ok_btn.clicked.connect(self.accept); layout.addWidget(ok_btn); self.setLayout(layout)
 
-class FFmpegInfoDialog(QDialog):
+class FFmpegConfigDialog(QDialog):
     def __init__(self, parent=None):
-        super().__init__(parent); self.setWindowTitle("FFmpeg & Hardware Support"); self.setMinimumWidth(600); self.resize(650, 500); layout = QVBoxLayout()
-        self.text_edit = QTextEdit(); self.text_edit.setReadOnly(True); 
-        # Removed hardcoded background color to respect dark mode
-        self.text_edit.setStyleSheet("font-family: Consolas; font-size: 12px;")
-        layout.addWidget(self.text_edit); ok_btn = QPushButton("Close"); ok_btn.clicked.connect(self.accept); layout.addWidget(ok_btn); self.setLayout(layout); self.run_check()
-    def run_check(self):
-        report = "<h2>FFmpeg Configuration Report</h2><hr>"; ffmpeg_bin = DependencyManager.get_ffmpeg_path()
-        if not ffmpeg_bin: self.text_edit.setHtml("<h3 style='color:red'>Critical Error: FFmpeg binary not found!</h3>"); return
-        report += f"<p><b>Binary Path:</b> {ffmpeg_bin}</p>"
-        is_bundled = "_MEIPASS" in ffmpeg_bin or "bin" in os.path.dirname(ffmpeg_bin)
-        source_type = "Bundled (App Local)" if is_bundled else "System (Global Path)"
-        report += f"<p><b>Source Type:</b> <span style='color:blue'>{source_type}</span></p>"
+        super().__init__(parent); self.setWindowTitle("FFmpeg Configuration"); self.resize(600, 500)
+        self.settings = QSettings("CineBridgePro", "Config")
+        layout = QVBoxLayout(); layout.setSpacing(15); self.setLayout(layout)
+        
+        path_group = QGroupBox("FFmpeg Binary Location"); path_lay = QVBoxLayout()
+        row = QHBoxLayout()
+        self.path_input = QLineEdit(); self.path_input.setReadOnly(True)
+        self.btn_browse = QPushButton("Browse..."); self.btn_browse.clicked.connect(self.browse_ffmpeg)
+        self.btn_reset = QPushButton("Reset Default"); self.btn_reset.clicked.connect(self.reset_ffmpeg)
+        row.addWidget(self.path_input); row.addWidget(self.btn_browse); row.addWidget(self.btn_reset)
+        path_lay.addLayout(row)
+        path_lay.addWidget(QLabel("<small>Select a custom FFmpeg binary (e.g. custom build with NVENC enabled).</small>"))
+        path_group.setLayout(path_lay); layout.addWidget(path_group)
+        
+        cap_group = QGroupBox("Detected Capabilities"); cap_lay = QVBoxLayout()
+        self.report_area = QTextEdit(); self.report_area.setReadOnly(True)
+        self.report_area.setStyleSheet("font-family: Consolas; font-size: 12px;")
+        cap_lay.addWidget(self.report_area); cap_group.setLayout(cap_lay)
+        layout.addWidget(cap_group)
+        
+        btn_row = QHBoxLayout(); btn_row.addStretch()
+        close_btn = QPushButton("Close"); close_btn.clicked.connect(self.accept)
+        btn_row.addWidget(close_btn); layout.addLayout(btn_row)
+        self.refresh_status()
+
+    def browse_ffmpeg(self):
+        f, _ = QFileDialog.getOpenFileName(self, "Select FFmpeg Executable")
+        if f and os.path.exists(f):
+            self.settings.setValue("ffmpeg_custom_path", f); self.refresh_status()
+
+    def reset_ffmpeg(self):
+        self.settings.remove("ffmpeg_custom_path"); self.refresh_status()
+
+    def refresh_status(self):
+        path = DependencyManager.get_ffmpeg_path()
+        self.path_input.setText(path if path else "Not Found")
+        if not path or not os.path.exists(path):
+            self.report_area.setHtml("<h3 style='color:red'>FFmpeg binary not found!</h3>"); return
+
+        report = f"<b>Active Binary:</b> {path}<br>"
+        if "ffmpeg_custom_path" in self.settings.allKeys(): report += "<b style='color: #3498DB'>[CUSTOM OVERRIDE ACTIVE]</b><br>"
+        else: report += "<span style='color: green'>[Using System/Default]</span><br>"
+        report += "<hr>"
+        
         try:
-            res = subprocess.run([ffmpeg_bin, '-version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=EnvUtils.get_clean_env())
-            version_line = res.stdout.splitlines()[0] if res.stdout else "Unknown"; report += f"<p><b>Version:</b> {version_line}</p>"
-        except Exception as e: report += f"<p style='color:red'>Error getting version: {e}</p>"
-        report += "<hr><h3>Hardware Acceleration (APIs)</h3>"
+            res = subprocess.run([path, '-version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=EnvUtils.get_clean_env())
+            ver = res.stdout.splitlines()[0] if res.stdout else "Unknown"; report += f"<b>Version:</b> {ver}<br>"
+        except: report += "<b>Version:</b> Error checking version<br>"
+
+        report += "<br><b>Hardware Acceleration:</b><br>"
         try:
-            res = subprocess.run([ffmpeg_bin, '-hwaccels'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=EnvUtils.get_clean_env())
+            res = subprocess.run([path, '-hwaccels'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=EnvUtils.get_clean_env())
             accels = [x.strip() for x in res.stdout.splitlines()[1:] if x.strip()] if res.stdout else []
-            if accels:
-                report += "<ul>"; [report.__iadd__(f"<li>{acc}</li>") for acc in accels]; report += "</ul>"
-            else: report += "<p>No hardware acceleration methods detected.</p>"
-        except: report += "<p>Failed to check hwaccels.</p>"
-        report += "<hr><h3>Hardware Encoders (Codecs)</h3>"
-        target_encoders = {"h264_nvenc": "NVIDIA (NVENC)", "hevc_nvenc": "NVIDIA (NVENC HEVC)", "h264_qsv": "Intel QuickSync (QSV)", "h264_vaapi": "Linux VAAPI (AMD/Intel)", "h264_videotoolbox": "MacOS VideoToolbox"}
+            if accels: report += f"APIs: {', '.join(accels)}<br>"
+        except: pass
+        
+        target_encoders = ["h264_nvenc", "hevc_nvenc", "h264_qsv", "h264_vaapi", "h264_videotoolbox"]
+        found_encs = []
         try:
-            res = subprocess.run([ffmpeg_bin, '-encoders'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=EnvUtils.get_clean_env())
-            output = res.stdout; report += "<ul>"
-            for enc, name in target_encoders.items():
-                if enc in output: report += f"<li><b style='color:green'>[AVAILABLE]</b> {enc} ({name})</li>"
-                else: report += f"<li><span style='color:gray'>[MISSING] {enc} ({name})</span></li>"
-            report += "</ul>"
-        except: report += "<p>Failed to check encoders.</p>"
-        report += "<hr><h3>CineBridge Active Strategy</h3>"
-        active_prof = DependencyManager.detect_hw_accel()
-        if active_prof: msg = f"CineBridge is currently configured to use: <b style='color:#E67E22; font-size:14px'>{active_prof.upper()}</b>"
-        else: msg = "CineBridge will use: <b>Software Encoding (CPU)</b>"
-        report += f"<p>{msg}</p>"; self.text_edit.setHtml(report)
+            res = subprocess.run([path, '-encoders'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=EnvUtils.get_clean_env())
+            for enc in target_encoders:
+                if enc in res.stdout: found_encs.append(enc)
+        except: pass
+        
+        if found_encs: report += f"Encoders: <span style='color:green'>{' '.join(found_encs)}</span>"
+        else: report += "Encoders: <span style='color:orange'>No Hardware Encoders Found</span>"
+        self.report_area.setHtml(report)
 
 class MediaInfoDialog(QDialog):
     def __init__(self, media_info, parent=None):
@@ -865,7 +904,7 @@ class SettingsDialog(QDialog):
         self.parent_app.tab_ingest.toggle_logs(self.chk_copy.isChecked(), self.chk_trans.isChecked())
         self.parent_app.settings.setValue("show_copy_log", self.chk_copy.isChecked())
         self.parent_app.settings.setValue("show_trans_log", self.chk_trans.isChecked())
-    def show_ffmpeg_info(self): dlg = FFmpegInfoDialog(self); dlg.exec()
+    def show_ffmpeg_info(self): dlg = FFmpegConfigDialog(self); dlg.exec()
 
 class IngestTab(QWidget):
     def __init__(self, parent_app):
