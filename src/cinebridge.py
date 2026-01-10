@@ -26,7 +26,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QListWidget, QAbstractItemView, QToolButton, QRadioButton, QButtonGroup,
                              QTableWidget, QTableWidgetItem, QHeaderView, QMenu)
 from PyQt6.QtGui import QAction, QPalette, QColor, QIcon, QFont, QDragEnterEvent, QDropEvent, QPixmap
-from PyQt6.QtCore import QThread, pyqtSignal, Qt, QSettings, QTimer, QMimeData, QObject
+from PyQt6.QtCore import QThread, pyqtSignal, Qt, QSettings, QTimer, QMimeData, QObject, QSize
 
 try:
     import psutil
@@ -404,6 +404,26 @@ class ScanWorker(QThread):
         except Exception as e:
             debug_log(f"Scan Error: {e}")
             self.finished_signal.emit([])
+
+class ThumbnailWorker(QThread):
+    thumb_ready = pyqtSignal(str, QPixmap)
+    def __init__(self, file_queue): super().__init__(); self.queue = file_queue; self.is_running = True
+    def run(self):
+        ffmpeg = DependencyManager.get_ffmpeg_path()
+        if not ffmpeg: return
+        for path in self.queue:
+            if not self.is_running: break
+            try:
+                # Seek 0.5s to avoid black frame at start
+                cmd = [ffmpeg, '-y', '-ss', '00:00:00.5', '-i', path, '-vframes', '1', '-vf', 'scale=160:-1', '-f', 'image2pipe', '-']
+                startupinfo = None
+                if platform.system() == 'Windows': startupinfo = subprocess.STARTUPINFO(); startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, startupinfo=startupinfo, env=EnvUtils.get_clean_env())
+                if res.stdout:
+                    pix = QPixmap(); pix.loadFromData(res.stdout)
+                    if not pix.isNull(): self.thumb_ready.emit(path, pix)
+            except: pass
+    def stop(self): self.is_running = False
 
 class AsyncTranscoder(QThread):
     log_signal = pyqtSignal(str); status_signal = pyqtSignal(str); metrics_signal = pyqtSignal(str); progress_signal = pyqtSignal(int); all_finished_signal = pyqtSignal()
@@ -987,15 +1007,21 @@ class ConvertTab(QWidget):
         out_group = QGroupBox("Output Location (Optional)"); out_lay = QHBoxLayout(); self.out_input = QLineEdit(); self.out_input.setPlaceholderText("Default: Creates 'Converted' folder next to source files"); self.btn_browse_out = QPushButton("Browse..."); self.btn_browse_out.clicked.connect(self.browse_dest); self.btn_clear_out = QPushButton("Reset"); self.btn_clear_out.clicked.connect(self.out_input.clear); out_lay.addWidget(self.out_input); out_lay.addWidget(self.btn_browse_out); out_lay.addWidget(self.btn_clear_out); out_group.setLayout(out_lay); layout.addWidget(out_group)
         input_group = QGroupBox("Input Files"); input_lay = QVBoxLayout(); self.btn_browse = QPushButton("Select Video Files..."); self.btn_browse.clicked.connect(self.browse_files); input_lay.addWidget(self.btn_browse); self.drop_area = QLabel("\n⬇️\n\nDRAG & DROP VIDEO FILES HERE\n\n"); self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter); self.drop_area.setStyleSheet("""QLabel { border: 3px dashed #666; border-radius: 10px; background-color: #2b2b2b; color: #aaa; font-weight: bold; } QLabel:hover { border-color: #3498DB; background-color: #333; color: white; }"""); input_lay.addWidget(self.drop_area, 1); input_group.setLayout(input_lay); layout.addWidget(input_group, 1)
         queue_group = QGroupBox("Job Queue"); queue_lay = QVBoxLayout(); self.list = QListWidget(); self.list.setMaximumHeight(80); self.list.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly); queue_lay.addWidget(self.list); dash_row = QHBoxLayout(); self.status_label = QLabel("Waiting..."); self.status_label.setStyleSheet("color: #888;"); self.load_label = QLabel(""); self.load_label.setStyleSheet("color: #E74C3C; font-weight: bold;"); self.load_label.setVisible(False); dash_row.addWidget(self.status_label); dash_row.addStretch(); dash_row.addWidget(self.load_label); queue_lay.addLayout(dash_row); self.pbar = QProgressBar(); self.pbar.setTextVisible(True); queue_lay.addWidget(self.pbar); h = QHBoxLayout(); b_clr = QPushButton("Clear Queue"); b_clr.clicked.connect(self.list.clear); self.btn_go = QPushButton("START BATCH"); self.btn_go.setObjectName("StartBtn"); self.btn_go.clicked.connect(self.on_btn_click); h.addWidget(b_clr); h.addWidget(self.btn_go); queue_lay.addLayout(h); queue_group.setLayout(queue_lay); layout.addWidget(queue_group); self.sys_monitor = SystemMonitor(); self.sys_monitor.cpu_signal.connect(lambda v: self.load_label.setText(f"🔥 CPU: {v}%")); self.sys_monitor.start(); self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu); self.list.customContextMenuRequested.connect(self.show_context_menu)
-    def browse_files(self): files, _ = QFileDialog.getOpenFileNames(self, "Select Videos", "", "Video Files (*.mp4 *.mov *.mkv *.avi)"); [self.list.addItem(f) for f in files]
+    def browse_files(self):
+        files, _ = QFileDialog.getOpenFileNames(self, "Select Videos", "", "Video Files (*.mp4 *.mov *.mkv *.avi)")
+        if files:
+            [self.list.addItem(f) for f in files]; self.start_thumb_process(files)
     def browse_dest(self): 
         d = QFileDialog.getExistingDirectory(self, "Select Output Folder")
         if d: self.out_input.setText(d)
     def dragEnterEvent(self, e): 
         if e.mimeData().hasUrls(): e.accept()
     def dropEvent(self, e):
+        new_files = []
         for u in e.mimeData().urls():
-            if u.toLocalFile().lower().endswith(('.mp4','.mov','.mkv','.avi')): self.list.addItem(u.toLocalFile())
+            f = u.toLocalFile()
+            if f.lower().endswith(('.mp4','.mov','.mkv','.avi')): self.list.addItem(f); new_files.append(f)
+        if new_files: self.start_thumb_process(new_files)
     def on_btn_click(self):
         if self.is_processing: self.stop()
         else: self.start()
@@ -1010,6 +1036,13 @@ class ConvertTab(QWidget):
         self.toggle_ui_state(True); dest_folder = self.out_input.text().strip(); use_gpu = self.settings.is_gpu_enabled()
         self.worker = BatchTranscodeWorker(files, dest_folder, self.settings.get_settings(), mode="convert", use_gpu=use_gpu)
         self.worker.progress_signal.connect(self.pbar.setValue); self.worker.status_signal.connect(self.status_label.setText); self.worker.log_signal.connect(lambda s: self.status_label.setText(s)); self.worker.finished_signal.connect(self.on_finished); self.worker.start()
+    def start_thumb_process(self, files):
+        worker = ThumbnailWorker(files); worker.thumb_ready.connect(self.update_thumbnail)
+        worker.finished.connect(lambda: self.thumb_workers.remove(worker) if worker in self.thumb_workers else None)
+        worker.start(); self.thumb_workers.append(worker)
+    def update_thumbnail(self, path, pixmap):
+        items = self.list.findItems(path, Qt.MatchFlag.MatchExactly)
+        for item in items: item.setIcon(QIcon(pixmap))
     def stop(self):
         if self.worker: self.worker.stop(); self.status.setText("Stopping...")
     def on_finished(self):
