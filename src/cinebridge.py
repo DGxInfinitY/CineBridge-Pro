@@ -118,9 +118,8 @@ class TranscodeEngine:
         
         # Apply LUT if present
         if settings.get("lut_path"):
-            lut_file = settings['lut_path'].replace('\\', '/').replace(':', '\\:')
-            # If using VAAPI, we need to download to software, apply LUT, then upload? 
-            # For simplicity in v4.14, we just apply the filter. FFmpeg usually auto-inserts swscale.
+            # Escape for FFmpeg filter syntax: backslashes to forward, colon escaping, and single quote escaping
+            lut_file = settings['lut_path'].replace('\\', '/').replace(':', '\\:').replace("'", "'\\''")
             cmd.extend(['-vf', f"lut3d='{lut_file}'"])
 
         if v_codec in ['dnxhd', 'prores_ks']:
@@ -1002,11 +1001,91 @@ class IngestTab(QWidget):
 
 class ConvertTab(QWidget):
     def __init__(self):
-        super().__init__(); self.setAcceptDrops(True); layout = QVBoxLayout(); layout.setSpacing(15); layout.setContentsMargins(20, 20, 20, 20); self.setLayout(layout); self.is_processing = False
-        self.settings = TranscodeSettingsWidget("Batch Conversion Settings", mode="general"); layout.addWidget(self.settings)
-        out_group = QGroupBox("Output Location (Optional)"); out_lay = QHBoxLayout(); self.out_input = QLineEdit(); self.out_input.setPlaceholderText("Default: Creates 'Converted' folder next to source files"); self.btn_browse_out = QPushButton("Browse..."); self.btn_browse_out.clicked.connect(self.browse_dest); self.btn_clear_out = QPushButton("Reset"); self.btn_clear_out.clicked.connect(self.out_input.clear); out_lay.addWidget(self.out_input); out_lay.addWidget(self.btn_browse_out); out_lay.addWidget(self.btn_clear_out); out_group.setLayout(out_lay); layout.addWidget(out_group)
-        input_group = QGroupBox("Input Files"); input_lay = QVBoxLayout(); self.btn_browse = QPushButton("Select Video Files..."); self.btn_browse.clicked.connect(self.browse_files); input_lay.addWidget(self.btn_browse); self.drop_area = QLabel("\n⬇️\n\nDRAG & DROP VIDEO FILES HERE\n\n"); self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter); self.drop_area.setStyleSheet("""QLabel { border: 3px dashed #666; border-radius: 10px; background-color: #2b2b2b; color: #aaa; font-weight: bold; } QLabel:hover { border-color: #3498DB; background-color: #333; color: white; }"""); input_lay.addWidget(self.drop_area, 1); input_group.setLayout(input_lay); layout.addWidget(input_group, 1)
-        queue_group = QGroupBox("Job Queue"); queue_lay = QVBoxLayout(); self.list = QListWidget(); self.list.setMaximumHeight(80); self.list.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly); queue_lay.addWidget(self.list); dash_row = QHBoxLayout(); self.status_label = QLabel("Waiting..."); self.status_label.setStyleSheet("color: #888;"); self.load_label = QLabel(""); self.load_label.setStyleSheet("color: #E74C3C; font-weight: bold;"); self.load_label.setVisible(False); dash_row.addWidget(self.status_label); dash_row.addStretch(); dash_row.addWidget(self.load_label); queue_lay.addLayout(dash_row); self.pbar = QProgressBar(); self.pbar.setTextVisible(True); queue_lay.addWidget(self.pbar); h = QHBoxLayout(); b_clr = QPushButton("Clear Queue"); b_clr.clicked.connect(self.list.clear); self.btn_go = QPushButton("START BATCH"); self.btn_go.setObjectName("StartBtn"); self.btn_go.clicked.connect(self.on_btn_click); h.addWidget(b_clr); h.addWidget(self.btn_go); queue_lay.addLayout(h); queue_group.setLayout(queue_lay); layout.addWidget(queue_group); self.sys_monitor = SystemMonitor(); self.sys_monitor.cpu_signal.connect(lambda v: self.load_label.setText(f"🔥 CPU: {v}%")); self.sys_monitor.start(); self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu); self.list.customContextMenuRequested.connect(self.show_context_menu)
+        super().__init__()
+        self.setAcceptDrops(True)
+        self.is_processing = False
+        self.thumb_workers = []
+        
+        layout = QVBoxLayout()
+        layout.setSpacing(15)
+        layout.setContentsMargins(20, 20, 20, 20)
+        self.setLayout(layout)
+        
+        self.settings = TranscodeSettingsWidget("Batch Conversion Settings", mode="general")
+        layout.addWidget(self.settings)
+        
+        # Output Location
+        out_group = QGroupBox("Output Location (Optional)")
+        out_lay = QHBoxLayout()
+        self.out_input = QLineEdit()
+        self.out_input.setPlaceholderText("Default: Creates 'Converted' folder next to source files")
+        self.btn_browse_out = QPushButton("Browse...")
+        self.btn_browse_out.clicked.connect(self.browse_dest)
+        self.btn_clear_out = QPushButton("Reset")
+        self.btn_clear_out.clicked.connect(self.out_input.clear)
+        out_lay.addWidget(self.out_input)
+        out_lay.addWidget(self.btn_browse_out)
+        out_lay.addWidget(self.btn_clear_out)
+        out_group.setLayout(out_lay)
+        layout.addWidget(out_group)
+        
+        # Input Files
+        input_group = QGroupBox("Input Files")
+        input_lay = QVBoxLayout()
+        self.btn_browse = QPushButton("Select Video Files...")
+        self.btn_browse.clicked.connect(self.browse_files)
+        input_lay.addWidget(self.btn_browse)
+        self.drop_area = QLabel("\n⬇️\n\nDRAG & DROP VIDEO FILES HERE\n\n")
+        self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.drop_area.setStyleSheet("""
+            QLabel { border: 3px dashed #666; border-radius: 10px; background-color: #2b2b2b; color: #aaa; font-weight: bold; }
+            QLabel:hover { border-color: #3498DB; background-color: #333; color: white; }
+        """)
+        input_lay.addWidget(self.drop_area, 1)
+        input_group.setLayout(input_lay)
+        layout.addWidget(input_group, 1)
+        
+        # Job Queue
+        queue_group = QGroupBox("Job Queue")
+        queue_lay = QVBoxLayout()
+        self.list = QListWidget()
+        self.list.setMaximumHeight(150) # Increased height for thumbnails
+        self.list.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly)
+        self.list.setIconSize(QSize(96, 54))
+        self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
+        self.list.customContextMenuRequested.connect(self.show_context_menu)
+        queue_lay.addWidget(self.list)
+        
+        dash_row = QHBoxLayout()
+        self.status_label = QLabel("Waiting...")
+        self.status_label.setStyleSheet("color: #888;")
+        self.load_label = QLabel("")
+        self.load_label.setStyleSheet("color: #E74C3C; font-weight: bold;")
+        self.load_label.setVisible(False)
+        dash_row.addWidget(self.status_label)
+        dash_row.addStretch()
+        dash_row.addWidget(self.load_label)
+        queue_lay.addLayout(dash_row)
+        
+        self.pbar = QProgressBar()
+        self.pbar.setTextVisible(True)
+        queue_lay.addWidget(self.pbar)
+        
+        h = QHBoxLayout()
+        b_clr = QPushButton("Clear Queue")
+        b_clr.clicked.connect(self.list.clear)
+        self.btn_go = QPushButton("START BATCH")
+        self.btn_go.setObjectName("StartBtn")
+        self.btn_go.clicked.connect(self.on_btn_click)
+        h.addWidget(b_clr)
+        h.addWidget(self.btn_go)
+        queue_lay.addLayout(h)
+        queue_group.setLayout(queue_lay)
+        layout.addWidget(queue_group)
+        
+        self.sys_monitor = SystemMonitor()
+        self.sys_monitor.cpu_signal.connect(lambda v: self.load_label.setText(f"🔥 CPU: {v}%"))
+        self.sys_monitor.start()
     def browse_files(self):
         files, _ = QFileDialog.getOpenFileNames(self, "Select Videos", "", "Video Files (*.mp4 *.mov *.mkv *.avi)")
         if files:
