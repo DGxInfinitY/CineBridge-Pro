@@ -7,6 +7,7 @@ import platform
 import signal
 import subprocess
 import hashlib
+import json
 from datetime import datetime
 from collections import deque
 
@@ -22,7 +23,8 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QFileDialog, QProgressBar, QTextEdit, QMessageBox, 
                              QCheckBox, QGroupBox, QComboBox, QTabWidget, QFrame, 
                              QSizePolicy, QSplitter, QFormLayout, QDialog,
-                             QListWidget, QAbstractItemView, QToolButton, QRadioButton, QButtonGroup)
+                             QListWidget, QAbstractItemView, QToolButton, QRadioButton, QButtonGroup,
+                             QTableWidget, QTableWidgetItem, QHeaderView, QMenu)
 from PyQt6.QtGui import QAction, QPalette, QColor, QIcon, QFont, QDragEnterEvent, QDropEvent, QPixmap
 from PyQt6.QtCore import QThread, pyqtSignal, Qt, QSettings, QTimer, QMimeData, QObject
 
@@ -159,6 +161,43 @@ class TranscodeEngine:
         if speed_match: parts.append(f"{speed_match.group(1)}x Speed")
         if parts: status_str = " | ".join(parts)
         return progress, status_str
+
+class MediaInfoExtractor:
+    @staticmethod
+    def get_info(input_path):
+        ffprobe = DependencyManager.get_binary_path("ffprobe")
+        if not ffprobe: return {"error": "ffprobe not found"}
+        try:
+            cmd = [ffprobe, "-v", "quiet", "-print_format", "json", "-show_format", "-show_streams", input_path]
+            startupinfo = None
+            if platform.system() == 'Windows':
+                startupinfo = subprocess.STARTUPINFO(); startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+            result = subprocess.run(cmd, capture_output=True, text=True, startupinfo=startupinfo, env=EnvUtils.get_clean_env())
+            if result.returncode != 0: return {"error": "Failed to read file"}
+            data = json.loads(result.stdout)
+            info = {
+                "filename": os.path.basename(input_path),
+                "container": data.get("format", {}).get("format_long_name", "Unknown"),
+                "size_mb": float(data.get("format", {}).get("size", 0)) / (1024*1024),
+                "duration": float(data.get("format", {}).get("duration", 0)),
+                "video_streams": [], "audio_streams": []
+            }
+            for stream in data.get("streams", []):
+                if stream["codec_type"] == "video":
+                    v_info = {
+                        "codec": stream.get("codec_name", "Unknown"), "profile": stream.get("profile", ""),
+                        "resolution": f"{stream.get('width')}x{stream.get('height')}", "fps": stream.get("r_frame_rate", "0/0"),
+                        "pix_fmt": stream.get("pix_fmt", ""), "bitrate": int(stream.get("bit_rate", 0)) / 1000 if stream.get("bit_rate") else 0
+                    }
+                    info["video_streams"].append(v_info)
+                elif stream["codec_type"] == "audio":
+                    a_info = {
+                        "codec": stream.get("codec_name", "Unknown"), "channels": stream.get("channels", 0),
+                        "sample_rate": stream.get("sample_rate", 0), "language": stream.get("tags", {}).get("language", "und")
+                    }
+                    info["audio_streams"].append(a_info)
+            return info
+        except Exception as e: return {"error": str(e)}
 
 # =============================================================================
 # NOTIFICATION SYSTEM
@@ -712,6 +751,42 @@ class FFmpegInfoDialog(QDialog):
         else: msg = "CineBridge will use: <b>Software Encoding (CPU)</b>"
         report += f"<p>{msg}</p>"; self.text_edit.setHtml(report)
 
+class MediaInfoDialog(QDialog):
+    def __init__(self, media_info, parent=None):
+        super().__init__(parent); self.setWindowTitle(f"Media Info: {media_info.get('filename', 'Unknown')}"); self.resize(500, 600); layout = QVBoxLayout(); self.setLayout(layout)
+        if "error" in media_info: layout.addWidget(QLabel(f"Error: {media_info['error']}")); return
+        
+        layout.addWidget(QLabel("<b>Container Format</b>"))
+        gen_table = QTableWidget(3, 2); gen_table.horizontalHeader().setVisible(False); gen_table.verticalHeader().setVisible(False); gen_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        gen_table.setItem(0, 0, QTableWidgetItem("Container")); gen_table.setItem(0, 1, QTableWidgetItem(media_info['container']))
+        gen_table.setItem(1, 0, QTableWidgetItem("Duration")); gen_table.setItem(1, 1, QTableWidgetItem(f"{media_info['duration']:.2f} sec"))
+        gen_table.setItem(2, 0, QTableWidgetItem("Size")); gen_table.setItem(2, 1, QTableWidgetItem(f"{media_info['size_mb']:.2f} MB"))
+        layout.addWidget(gen_table)
+
+        if media_info['video_streams']:
+            layout.addWidget(QLabel("<b>Video Streams</b>"))
+            for v in media_info['video_streams']:
+                v_table = QTableWidget(5, 2); v_table.horizontalHeader().setVisible(False); v_table.verticalHeader().setVisible(False); v_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+                v_table.setItem(0, 0, QTableWidgetItem("Codec")); v_table.setItem(0, 1, QTableWidgetItem(f"{v['codec']} ({v['profile']})"))
+                v_table.setItem(1, 0, QTableWidgetItem("Resolution")); v_table.setItem(1, 1, QTableWidgetItem(v['resolution']))
+                v_table.setItem(2, 0, QTableWidgetItem("Frame Rate")); v_table.setItem(2, 1, QTableWidgetItem(str(v['fps'])))
+                v_table.setItem(3, 0, QTableWidgetItem("Pixel Format")); v_table.setItem(3, 1, QTableWidgetItem(v['pix_fmt']))
+                v_table.setItem(4, 0, QTableWidgetItem("Bitrate")); v_table.setItem(4, 1, QTableWidgetItem(f"{v['bitrate']} kbps"))
+                layout.addWidget(v_table)
+        
+        if media_info['audio_streams']:
+             layout.addWidget(QLabel("<b>Audio Streams</b>"))
+             for a in media_info['audio_streams']:
+                a_table = QTableWidget(4, 2); a_table.horizontalHeader().setVisible(False); a_table.verticalHeader().setVisible(False); a_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+                a_table.setItem(0, 0, QTableWidgetItem("Codec")); a_table.setItem(0, 1, QTableWidgetItem(a['codec']))
+                a_table.setItem(1, 0, QTableWidgetItem("Channels")); a_table.setItem(1, 1, QTableWidgetItem(str(a['channels'])))
+                a_table.setItem(2, 0, QTableWidgetItem("Sample Rate")); a_table.setItem(2, 1, QTableWidgetItem(str(a['sample_rate'])))
+                a_table.setItem(3, 0, QTableWidgetItem("Language")); a_table.setItem(3, 1, QTableWidgetItem(a['language']))
+                layout.addWidget(a_table)
+        
+        layout.addStretch()
+        close_btn = QPushButton("Close"); close_btn.clicked.connect(self.accept); layout.addWidget(close_btn)
+
 class SettingsDialog(QDialog):
     def __init__(self, parent):
         super().__init__(parent); self.parent_app = parent; self.setWindowTitle("CineBridge Settings"); self.setMinimumWidth(500); layout = QVBoxLayout()
@@ -878,7 +953,7 @@ class ConvertTab(QWidget):
         self.settings = TranscodeSettingsWidget("Batch Conversion Settings", mode="general"); layout.addWidget(self.settings)
         out_group = QGroupBox("Output Location (Optional)"); out_lay = QHBoxLayout(); self.out_input = QLineEdit(); self.out_input.setPlaceholderText("Default: Creates 'Converted' folder next to source files"); self.btn_browse_out = QPushButton("Browse..."); self.btn_browse_out.clicked.connect(self.browse_dest); self.btn_clear_out = QPushButton("Reset"); self.btn_clear_out.clicked.connect(self.out_input.clear); out_lay.addWidget(self.out_input); out_lay.addWidget(self.btn_browse_out); out_lay.addWidget(self.btn_clear_out); out_group.setLayout(out_lay); layout.addWidget(out_group)
         input_group = QGroupBox("Input Files"); input_lay = QVBoxLayout(); self.btn_browse = QPushButton("Select Video Files..."); self.btn_browse.clicked.connect(self.browse_files); input_lay.addWidget(self.btn_browse); self.drop_area = QLabel("\n⬇️\n\nDRAG & DROP VIDEO FILES HERE\n\n"); self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter); self.drop_area.setStyleSheet("""QLabel { border: 3px dashed #666; border-radius: 10px; background-color: #2b2b2b; color: #aaa; font-weight: bold; } QLabel:hover { border-color: #3498DB; background-color: #333; color: white; }"""); input_lay.addWidget(self.drop_area, 1); input_group.setLayout(input_lay); layout.addWidget(input_group, 1)
-        queue_group = QGroupBox("Job Queue"); queue_lay = QVBoxLayout(); self.list = QListWidget(); self.list.setMaximumHeight(80); self.list.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly); queue_lay.addWidget(self.list); dash_row = QHBoxLayout(); self.status_label = QLabel("Waiting..."); self.status_label.setStyleSheet("color: #888;"); self.load_label = QLabel(""); self.load_label.setStyleSheet("color: #E74C3C; font-weight: bold;"); self.load_label.setVisible(False); dash_row.addWidget(self.status_label); dash_row.addStretch(); dash_row.addWidget(self.load_label); queue_lay.addLayout(dash_row); self.pbar = QProgressBar(); self.pbar.setTextVisible(True); queue_lay.addWidget(self.pbar); h = QHBoxLayout(); b_clr = QPushButton("Clear Queue"); b_clr.clicked.connect(self.list.clear); self.btn_go = QPushButton("START BATCH"); self.btn_go.setObjectName("StartBtn"); self.btn_go.clicked.connect(self.on_btn_click); h.addWidget(b_clr); h.addWidget(self.btn_go); queue_lay.addLayout(h); queue_group.setLayout(queue_lay); layout.addWidget(queue_group); self.sys_monitor = SystemMonitor(); self.sys_monitor.cpu_signal.connect(lambda v: self.load_label.setText(f"🔥 CPU: {v}%")); self.sys_monitor.start()
+        queue_group = QGroupBox("Job Queue"); queue_lay = QVBoxLayout(); self.list = QListWidget(); self.list.setMaximumHeight(80); self.list.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly); queue_lay.addWidget(self.list); dash_row = QHBoxLayout(); self.status_label = QLabel("Waiting..."); self.status_label.setStyleSheet("color: #888;"); self.load_label = QLabel(""); self.load_label.setStyleSheet("color: #E74C3C; font-weight: bold;"); self.load_label.setVisible(False); dash_row.addWidget(self.status_label); dash_row.addStretch(); dash_row.addWidget(self.load_label); queue_lay.addLayout(dash_row); self.pbar = QProgressBar(); self.pbar.setTextVisible(True); queue_lay.addWidget(self.pbar); h = QHBoxLayout(); b_clr = QPushButton("Clear Queue"); b_clr.clicked.connect(self.list.clear); self.btn_go = QPushButton("START BATCH"); self.btn_go.setObjectName("StartBtn"); self.btn_go.clicked.connect(self.on_btn_click); h.addWidget(b_clr); h.addWidget(self.btn_go); queue_lay.addLayout(h); queue_group.setLayout(queue_lay); layout.addWidget(queue_group); self.sys_monitor = SystemMonitor(); self.sys_monitor.cpu_signal.connect(lambda v: self.load_label.setText(f"🔥 CPU: {v}%")); self.sys_monitor.start(); self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu); self.list.customContextMenuRequested.connect(self.show_context_menu)
     def browse_files(self): files, _ = QFileDialog.getOpenFileNames(self, "Select Videos", "", "Video Files (*.mp4 *.mov *.mkv *.avi)"); [self.list.addItem(f) for f in files]
     def browse_dest(self): 
         d = QFileDialog.getExistingDirectory(self, "Select Output Folder")
@@ -907,6 +982,14 @@ class ConvertTab(QWidget):
     def on_finished(self):
         SystemNotifier.notify("Batch Complete", "Transcoding batch finished.")
         self.toggle_ui_state(False); self.status.setText("Batch Complete!"); dest = self.out_input.text(); msg = f"Files saved to:\n{dest}" if dest else "Files saved to 'Converted' folder next to the source file(s)."; dlg = JobReportDialog("Batch Complete", f"<h3>Batch Successful</h3><p>{msg}</p>", self); dlg.exec()
+    def show_context_menu(self, pos):
+        item = self.list.itemAt(pos)
+        if item:
+            menu = QMenu(self); action = QAction("Inspect Media Info", self); action.triggered.connect(lambda: self.inspect_file(item)); menu.addAction(action); menu.exec(self.list.mapToGlobal(pos))
+    def inspect_file(self, item):
+        path = item.text()
+        if os.path.exists(path):
+            info = MediaInfoExtractor.get_info(path); dlg = MediaInfoDialog(info, self); dlg.exec()
 
 class DeliveryTab(QWidget):
     def __init__(self):
