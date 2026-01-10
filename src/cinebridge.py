@@ -136,7 +136,13 @@ class TranscodeEngine:
                 cmd.extend(['-c:v', v_codec, '-preset', 'fast', '-crf', '18'])
                 if v_codec == 'libx264': cmd.extend(['-pix_fmt', 'yuv420p'])
         if a_codec == 'pcm_s16le': cmd.extend(['-c:a', 'pcm_s16le', '-ar', '48000'])
-        elif a_codec == 'aac': cmd.extend(['-c:a', 'aac', '-b:a', '320k'])
+        elif a_codec == 'aac': cmd.extend(['-c:a', 'aac', '-b:a', '320k', '-ar', '48000'])
+        
+        if settings.get('audio_fix'):
+            # Fix audio drift (aresample) and potential loudness issues (loudnorm could be added but might change mix)
+            # async=1 fills gaps/trims overlaps to match timestamps
+            cmd.extend(['-af', 'aresample=async=1:min_comp=0.01:first_pts=0'])
+
         cmd.append(output_path)
         return cmd
 
@@ -668,7 +674,9 @@ class TranscodeSettingsWidget(QGroupBox):
         self.advanced_frame = QFrame(); adv_layout = QFormLayout(); self.advanced_frame.setLayout(adv_layout)
         self.codec_combo = QComboBox(); self.init_codecs(); self.codec_combo.currentIndexChanged.connect(self.update_profiles)
         self.profile_combo = QComboBox(); self.audio_combo = QComboBox(); self.audio_combo.addItems(["PCM (Uncompressed)", "AAC (Compressed)"])
-        adv_layout.addRow("Video Codec:", self.codec_combo); adv_layout.addRow("Profile:", self.profile_combo); adv_layout.addRow("Audio Codec:", self.audio_combo)
+        self.chk_audio_fix = QCheckBox("Fix Audio Drift (48kHz)")
+        adv_layout.addRow("Video Codec:", self.codec_combo); adv_layout.addRow("Profile:", self.profile_combo)
+        adv_layout.addRow("Audio Codec:", self.audio_combo); adv_layout.addRow("Processing:", self.chk_audio_fix)
         self.layout.addWidget(self.advanced_frame); self.update_profiles(); self.apply_preset() 
     def init_presets(self):
         self.preset_combo.clear()
@@ -711,7 +719,12 @@ class TranscodeSettingsWidget(QGroupBox):
     def get_settings(self):
         v_codec_map = { "DNxHR (Avid)": "dnxhd", "ProRes (Apple)": "prores_ks", "H.264": "libx264", "H.265 (HEVC)": "libx265" }
         a_codec_map = { "PCM (Uncompressed)": "pcm_s16le", "AAC (Compressed)": "aac" }
-        settings = { "v_codec": v_codec_map.get(self.codec_combo.currentText(), "dnxhd"), "v_profile": self.profile_combo.currentData(), "a_codec": a_codec_map.get(self.audio_combo.currentText(), "pcm_s16le") }
+        settings = { 
+            "v_codec": v_codec_map.get(self.codec_combo.currentText(), "dnxhd"), 
+            "v_profile": self.profile_combo.currentData(), 
+            "a_codec": a_codec_map.get(self.audio_combo.currentText(), "pcm_s16le"),
+            "audio_fix": self.chk_audio_fix.isChecked()
+        }
         if self.lut_path.text().strip(): settings["lut_path"] = self.lut_path.text().strip()
         return settings
     def is_gpu_enabled(self): return self.chk_gpu.isChecked()
