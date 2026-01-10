@@ -23,7 +23,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QCheckBox, QGroupBox, QComboBox, QTabWidget, QFrame, 
                              QSizePolicy, QSplitter, QFormLayout, QDialog,
                              QListWidget, QAbstractItemView, QToolButton, QRadioButton, QButtonGroup)
-from PyQt6.QtGui import QAction, QPalette, QColor, QIcon, QFont, QDragEnterEvent, QDropEvent
+from PyQt6.QtGui import QAction, QPalette, QColor, QIcon, QFont, QDragEnterEvent, QDropEvent, QPixmap
 from PyQt6.QtCore import QThread, pyqtSignal, Qt, QSettings, QTimer, QMimeData, QObject
 
 try:
@@ -949,6 +949,24 @@ class DeliveryTab(QWidget):
         SystemNotifier.notify("Render Complete", "Delivery render finished.")
         self.toggle_ui_state(False); self.status.setText("Delivery Render Complete!"); dest = self.inp_dest.text(); msg = f"File saved to:\n{dest}" if dest else "File saved to 'Final_Render' folder next to the master file."; dlg = JobReportDialog("Render Complete", f"<h3>Render Successful</h3><p>{msg}</p>", self); dlg.exec()
 
+class AboutDialog(QDialog):
+    def __init__(self, parent=None):
+        super().__init__(parent); self.setWindowTitle("About CineBridge Pro"); self.setFixedWidth(400); layout = QVBoxLayout()
+        layout.setSpacing(15); layout.setContentsMargins(30, 30, 30, 30)
+        logo_label = QLabel(); logo_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        if hasattr(sys, '_MEIPASS'): base_dir = sys._MEIPASS
+        else: base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        logo_path = os.path.join(base_dir, "assets", "icon.png")
+        if os.path.exists(logo_path):
+            pixmap = QPixmap(logo_path); logo_label.setPixmap(pixmap.scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
+        layout.addWidget(logo_label)
+        title = QLabel("CineBridge Pro"); title.setStyleSheet("font-size: 22px; font-weight: bold; color: #3498DB;"); title.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(title)
+        version = QLabel("v4.14.0 (Dev)"); version.setStyleSheet("font-size: 14px; color: #888;"); version.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(version)
+        desc = QLabel("The Linux DIT & Post-Production Suite.\nSolving the 'Resolve on Linux' problem."); desc.setWordWrap(True); desc.setStyleSheet("font-size: 13px;"); desc.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(desc)
+        credits = QLabel("<b>Developed by:</b><br>Donovan Goodwin<br>(with Gemini AI)"); credits.setStyleSheet("font-size: 13px;"); credits.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(credits)
+        links = QLabel('<a href="mailto:ddg2goodwin@gmail.com" style="color: #3498DB;">ddg2goodwin@gmail.com</a><br><br><a href="https://github.com/DGxInfinitY" style="color: #3498DB;">GitHub: DGxInfinitY</a>'); links.setOpenExternalLinks(True); links.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(links)
+        layout.addStretch(); btn_box = QHBoxLayout(); ok_btn = QPushButton("Close"); ok_btn.setFixedWidth(100); ok_btn.clicked.connect(self.accept); btn_box.addStretch(); btn_box.addWidget(ok_btn); btn_box.addStretch(); layout.addLayout(btn_box); self.setLayout(layout)
+
 class CineBridgeApp(QMainWindow):
     def __init__(self):
         super().__init__(); self.setWindowTitle("CineBridge Pro: Open Source DIT Suite"); self.setGeometry(100, 100, 1100, 850); self.settings = QSettings("CineBridgePro", "Config")
@@ -998,7 +1016,7 @@ class CineBridgeApp(QMainWindow):
         for widget in [self.tab_ingest.transcode_widget, self.tab_convert.settings, self.tab_delivery.settings]: widget.set_gpu_checked(checked)
         self.settings.setValue("use_gpu_accel", checked)
     def toggle_debug(self): global DEBUG_MODE; DEBUG_MODE = not DEBUG_MODE; debug_log("Debug logging active.")
-    def show_about(self): dlg = JobReportDialog("About CineBridge Pro", "<h3>CineBridge Pro v4.13.5</h3><p>The Linux DIT & Post-Production Suite.</p><p>Solving the 'Resolve on Linux' problem.</p><p><b>Developed by:</b> Donovan Goodwin with help from Gemini AI</p><p>📧 <a href='mailto:ddg2goodwin@gmail.com'>ddg2goodwin@gmail.com</a></p><p>🌐 <a href='https://github.com/DGxInfinitY'>GitHub: DGxInfinitY</a></p>", self); dlg.exec()
+    def show_about(self): dlg = AboutDialog(self); dlg.exec()
     def set_theme(self, mode):
         self.theme_mode = mode; self.settings.setValue("theme_mode", mode); is_dark = False
         if mode == "dark": is_dark = True
