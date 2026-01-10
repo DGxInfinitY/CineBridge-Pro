@@ -840,6 +840,15 @@ class FFmpegConfigDialog(QDialog):
         
         if found_encs: report += f"Encoders: <span style='color:green'>{' '.join(found_encs)}</span>"
         else: report += "Encoders: <span style='color:orange'>No Hardware Encoders Found</span>"
+        
+        report += "<hr><b>CineBridge Active Strategy:</b><br>"
+        active_prof = DependencyManager.detect_hw_accel()
+        if active_prof: 
+            msg = f"CineBridge is currently configured to use: <b style='color:#E67E22; font-size:14px'>{active_prof.upper()}</b>"
+        else: 
+            msg = "CineBridge will use: <b>Software Encoding (CPU)</b>"
+        report += f"<p>{msg}</p>"
+        
         self.report_area.setHtml(report)
 
 class MediaInfoDialog(QDialog):
@@ -894,7 +903,7 @@ class SettingsDialog(QDialog):
         self.chk_copy.toggled.connect(self.apply_view_options); self.chk_trans.toggled.connect(self.apply_view_options)
         view_lay.addWidget(self.chk_copy); view_lay.addWidget(self.chk_trans); view_group.setLayout(view_lay); layout.addWidget(view_group)
         sys_group = QGroupBox("System"); sys_lay = QVBoxLayout()
-        self.btn_ffmpeg = QPushButton("Check FFmpeg Support"); self.btn_ffmpeg.clicked.connect(self.show_ffmpeg_info); sys_lay.addWidget(self.btn_ffmpeg)
+        self.btn_ffmpeg = QPushButton("FFmpeg Settings"); self.btn_ffmpeg.clicked.connect(self.show_ffmpeg_info); sys_lay.addWidget(self.btn_ffmpeg)
         self.chk_debug = QCheckBox("Enable Debug Mode"); self.chk_debug.setChecked(DEBUG_MODE); self.chk_debug.toggled.connect(parent.toggle_debug); sys_lay.addWidget(self.chk_debug)
         self.btn_reset = QPushButton("Reset to Default Settings"); self.btn_reset.setStyleSheet("color: red;"); self.btn_reset.clicked.connect(parent.reset_to_defaults); sys_lay.addWidget(self.btn_reset)
         sys_group.setLayout(sys_lay); layout.addWidget(sys_group)
