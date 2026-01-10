@@ -24,7 +24,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QCheckBox, QGroupBox, QComboBox, QTabWidget, QFrame, 
                              QSizePolicy, QSplitter, QFormLayout, QDialog,
                              QListWidget, QAbstractItemView, QToolButton, QRadioButton, QButtonGroup,
-                             QTableWidget, QTableWidgetItem, QHeaderView, QMenu)
+                             QTableWidget, QTableWidgetItem, QHeaderView, QMenu, QTreeWidget, QTreeWidgetItem)
 from PyQt6.QtGui import QAction, QPalette, QColor, QIcon, QFont, QDragEnterEvent, QDropEvent, QPixmap
 from PyQt6.QtCore import QThread, pyqtSignal, Qt, QSettings, QTimer, QMimeData, QObject, QSize
 
@@ -425,6 +425,23 @@ class ThumbnailWorker(QThread):
             except: pass
     def stop(self): self.is_running = False
 
+class IngestScanner(QThread):
+    finished_signal = pyqtSignal(dict)
+    def __init__(self, source_path, video_only=False):
+        super().__init__(); self.source = source_path; self.video_only = video_only
+    def run(self):
+        grouped = {}; exts = {'.MP4','.MOV','.MKV','.INSV','.360','.AVI','.MXF','.CRM','.BRAW'}
+        if not self.video_only: exts.update({'.JPG','.JPEG','.PNG','.ARW','.CR2','.DNG','.GPR','.WAV','.MP3','.AAC','.SRT','.LRV','.THM'})
+        for root, dirs, files in os.walk(self.source):
+            for f in files:
+                if os.path.splitext(f)[1].upper() in exts:
+                    full = os.path.join(root, f)
+                    try: date = datetime.fromtimestamp(os.path.getmtime(full)).strftime("%Y-%m-%d")
+                    except: date = "Unknown Date"
+                    if date not in grouped: grouped[date] = []
+                    grouped[date].append(full)
+        self.finished_signal.emit(grouped)
+
 class AsyncTranscoder(QThread):
     log_signal = pyqtSignal(str); status_signal = pyqtSignal(str); metrics_signal = pyqtSignal(str); progress_signal = pyqtSignal(int); all_finished_signal = pyqtSignal()
     def __init__(self, settings, use_gpu):
@@ -468,8 +485,8 @@ class CopyWorker(QThread):
     # New Signal for Storage Check
     storage_check_signal = pyqtSignal(int, int, bool) # needed, free, is_enough
     
-    def __init__(self, source, dest, project_name, sort_by_date, skip_dupes, videos_only, camera_override, verify_copy):
-        super().__init__(); self.source = source; self.dest = dest; self.project_name = project_name.strip(); self.sort_by_date = sort_by_date; self.skip_dupes = skip_dupes; self.videos_only = videos_only; self.camera_override = camera_override; self.verify_copy = verify_copy; self.is_running = True
+    def __init__(self, source, dest, project_name, sort_by_date, skip_dupes, videos_only, camera_override, verify_copy, file_list=None):
+        super().__init__(); self.source = source; self.dest = dest; self.project_name = project_name.strip(); self.sort_by_date = sort_by_date; self.skip_dupes = skip_dupes; self.videos_only = videos_only; self.camera_override = camera_override; self.verify_copy = verify_copy; self.file_list = file_list; self.is_running = True
         self.main_video_exts = {'.MP4', '.MOV', '.MKV', '.INSV', '.360'}
     
     def get_mmt_category(self, filename):
@@ -513,15 +530,18 @@ class CopyWorker(QThread):
         valid_exts = ('.MP4', '.MOV', '.LRV', '.THM', '.JPG', '.JPEG', '.DNG', '.GPR', '.SRT', '.WAV', '.INSV', '.INSP', '.360', '.AAE')
         found_files = []
         
-        count_scanned = 0
-        for root, dirs, files in os.walk(self.source):
-            if not self.is_running: break
-            for file in files:
-                if file.upper().endswith(valid_exts): 
-                    found_files.append(os.path.join(root, file))
-                    count_scanned += 1
-                    if count_scanned % 50 == 0:
-                        self.status_signal.emit(f"Analyzing Source... Found {count_scanned} files")
+        if self.file_list:
+            found_files = self.file_list
+        else:
+            count_scanned = 0
+            for root, dirs, files in os.walk(self.source):
+                if not self.is_running: break
+                for file in files:
+                    if file.upper().endswith(valid_exts): 
+                        found_files.append(os.path.join(root, file))
+                        count_scanned += 1
+                        if count_scanned % 50 == 0:
+                            self.status_signal.emit(f"Analyzing Source... Found {count_scanned} files")
 
         priority_videos = [f for f in found_files if os.path.splitext(f)[1].upper() in self.main_video_exts]
         secondary_files = [f for f in found_files if os.path.splitext(f)[1].upper() not in self.main_video_exts]
@@ -872,6 +892,7 @@ class IngestTab(QWidget):
     def __init__(self, parent_app):
         super().__init__(); self.app = parent_app; self.layout = QVBoxLayout(); self.layout.setSpacing(10); self.layout.setContentsMargins(20, 20, 20, 20); self.setLayout(self.layout)
         self.copy_worker = None; self.transcode_worker = None; self.scan_worker = None; self.found_devices = []; self.current_detected_path = None
+        self.ingest_mode = "scan"
         self.setup_ui(); self.load_tab_settings()
         self.sys_monitor = SystemMonitor(); self.sys_monitor.cpu_signal.connect(self.update_load_display); self.sys_monitor.start()
         self.scan_watchdog = QTimer(); self.scan_watchdog.setSingleShot(True); self.scan_watchdog.timeout.connect(self.on_scan_timeout); QTimer.singleShot(500, self.run_auto_scan)
@@ -901,6 +922,13 @@ class IngestTab(QWidget):
         self.check_verify = QCheckBox("Verify Copy"); self.check_verify.setStyleSheet("color: #27AE60; font-weight: bold;"); self.check_verify.setToolTip("Performs hash verification (xxHash/MD5) after copy.")
         rules_row.addWidget(self.check_date); rules_row.addWidget(self.check_dupe); rules_row.addWidget(self.check_videos_only); rules_row.addWidget(self.check_verify); rules_row.addWidget(self.check_transcode); settings_layout.addLayout(rules_row)
         self.transcode_widget = TranscodeSettingsWidget(mode="general"); self.transcode_widget.setVisible(False); settings_layout.addWidget(self.transcode_widget); settings_group.setLayout(settings_layout); self.layout.addWidget(settings_group)
+        
+        self.review_group = QGroupBox("4. Select Media"); review_lay = QVBoxLayout()
+        self.tree = QTreeWidget(); self.tree.setHeaderLabel("Media Grouped by Date")
+        self.tree.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        review_lay.addWidget(self.tree); self.review_group.setLayout(review_lay)
+        self.review_group.setVisible(False); self.layout.addWidget(self.review_group, 1)
+
         dash_frame = QFrame(); dash_frame.setObjectName("DashFrame"); dash_layout = QVBoxLayout(); dash_frame.setLayout(dash_layout)
         top_row = QHBoxLayout(); self.status_label = QLabel("READY TO INGEST"); self.status_label.setObjectName("StatusLabel"); self.speed_label = QLabel(""); self.speed_label.setObjectName("SpeedLabel")
         top_row.addWidget(self.status_label, 1); top_row.addWidget(self.speed_label); dash_layout.addLayout(top_row)
@@ -909,7 +937,7 @@ class IngestTab(QWidget):
         self.transcode_status_label = QLabel(""); self.transcode_status_label.setStyleSheet("color: #E67E22; font-weight: bold;"); self.transcode_status_label.setVisible(False); dash_layout.addWidget(self.transcode_status_label)
         self.load_label = QLabel("🔥 CPU Load: 0%"); self.load_label.setAlignment(Qt.AlignmentFlag.AlignCenter); self.load_label.setStyleSheet("color: #E74C3C; font-weight: bold; font-size: 11px;"); self.load_label.setVisible(False); dash_layout.addWidget(self.load_label); self.layout.addWidget(dash_frame)
         btn_layout = QHBoxLayout()
-        self.import_btn = QPushButton("START INGEST"); self.import_btn.setObjectName("StartBtn"); self.import_btn.clicked.connect(self.start_import)
+        self.import_btn = QPushButton("SCAN SOURCE"); self.import_btn.setObjectName("StartBtn"); self.import_btn.clicked.connect(self.on_import_click)
         self.cancel_btn = QPushButton("STOP"); self.cancel_btn.setObjectName("StopBtn"); self.cancel_btn.clicked.connect(self.cancel_import); self.cancel_btn.setEnabled(False)
         btn_layout.addWidget(self.import_btn); btn_layout.addWidget(self.cancel_btn); self.layout.addLayout(btn_layout)
         self.splitter = QSplitter(Qt.Orientation.Vertical)
@@ -917,7 +945,10 @@ class IngestTab(QWidget):
         self.transcode_log = QTextEdit(); self.transcode_log.setReadOnly(True); self.transcode_log.setMinimumHeight(50); self.transcode_log.setStyleSheet("background-color: #2c2c2c; color: #3498DB; font-family: Consolas; font-size: 11px;"); self.transcode_log.setPlaceholderText("Transcode Log..."); self.splitter.addWidget(self.copy_log); self.splitter.addWidget(self.transcode_log); self.layout.addWidget(self.splitter, 1)
         self.transcode_log.setVisible(False)
     def toggle_logs(self, show_copy, show_transcode): self.copy_log.setVisible(show_copy); self.transcode_log.setVisible(show_transcode); self.splitter.setVisible(show_copy or show_transcode)
-    def toggle_transcode_ui(self, checked): self.transcode_widget.setVisible(checked); self.transcode_status_label.setVisible(checked); self.import_btn.setText("START INGEST AND TRANSCODE" if checked else "START INGEST")
+    def toggle_transcode_ui(self, checked): 
+        self.transcode_widget.setVisible(checked); self.transcode_status_label.setVisible(checked)
+        if self.ingest_mode == "scan": self.import_btn.setText("SCAN SOURCE")
+        else: self.import_btn.setText("START TRANSFER & TRANSCODE" if checked else "START TRANSFER")
     def update_load_display(self, value): self.load_label.setText(f"🔥 CPU Load: {value}%")
     def set_transcode_active(self, active): self.load_label.setVisible(active); self.transcode_status_label.setVisible(active)
     def browse_source(self): 
@@ -946,7 +977,36 @@ class IngestTab(QWidget):
             self.select_device_box.setVisible(True); self.select_device_box.blockSignals(True); self.select_device_box.clear()
             for d in self.found_devices: self.select_device_box.addItem(f"{d.get('display_name', d.get('type', 'Unknown'))} ({'Empty' if d['empty'] else 'Data'})")
             self.select_device_box.setCurrentIndex(self.found_devices.index(dev)); self.select_device_box.blockSignals(False); self.select_device_box.setStyleSheet(f"background-color: #1e1e1e; color: white; border: 1px solid {'#27AE60' if not dev['empty'] else '#F39C12'};")
-    def start_import(self):
+    def on_import_click(self):
+        if self.ingest_mode == "scan": self.start_scan()
+        else: self.start_transfer()
+    def start_scan(self):
+        src = self.current_detected_path if self.source_tabs.currentIndex() == 0 else self.source_input.text()
+        if not src or not os.path.exists(src): return QMessageBox.warning(self, "Error", "Invalid Source")
+        self.import_btn.setEnabled(False); self.status_label.setText("SCANNING SOURCE..."); self.tree.clear(); self.review_group.setVisible(False)
+        self.scanner = IngestScanner(src, self.check_videos_only.isChecked()); self.scanner.finished_signal.connect(self.on_scan_complete); self.scanner.start()
+    def on_scan_complete(self, grouped_files):
+        self.tree.clear(); total_files = 0; sorted_dates = sorted(grouped_files.keys(), reverse=True)
+        for date in sorted_dates:
+            files = grouped_files[date]; total_files += len(files)
+            date_item = QTreeWidgetItem(self.tree); date_item.setText(0, f"{date} ({len(files)} files)"); date_item.setFlags(date_item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsTristate); date_item.setCheckState(0, Qt.CheckState.Checked)
+            for f in files:
+                f_item = QTreeWidgetItem(date_item); f_item.setText(0, os.path.basename(f)); f_item.setData(0, Qt.ItemDataRole.UserRole, f); f_item.setFlags(f_item.flags() | Qt.ItemFlag.ItemIsUserCheckable); f_item.setCheckState(0, Qt.CheckState.Checked)
+        self.tree.expandAll(); self.review_group.setVisible(True); self.import_btn.setEnabled(True); self.ingest_mode = "transfer"
+        self.import_btn.setText("START TRANSFER" if not self.check_transcode.isChecked() else "START TRANSFER & TRANSCODE")
+        self.status_label.setText(f"FOUND {total_files} FILES. SELECT MEDIA TO TRANSFER.")
+    def start_transfer(self):
+        selected_files = []
+        if self.ingest_mode == "transfer":
+             root = self.tree.invisibleRootItem()
+             for i in range(root.childCount()):
+                 date_item = root.child(i)
+                 for j in range(date_item.childCount()):
+                     f_item = date_item.child(j)
+                     if f_item.checkState(0) == Qt.CheckState.Checked:
+                         selected_files.append(f_item.data(0, Qt.ItemDataRole.UserRole))
+             if not selected_files: return QMessageBox.warning(self, "Error", "No files selected.")
+
         src = self.current_detected_path if self.source_tabs.currentIndex() == 0 else self.source_input.text(); dest = self.dest_input.text()
         if not src or not dest: return QMessageBox.warning(self, "Error", "Set Source/Dest")
         self.save_tab_settings(); self.import_btn.setEnabled(False); self.cancel_btn.setEnabled(True); self.status_label.setText("INITIALIZING..."); self.copy_log.clear(); self.transcode_log.clear()
@@ -958,7 +1018,7 @@ class IngestTab(QWidget):
         if tc_enabled:
             self.transcode_worker = AsyncTranscoder(tc_settings, use_gpu); self.transcode_worker.log_signal.connect(self.append_transcode_log); self.transcode_worker.status_signal.connect(self.transcode_status_label.setText); self.transcode_worker.metrics_signal.connect(self.transcode_status_label.setText); self.transcode_worker.all_finished_signal.connect(self.on_all_transcodes_finished); self.transcode_worker.start(); self.set_transcode_active(True)
         else: self.transcode_status_label.setVisible(False)
-        self.copy_worker = CopyWorker(src, dest, self.project_name_input.text(), self.check_date.isChecked(), self.check_dupe.isChecked(), self.check_videos_only.isChecked(), self.device_combo.currentText(), self.check_verify.isChecked())
+        self.copy_worker = CopyWorker(src, dest, self.project_name_input.text(), self.check_date.isChecked(), self.check_dupe.isChecked(), self.check_videos_only.isChecked(), self.device_combo.currentText(), self.check_verify.isChecked(), file_list=selected_files)
         self.copy_worker.log_signal.connect(self.append_copy_log); self.copy_worker.progress_signal.connect(self.progress_bar.setValue); self.copy_worker.status_signal.connect(self.status_label.setText); self.copy_worker.speed_signal.connect(self.speed_label.setText); self.copy_worker.finished_signal.connect(self.on_copy_finished)
         self.copy_worker.storage_check_signal.connect(self.update_storage_display_bar)
         if tc_enabled: self.copy_worker.transcode_count_signal.connect(self.transcode_worker.set_total_jobs); self.copy_worker.file_ready_signal.connect(self.queue_for_transcode)
