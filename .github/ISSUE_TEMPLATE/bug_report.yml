@@ -1,0 +1,59 @@
+name: 🐛 Bug Report
+description: Report a bug to help us improve CineBridge Pro.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to fill out this bug report! Structured reports help us fix issues much faster.
+  - type: input
+    id: os
+    attributes:
+      label: Operating System
+      placeholder: e.g. Ubuntu 24.04, Windows 11, macOS Sonoma
+    validations:
+      required: true
+  - type: textarea
+    id: description
+    attributes:
+      label: Describe the bug
+      description: A clear and concise description of what the bug is.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to Reproduce
+      description: How do we trigger this bug?
+      placeholder: |
+        1. Open Ingest Tab
+        2. Plug in Sony A7IV
+        3. Click Scan Source
+        4. See crash...
+    validations:
+      required: true
+  - type: textarea
+    id: debug_log
+    attributes:
+      label: 📁 Debug Log (Crucial)
+      description: |
+        Please paste the contents of your `~/cinebridge_pro.log` file here. 
+        Alternatively, drag and drop the file into this text box.
+      placeholder: "[DEBUG] 2026-01-10 | FFmpeg CMD: ..."
+    validations:
+      required: true
+  - type: input
+    id: ffmpeg_version
+    attributes:
+      label: FFmpeg Version
+      description: Run `ffmpeg -version` or check the 'FFmpeg Settings' window in the app.
+      placeholder: e.g. 6.0-static
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I have checked that my FFmpeg binary is working correctly in the app settings.
+          required: true
+        - label: I am using the latest version of CineBridge Pro.
+          required: true
