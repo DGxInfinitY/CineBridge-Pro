@@ -1,0 +1,26 @@
+
+VSVersionInfo(
+  ffi=FixedFileInfo(
+    fileflags=0x0,
+    os=0x40004,
+    filetype=0x1,
+    subtype=0x0,
+    date=(0, 0)
+    ),
+  kids=[
+    StringFileInfo(
+      [
+      StringTable(
+        u'040904B0',
+        [StringProperty(u'CompanyName', u'DGxInfinitY'),
+        StringProperty(u'FileDescription', u'CineBridge Pro: DIT & Transcoding Suite'),
+        StringProperty(u'FileVersion', u'4.15.0'),
+        StringProperty(u'InternalName', u'CineBridgePro'),
+        StringProperty(u'LegalCopyright', u'Copyright (C) 2026 Donovan Goodwin'),
+        StringProperty(u'OriginalFilename', u'CineBridgePro.exe'),
+        StringProperty(u'ProductName', u'CineBridge Pro'),
+        StringProperty(u'ProductVersion', u'4.15.0')])
+      ]), 
+    VarFileInfo([VarProperty(u'Translation', [1033, 1200])])
+  ]
+)
