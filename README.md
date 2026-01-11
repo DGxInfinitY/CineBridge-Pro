@@ -13,39 +13,39 @@
 ## 🚀 Key Features
 
 ### 📥 Intelligent Ingest
-* **Auto-Detection:** Instantly recognizes GoPros, DJI Drones, Android Phones (MTP), and Professional Cameras.
-* **"Sniper Mode":** Targeted scanning for massive MTP devices (like Pixel phones) to avoid hanging on thousands of system files.
+* **Auto-Detection (Registry):** High-reliability detection for Sony (Alpha/FX), Blackmagic (BRAW), Canon (CRM), DJI, GoPro, Insta360, and Android.
+* **Ingest Preview:** Scan your source and select exactly which days or files to transfer before starting.
+* **Smart Filtering:** Automatically filters file extensions based on the detected camera profile.
 * **Checksum Verification:** Bit-for-bit verification using **xxHash64** (fastest) or MD5 (compatibility).
-* **Organization:** Automatically sorts footage by Date and Camera Type into a structured folder hierarchy.
 * **Pre-Flight Storage Check:** Prevents ingest if the destination drive lacks sufficient space.
 
 ### 🛠️ Transcoding Engine
-* **Linux-Friendly Codecs:** Converts H.264/H.265 footage into **DNxHR** or **ProRes** for smooth editing in DaVinci Resolve on Linux (Free Version).
-* **Hardware Acceleration:** Supports NVIDIA (NVENC), Intel (QSV), and VAAPI for blazing fast encoding.
-* **Batch Mode:** Drag-and-drop interface for bulk converting existing footage.
+* **Edit-Ready Codecs:** Converts H.264/H.265/BRAW into **DNxHR** or **ProRes** for smooth editing in DaVinci Resolve.
+* **3D LUT Burn-in:** Apply .cube LUTs during transcode for instant dailies.
+* **Audio Drift Fix:** Automatically synchronizes variable frame rate audio and normalizes to 48kHz.
+* **Hardware Acceleration:** Full support for NVIDIA (NVENC), Intel (QSV), VAAPI, and MacOS VideoToolbox.
+* **Batch Mode:** Drag-and-drop interface with **Visual Thumbnails** for bulk converting footage.
 
 ### 🛡️ Safety & Reliability
-* **Native Notifications:** System alerts (Toast/Notify) and sounds when long jobs finish.
-* **Logging:** Detailed logs for every file copied and every frame transcoded.
-* **Theme Aware:** Automatically syncs with your system's Dark/Light mode preferences.
+* **Metadata Viewer:** Right-click any file in the queue to inspect codec, bitrate, and resolution.
+* **Configurable FFmpeg:** Easily select custom FFmpeg binaries to unlock specialized hardware features.
+* **Detailed Debugging:** Structured logging saved to `~/cinebridge_pro.log` for professional troubleshooting.
+* **Theme Aware:** Automatically syncs with system Dark/Light mode.
 
 ---
 
 ## 📦 Installation
 
 ### 📥 Releases (Pre-Compiled)
-Don't want to touch code? Download the standalone executable for your OS.
+Download the standalone executable for your OS.
 
 * **[Download Latest Release Here](https://github.com/DGxInfinitY/CineBridge-Pro/releases/latest)**
 
 ### 🛠️ Manual Build (For Developers)
 
-#### Option A: Run from Source
-Best for testing changes or debugging.
-
 1.  **Clone the Repository:**
     ```bash
-    git clone [https://github.com/DGxInfinitY/CineBridge-Pro.git](https://github.com/DGxInfinitY/CineBridge-Pro.git)
+    git clone https://github.com/DGxInfinitY/CineBridge-Pro.git
     cd CineBridge-Pro
     ```
 
@@ -59,51 +59,31 @@ Best for testing changes or debugging.
     python3 src/cinebridge.py
     ```
 
-#### Option B: Build Standalone Executable
-Create a portable binary (single file) to share with others.
-
-1.  **Install PyInstaller:**
-    ```bash
-    pip install pyinstaller
-    ```
-
-2.  **Build the Binary:**
-    * **Linux/macOS:**
-        ```bash
-        pyinstaller --noconfirm --onefile --windowed --name "CineBridgePro" --add-data "assets:assets" src/cinebridge.py
-        ```
-    * **Windows:**
-        ```powershell
-        pyinstaller --noconfirm --onefile --windowed --name "CineBridgePro" --add-data "assets;assets" src/cinebridge.py
-        ```
-
-3.  **Locate the File:**
-    The finished executable will be in the `dist/` folder.
-
 ### 📋 Prerequisites
 * **Python 3.10+** (If running from source)
-* **FFmpeg** (Must be installed and on your system PATH)
+* **FFmpeg** (Included in releases, or install on system)
     * **Linux:** `sudo apt install ffmpeg`
     * **Mac:** `brew install ffmpeg`
-    * **Windows:** Download from [ffmpeg.org](https://ffmpeg.org/download.html) and add `bin` folder to PATH.
-
----
-
-## ⚙️ Configuration
-
-Click the **Gear Icon (⚙)** in the top right to access the Control Panel:
-* **Theme:** Toggle between Light, Dark, or Auto (System Sync).
-* **View Options:** Show/Hide detailed logs for Copying and Transcoding.
-* **FFmpeg Inspector:** Check if your system supports Hardware Acceleration (NVENC/QSV).
-* **Hardware Override:** Manually force GoPro/Android detection if auto-scan misses it.
 
 ---
 
 ## 📝 Change Log
 
-### v4.13.5 (Current Release)
-* **New Feature:** Added Native OS Notifications (Linux/macOS/Windows) and sound alerts when jobs complete.
-* **New Feature:** Added "Verify Copy" toggle using xxHash64 (fast) or MD5 (fallback).
-* **New Feature:** Added Pre-Flight Storage Check. The app now warns you if the destination is full before starting.
-* **Improvement:** MTP "Sniper Mode" significantly speeds up scanning for Android phones and GoPros.
-* **Improvement:** Restored Smart Network Filtering to
+### v4.14.0 (Current Release)
+* **New Feature:** **Ingest Overhaul.** Added a "Scan Source" phase allowing users to select specific dates/files via a Tree View before transfer.
+* **New Feature:** **Device Registry.** Professional fingerprinting for Sony, BMD, Canon, GoPro, DJI, and Insta360.
+* **New Feature:** **3D LUT Support.** Users can now select a `.cube` file to burn into transcoded footage.
+* **New Feature:** **Metadata Viewer.** Added "Inspect Media Info" context menu to the job queue.
+* **New Feature:** **Visual Queue.** Added high-quality thumbnails to the Batch Conversion queue.
+* **New Feature:** **FFmpeg Configuration Center.** Fully overhauled FFmpeg settings with custom binary selection and hardware strategy display.
+* **Improvement:** Added **Audio Drift Fix** toggle to solve audio sync issues in DaVinci Resolve.
+* **Improvement:** Implemented structured logging to `~/cinebridge_pro.log` for better support.
+* **UX:** New "Dashboard" layout for Ingest Tab to better utilize widescreen real estate.
+* **Design:** Updated App Icon to new modern "Bridge" design.
+
+---
+
+### v4.13.5
+* **New Feature:** Added Native OS Notifications and sound alerts.
+* **New Feature:** Added "Verify Copy" toggle using xxHash64.
+* **New Feature:** Added Pre-Flight Storage Check.
