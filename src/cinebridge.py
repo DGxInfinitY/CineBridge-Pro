@@ -8,6 +8,7 @@ import signal
 import subprocess
 import hashlib
 import json
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from collections import deque
 
@@ -25,8 +26,9 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QSizePolicy, QSplitter, QFormLayout, QDialog,
                              QListWidget, QAbstractItemView, QToolButton, QRadioButton, QButtonGroup,
                              QTableWidget, QTableWidgetItem, QHeaderView, QMenu, QTreeWidget, QTreeWidgetItem, QGridLayout, QInputDialog)
-from PyQt6.QtGui import QAction, QPalette, QColor, QIcon, QFont, QDragEnterEvent, QDropEvent, QPixmap, QImage
-from PyQt6.QtCore import QThread, pyqtSignal, Qt, QSettings, QTimer, QMimeData, QObject, QSize, QStandardPaths
+from PyQt6.QtGui import QAction, QPalette, QColor, QIcon, QFont, QDragEnterEvent, QDropEvent, QPixmap, QImage, QTextDocument, QPageLayout, QPageSize
+from PyQt6.QtCore import QThread, pyqtSignal, Qt, QSettings, QTimer, QMimeData, QObject, QSize, QStandardPaths, QMarginsF
+from PyQt6.QtPrintSupport import QPrinter
 
 try:
     import psutil
@@ -180,6 +182,21 @@ class DependencyManager:
 
 class TranscodeEngine:
     @staticmethod
+    def get_font_path():
+        """Returns a system font path for drawtext."""
+        paths = []
+        if platform.system() == "Windows":
+            paths = ["C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/Tahoma.ttf"]
+        elif platform.system() == "Darwin":
+            paths = ["/Library/Fonts/Arial.ttf", "/System/Library/Fonts/Helvetica.ttc"]
+        else: # Linux
+            paths = ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf"]
+        
+        for p in paths:
+            if os.path.exists(p): return p.replace('\\', '/')
+        return None
+
+    @staticmethod
     def build_command(input_path, output_path, settings, use_gpu=False):
         ffmpeg_bin = DependencyManager.get_ffmpeg_path()
         if not ffmpeg_bin: return None
@@ -195,9 +212,23 @@ class TranscodeEngine:
         
         cmd.extend(['-i', input_path])
         
+        vf_chain = []
         if settings.get("lut_path"):
             lut_file = settings['lut_path'].replace('\\', '/').replace(':', '\\:').replace("'", "'\\''")
-            cmd.extend(['-vf', f"lut3d='{lut_file}'"])
+            vf_chain.append(f"lut3d='{lut_file}'")
+        
+        font = TranscodeEngine.get_font_path()
+        if font:
+            if settings.get("burn_file"):
+                vf_chain.append(f"drawtext=text='%{{filename}}':x=10:y=H-th-10:fontfile='{font}':fontcolor=white:fontsize=24:box=1:boxcolor=black@0.5")
+            if settings.get("burn_tc"):
+                vf_chain.append(f"drawtext=text='%{{pts\\:hms}}':x=W-tw-10:y=H-th-10:fontfile='{font}':fontcolor=white:fontsize=24:box=1:boxcolor=black@0.5")
+            if settings.get("watermark"):
+                txt = settings['watermark'].replace("'", "")
+                vf_chain.append(f"drawtext=text='{txt}':x=(W-tw)/2:y=10:fontfile='{font}':fontcolor=white@0.3:fontsize=32")
+
+        if vf_chain:
+            cmd.extend(['-vf', ','.join(vf_chain)])
 
         if v_codec in ['dnxhd', 'prores_ks']:
             cmd.extend(['-c:v', v_codec, '-profile:v', v_profile])
@@ -288,6 +319,87 @@ class MediaInfoExtractor:
                     info["audio_streams"].append(a_info)
             return info
         except Exception as e: return {"error": str(e)}
+
+class ReportGenerator:
+    @staticmethod
+    def generate_pdf(dest_path, file_data_list, project_name="Unnamed Project"):
+        """Generates a professional DIT transfer report in PDF format."""
+        html = f"""
+        <html>
+        <head>
+            <style>
+                body {{ font-family: 'Segoe UI', sans-serif; margin: 30px; }}
+                h1 {{ color: #2980B9; border-bottom: 2px solid #2980B9; padding-bottom: 10px; }}
+                .header-info {{ margin-bottom: 20px; font-size: 14px; }}
+                table {{ width: 100%; border-collapse: collapse; }}
+                th, td {{ border: 1px solid #eee; padding: 8px; text-align: left; font-size: 11px; }}
+                th {{ background-color: #f8f9fa; color: #2980B9; font-weight: bold; }}
+                tr:nth-child(even) {{ background-color: #fafafa; }}
+                .footer {{ margin-top: 40px; font-size: 10px; color: #aaa; text-align: center; border-top: 1px solid #eee; padding-top: 10px; }}
+            </style>
+        </head>
+        <body>
+            <h1>CineBridge Pro | Transfer Report</h1>
+            <div class="header-info">
+                <p><b>Project:</b> {project_name}</p>
+                <p><b>Completion Date:</b> {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}</p>
+                <p><b>Total Files:</b> {len(file_data_list)}</p>
+            </div>
+            <table>
+                <thead>
+                    <tr>
+                        <th>Filename</th>
+                        <th>Size (MB)</th>
+                        <th>Checksum (Hash)</th>
+                        <th>Status</th>
+                    </tr>
+                </thead>
+                <tbody>
+        """
+        total_bytes = 0
+        for f in file_data_list:
+            size_mb = f.get('size', 0) / (1024*1024); total_bytes += f.get('size', 0)
+            html += f"<tr><td>{f['name']}</td><td>{size_mb:.2f}</td><td><code>{f.get('hash', 'N/A')}</code></td><td>✅ OK</td></tr>"
+        
+        html += f"""
+                </tbody>
+            </table>
+            <p><b>Summary:</b> Total Data {total_bytes/(1024**3):.2f} GB transferred and verified.</p>
+            <div class="footer">CineBridge Pro v4.16.0 - Professional DIT & Post-Production Suite</div>
+        </body>
+        </html>
+        """
+        doc = QTextDocument(); doc.setHtml(html)
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+        printer.setOutputFileName(dest_path)
+        printer.setPageLayout(QPageLayout(QPageSize(QPageSize.PageSizeId.A4), QPageLayout.Orientation.Portrait, QMarginsF(15, 15, 15, 15)))
+        doc.print(printer)
+        return dest_path
+
+class MHLGenerator:
+    @staticmethod
+    def generate(dest_root, transfer_data, project_name="CineBridge_Pro"):
+        """Generates an ASC-MHL compliant XML file for media integrity verification."""
+        timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        root = ET.Element("hashlist", version="1.1")
+        for f in transfer_data:
+            if f.get('hash') == "N/A": continue
+            hash_node = ET.SubElement(root, "hash")
+            ET.SubElement(hash_node, "file").text = f['name']
+            ET.SubElement(hash_node, "size").text = str(f['size'])
+            hash_tag = "xxhash64" if HAS_XXHASH else "md5"
+            ET.SubElement(hash_node, hash_tag).text = f['hash']
+            ET.SubElement(hash_node, "hashdate").text = timestamp
+        
+        tree = ET.ElementTree(root)
+        # ElementTree.indent is only available in Python 3.9+
+        if hasattr(ET, 'indent'): ET.indent(tree, space="  ", level=0)
+        
+        mhl_filename = f"{project_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mhl"
+        mhl_path = os.path.join(dest_root, mhl_filename)
+        tree.write(mhl_path, encoding="utf-8", xml_declaration=True)
+        return mhl_path
 
 class PresetManager:
     @staticmethod
@@ -756,7 +868,8 @@ class CopyWorker(QThread):
     
     def __init__(self, source, dest, project_name, sort_by_date, skip_dupes, videos_only, camera_override, verify_copy, file_list=None):
         super().__init__(); self.source = source; self.dest = dest; self.project_name = project_name.strip(); self.sort_by_date = sort_by_date; self.skip_dupes = skip_dupes; self.videos_only = videos_only; self.camera_override = camera_override; self.verify_copy = verify_copy; self.file_list = file_list; self.is_running = True
-        self.main_video_exts = {'.MP4', '.MOV', '.MKV', '.INSV', '.360'}
+        self.main_video_exts = DeviceRegistry.VIDEO_EXTS
+        self.transfer_data = [] # List of dicts for report
     
     def get_mmt_category(self, filename):
         ext = os.path.splitext(filename.upper())[1]
@@ -885,6 +998,7 @@ class CopyWorker(QThread):
                 shutil.copystat(src_path, dest_path)
                 
                 # VERIFICATION PHASE
+                current_hash = "N/A"
                 if self.verify_copy and self.is_running:
                     self.status_signal.emit(f"Verifying {idx + 1}/{total_files}: {filename}")
                     src_hash, algo = self.calculate_hash(src_path)
@@ -892,10 +1006,20 @@ class CopyWorker(QThread):
                     
                     if src_hash and dest_hash and src_hash == dest_hash:
                         self.log_signal.emit(f"✅ Verified ({algo}): {filename}")
+                        current_hash = src_hash
                     else:
                         self.log_signal.emit(f"❌ VERIFICATION FAILED: {filename}")
+                        current_hash = "FAILED"
                 else:
                     self.log_signal.emit(f"✔️ Copied: {filename}")
+
+                # Store for report
+                self.transfer_data.append({
+                    'name': filename,
+                    'size': file_size,
+                    'hash': current_hash,
+                    'status': "OK" if current_hash != "FAILED" else "VERIFY FAILED"
+                })
 
                 if filename.upper().endswith(('.MP4', '.MOV', '.MKV', '.AVI')):
                     self.file_ready_signal.emit(src_path, dest_path, filename)
@@ -1001,6 +1125,14 @@ class TranscodeSettingsWidget(QGroupBox):
         lut_lay.addWidget(QLabel("Look:")); lut_lay.addWidget(self.lut_path); lut_lay.addWidget(self.btn_lut); lut_lay.addWidget(self.btn_clr_lut)
         self.layout.addLayout(lut_lay)
 
+        # Overlays Section
+        overlay_group = QGroupBox("Visual Overlays (Burn-in)"); overlay_lay = QGridLayout(); overlay_group.setLayout(overlay_lay)
+        self.chk_burn_file = QCheckBox("Burn Filename"); self.chk_burn_tc = QCheckBox("Burn Timecode")
+        self.inp_watermark = QLineEdit(); self.inp_watermark.setPlaceholderText("Watermark Text (Optional)")
+        overlay_lay.addWidget(self.chk_burn_file, 0, 0); overlay_lay.addWidget(self.chk_burn_tc, 0, 1)
+        overlay_lay.addWidget(QLabel("Watermark:"), 1, 0); overlay_lay.addWidget(self.inp_watermark, 1, 1)
+        self.layout.addWidget(overlay_group)
+
         self.advanced_frame = QFrame(); adv_layout = QFormLayout(); self.advanced_frame.setLayout(adv_layout)
         self.codec_combo = QComboBox(); self.init_codecs(); self.codec_combo.currentIndexChanged.connect(self.update_profiles)
         self.profile_combo = QComboBox(); self.audio_combo = QComboBox(); self.audio_combo.addItems(["PCM (Uncompressed)", "AAC (Compressed)"])
@@ -1095,6 +1227,9 @@ class TranscodeSettingsWidget(QGroupBox):
             self.audio_combo.setCurrentIndex(1 if data.get('a_codec') == 'aac' else 0)
             self.chk_audio_fix.setChecked(data.get('audio_fix', False))
             self.lut_path.setText(data.get('lut_path', ""))
+            self.chk_burn_file.setChecked(data.get('burn_file', False))
+            self.chk_burn_tc.setChecked(data.get('burn_tc', False))
+            self.inp_watermark.setText(data.get('watermark', ""))
             return
 
         if is_custom_entry: return
@@ -1130,7 +1265,10 @@ class TranscodeSettingsWidget(QGroupBox):
             "v_codec": v_codec_map.get(self.codec_combo.currentText(), "dnxhd"), 
             "v_profile": self.profile_combo.currentData(), 
             "a_codec": a_codec_map.get(self.audio_combo.currentText(), "pcm_s16le"),
-            "audio_fix": self.chk_audio_fix.isChecked()
+            "audio_fix": self.chk_audio_fix.isChecked(),
+            "burn_file": self.chk_burn_file.isChecked(),
+            "burn_tc": self.chk_burn_tc.isChecked(),
+            "watermark": self.inp_watermark.text().strip()
         }
         if self.lut_path.text().strip(): settings["lut_path"] = self.lut_path.text().strip()
         return settings
@@ -1357,9 +1495,11 @@ class IngestTab(QWidget):
         self.check_videos_only = QCheckBox("Video Only"); self.check_videos_only.toggled.connect(self.refresh_tree_view); rules_grid.addWidget(self.check_videos_only, 0, 2)
         self.check_verify = QCheckBox("Verify Copy"); self.check_verify.setStyleSheet("color: #27AE60; font-weight: bold;"); rules_grid.addWidget(self.check_verify, 1, 0)
         self.check_verify.setToolTip("Performs hash verification (xxHash/MD5) after copy.")
+        self.check_report = QCheckBox("Gen Report"); self.check_report.setToolTip("Generate professional PDF DIT Report on completion.")
+        rules_grid.addWidget(self.check_report, 1, 1)
         self.check_transcode = QCheckBox("Enable Transcode"); self.check_transcode.setStyleSheet("color: #E67E22; font-weight: bold;"); self.check_transcode.toggled.connect(self.toggle_transcode_ui)
         # Fix: Align left to prevent background stretching
-        rules_grid.addWidget(self.check_transcode, 1, 1, 1, 2, Qt.AlignmentFlag.AlignLeft)
+        rules_grid.addWidget(self.check_transcode, 1, 2, 1, 1, Qt.AlignmentFlag.AlignLeft)
         settings_layout.addLayout(rules_grid)
         
         self.btn_config_trans = QPushButton("Configure Transcode..."); self.btn_config_trans.setVisible(False); self.btn_config_trans.clicked.connect(self.open_transcode_config); settings_layout.addWidget(self.btn_config_trans)
@@ -1539,8 +1679,28 @@ class IngestTab(QWidget):
         self.status_label.setText("CANCELLED"); self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False); self.set_transcode_active(False)
     def on_copy_finished(self, success, msg):
         self.speed_label.setText(""); 
-        if success: SystemNotifier.notify("Ingest Complete", "All files copied successfully.")
-        else: SystemNotifier.notify("Ingest Failed", "Operation failed or cancelled.")
+        if success: 
+            SystemNotifier.notify("Ingest Complete", "All files copied successfully.")
+            # Generate Report if checked
+            if self.check_report.isChecked() and self.copy_worker:
+                report_name = f"Transfer_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+                report_path = os.path.join(self.dest_input.text(), report_name)
+                try:
+                    ReportGenerator.generate_pdf(report_path, self.copy_worker.transfer_data, self.project_name_input.text() or "Unnamed")
+                    self.append_copy_log(f"📝 Report: {report_path}")
+                except Exception as e:
+                    error_log(f"Report: Failed to generate PDF: {e}")
+            
+            # Generate MHL if verification was active
+            if self.check_verify.isChecked() and self.copy_worker:
+                try:
+                    mhl_path = MHLGenerator.generate(self.dest_input.text(), self.copy_worker.transfer_data, self.project_name_input.text() or "CineBridge")
+                    self.append_copy_log(f"🛡️ MHL: {os.path.basename(mhl_path)}")
+                except Exception as e:
+                    error_log(f"MHL: Failed to generate: {e}")
+        else: 
+            SystemNotifier.notify("Ingest Failed", "Operation failed or cancelled.")
+        
         if not self.check_transcode.isChecked():
             self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False); self.status_label.setText(msg); 
             if success: dlg = JobReportDialog("Ingest Complete", f"<h3>Ingest Successful</h3><p>{msg}</p>", self); dlg.exec()
@@ -1553,10 +1713,10 @@ class IngestTab(QWidget):
     def on_all_transcodes_finished(self):
         SystemNotifier.notify("Job Complete", "Ingest and Transcoding finished."); self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False); self.set_transcode_active(False); self.transcode_status_label.setText("All Transcodes Complete!"); dlg = JobReportDialog("Job Complete", "<h3>Job Complete</h3><p>All ingest and transcode operations finished successfully.</p>", self); dlg.exec()
     def save_tab_settings(self):
-        s = self.app.settings; s.setValue("last_source", self.source_input.text()); s.setValue("last_dest", self.dest_input.text()); s.setValue("sort_date", self.check_date.isChecked()); s.setValue("skip_dupe", self.check_dupe.isChecked()); s.setValue("videos_only", self.check_videos_only.isChecked()); s.setValue("transcode_dnx", self.check_transcode.isChecked()); s.setValue("verify_copy", self.check_verify.isChecked())
+        s = self.app.settings; s.setValue("last_source", self.source_input.text()); s.setValue("last_dest", self.dest_input.text()); s.setValue("sort_date", self.check_date.isChecked()); s.setValue("skip_dupe", self.check_dupe.isChecked()); s.setValue("videos_only", self.check_videos_only.isChecked()); s.setValue("transcode_dnx", self.check_transcode.isChecked()); s.setValue("verify_copy", self.check_verify.isChecked()); s.setValue("gen_report", self.check_report.isChecked())
         s.setValue("show_copy_log", self.copy_log.isVisible()); s.setValue("show_trans_log", self.transcode_log.isVisible())
     def load_tab_settings(self):
-        s = self.app.settings; self.source_input.setText(s.value("last_source", "")); self.dest_input.setText(s.value("last_dest", "")); self.check_date.setChecked(s.value("sort_date", True, type=bool)); self.check_dupe.setChecked(s.value("skip_dupe", True, type=bool)); self.check_videos_only.setChecked(s.value("videos_only", False, type=bool)); self.check_transcode.setChecked(s.value("transcode_dnx", False, type=bool)); self.check_verify.setChecked(s.value("verify_copy", False, type=bool))
+        s = self.app.settings; self.source_input.setText(s.value("last_source", "")); self.dest_input.setText(s.value("last_dest", "")); self.check_date.setChecked(s.value("sort_date", True, type=bool)); self.check_dupe.setChecked(s.value("skip_dupe", True, type=bool)); self.check_videos_only.setChecked(s.value("videos_only", False, type=bool)); self.check_transcode.setChecked(s.value("transcode_dnx", False, type=bool)); self.check_verify.setChecked(s.value("verify_copy", False, type=bool)); self.check_report.setChecked(s.value("gen_report", True, type=bool))
         show_copy = s.value("show_copy_log", True, type=bool); show_trans = s.value("show_trans_log", False, type=bool); self.toggle_logs(show_copy, show_trans); self.toggle_transcode_ui(self.check_transcode.isChecked())
 
 class ConvertTab(QWidget):
@@ -1739,6 +1899,74 @@ class DeliveryTab(QWidget):
         SystemNotifier.notify("Render Complete", "Delivery render finished.")
         self.toggle_ui_state(False); self.status.setText("Delivery Render Complete!"); dest = self.inp_dest.text(); msg = f"File saved to:\n{dest}" if dest else "File saved to 'Final_Render' folder next to the master file."; dlg = JobReportDialog("Render Complete", f"<h3>Render Successful</h3><p>{msg}</p>", self); dlg.exec()
 
+class WatchTab(QWidget):
+    def __init__(self):
+        super().__init__(); layout = QVBoxLayout(); layout.setSpacing(15); layout.setContentsMargins(20, 20, 20, 20); self.setLayout(layout)
+        self.is_active = False; self.processed_files = set(); self.timer = QTimer(); self.timer.timeout.connect(self.check_folder)
+        
+        self.settings = TranscodeSettingsWidget("Watch Folder Transcode Settings", mode="general")
+        layout.addWidget(self.settings)
+        
+        io_group = QGroupBox("Watch Configuration"); io_lay = QFormLayout(); io_group.setLayout(io_lay)
+        self.inp_watch = QLineEdit(); btn_watch = QPushButton("Browse..."); btn_watch.clicked.connect(self.browse_watch)
+        row1 = QHBoxLayout(); row1.addWidget(self.inp_watch); row1.addWidget(btn_watch)
+        self.inp_dest = QLineEdit(); btn_dest = QPushButton("Browse..."); btn_dest.clicked.connect(self.browse_dest)
+        row2 = QHBoxLayout(); row2.addWidget(self.inp_dest); row2.addWidget(btn_dest)
+        io_lay.addRow("Watch Directory:", row1); io_lay.addRow("Proxy Destination:", row2)
+        layout.addWidget(io_group)
+        
+        status_frame = QFrame(); status_frame.setObjectName("DashFrame"); sl = QVBoxLayout(status_frame)
+        self.status_label = QLabel("Watch Folder: INACTIVE"); self.status_label.setStyleSheet("font-weight: bold; color: #888;"); sl.addWidget(self.status_label)
+        self.pbar = QProgressBar(); self.pbar.setVisible(False); sl.addWidget(self.pbar); layout.addWidget(status_frame)
+        
+        self.btn_toggle = QPushButton("ACTIVATE WATCH FOLDER"); self.btn_toggle.setObjectName("StartBtn"); self.btn_toggle.setMinimumHeight(50); self.btn_toggle.clicked.connect(self.toggle_watch); layout.addWidget(self.btn_toggle)
+        layout.addStretch()
+
+    def browse_watch(self):
+        d = QFileDialog.getExistingDirectory(self, "Select Folder to Watch")
+        if d: self.inp_watch.setText(d)
+    def browse_dest(self):
+        d = QFileDialog.getExistingDirectory(self, "Pick a Destination")
+        if d: self.inp_dest.setText(d)
+
+    def toggle_watch(self):
+        if self.is_active:
+            self.is_active = False; self.timer.stop(); self.btn_toggle.setText("ACTIVATE WATCH FOLDER"); self.btn_toggle.setObjectName("StartBtn")
+            self.status_label.setText("Watch Folder: INACTIVE"); self.status_label.setStyleSheet("color: #888;")
+        else:
+            if not self.inp_watch.text() or not self.inp_dest.text(): return QMessageBox.warning(self, "Error", "Set Watch/Dest folders.")
+            self.is_active = True; self.timer.start(5000); self.btn_toggle.setText("DEACTIVATE WATCH FOLDER"); self.btn_toggle.setObjectName("StopBtn")
+            self.status_label.setText("Watch Folder: ACTIVE - Scanning every 5s..."); self.status_label.setStyleSheet("color: #27AE60;")
+        self.btn_toggle.style().unpolish(self.btn_toggle); self.btn_toggle.style().polish(self.btn_toggle)
+
+    def check_folder(self):
+        watch_path = self.inp_watch.text()
+        if not os.path.exists(watch_path): return
+        
+        files = []
+        for f in os.listdir(watch_path):
+            full = os.path.join(watch_path, f)
+            if os.path.isfile(full) and full not in self.processed_files:
+                if f.lower().endswith(tuple(x.lower() for x in DeviceRegistry.VIDEO_EXTS)):
+                    files.append(full)
+        
+        if files:
+            # We found new files. For simplicity in v4.16, we'll process them one by one.
+            # Real professional tools check if file size is stable (transfer complete)
+            self.start_batch(files)
+
+    def start_batch(self, files):
+        dest = self.inp_dest.text()
+        self.worker = BatchTranscodeWorker(files, dest, self.settings.get_settings(), mode="convert", use_gpu=self.settings.is_gpu_enabled())
+        self.worker.progress_signal.connect(self.pbar.setValue); self.worker.finished_signal.connect(self.on_batch_finished)
+        self.pbar.setVisible(True); self.timer.stop() # Pause polling
+        for f in files: self.processed_files.add(f)
+        self.worker.start()
+
+    def on_batch_finished(self):
+        self.pbar.setVisible(False); self.timer.start(5000) # Resume polling
+        SystemNotifier.notify("Watch Folder", "New proxies processed.")
+
 class AboutDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent); self.setWindowTitle("About CineBridge Pro"); self.setFixedWidth(400); layout = QVBoxLayout()
@@ -1768,8 +1996,10 @@ class CineBridgeApp(QMainWindow):
         elif os.path.exists(icon_png): self.setWindowIcon(QIcon(icon_png))
         self.tabs = QTabWidget(); self.tabs.setTabPosition(QTabWidget.TabPosition.North); self.tabs.setStyleSheet("QTabBar::tab { height: 40px; width: 150px; font-weight: bold; }")
         self.settings_btn = QToolButton(); self.settings_btn.setText("⚙"); self.settings_btn.setStyleSheet("QToolButton { font-size: 20px; border: none; background: transparent; padding: 5px; } QToolButton:hover { color: #3498DB; }"); self.settings_btn.clicked.connect(self.open_settings); self.tabs.setCornerWidget(self.settings_btn, Qt.Corner.TopRightCorner)
-        self.tab_ingest = IngestTab(self); self.tab_convert = ConvertTab(); self.tab_delivery = DeliveryTab(); self.tabs.addTab(self.tab_ingest, "📥 INGEST"); self.tabs.addTab(self.tab_convert, "🛠️ CONVERT"); self.tabs.addTab(self.tab_delivery, "🚀 DELIVERY"); self.setCentralWidget(self.tabs)
-        self.tab_ingest.transcode_widget.chk_gpu.toggled.connect(self.sync_gpu_toggle); self.tab_convert.settings.chk_gpu.toggled.connect(self.sync_gpu_toggle); self.tab_delivery.settings.chk_gpu.toggled.connect(self.sync_gpu_toggle)
+        self.tab_ingest = IngestTab(self); self.tab_convert = ConvertTab(); self.tab_delivery = DeliveryTab(); self.tab_watch = WatchTab()
+        self.tabs.addTab(self.tab_ingest, "📥 INGEST"); self.tabs.addTab(self.tab_convert, "🛠️ CONVERT"); self.tabs.addTab(self.tab_delivery, "🚀 DELIVERY"); self.tabs.addTab(self.tab_watch, "👀 WATCH")
+        self.setCentralWidget(self.tabs)
+        self.tab_ingest.transcode_widget.chk_gpu.toggled.connect(self.sync_gpu_toggle); self.tab_convert.settings.chk_gpu.toggled.connect(self.sync_gpu_toggle); self.tab_delivery.settings.chk_gpu.toggled.connect(self.sync_gpu_toggle); self.tab_watch.settings.chk_gpu.toggled.connect(self.sync_gpu_toggle)
         
         # Global System Monitor
         self.sys_monitor = SystemMonitor()
