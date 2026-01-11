@@ -1098,7 +1098,8 @@ class IngestTab(QWidget):
         self.check_verify = QCheckBox("Verify Copy"); self.check_verify.setStyleSheet("color: #27AE60; font-weight: bold;"); rules_grid.addWidget(self.check_verify, 1, 0)
         self.check_verify.setToolTip("Performs hash verification (xxHash/MD5) after copy.")
         self.check_transcode = QCheckBox("Enable Transcode"); self.check_transcode.setStyleSheet("color: #E67E22; font-weight: bold;"); self.check_transcode.toggled.connect(self.toggle_transcode_ui)
-        rules_grid.addWidget(self.check_transcode, 1, 1, 1, 2)
+        # Fix: Align left to prevent background stretching
+        rules_grid.addWidget(self.check_transcode, 1, 1, 1, 2, Qt.AlignmentFlag.AlignLeft)
         settings_layout.addLayout(rules_grid)
         
         self.btn_config_trans = QPushButton("Configure Transcode..."); self.btn_config_trans.setVisible(False); self.btn_config_trans.clicked.connect(self.open_transcode_config); settings_layout.addWidget(self.btn_config_trans)
@@ -1107,11 +1108,13 @@ class IngestTab(QWidget):
         
         # 4. Review Group
         self.review_group = QGroupBox("4. Select Media"); review_lay = QVBoxLayout()
-        self.tree = QTreeWidget(); self.tree.setHeaderLabel("Media Grouped by Date")
+        self.tree = QTreeWidget(); self.tree.setHeaderLabel("Media Review")
         self.tree.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.tree.itemChanged.connect(self.update_transfer_button_text)
+        # Add Placeholder
+        placeholder = QTreeWidgetItem(self.tree); placeholder.setText(0, "Scan source to review media selection."); placeholder.setFlags(placeholder.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
         review_lay.addWidget(self.tree); self.review_group.setLayout(review_lay)
-        self.review_group.setVisible(False)
+        self.review_group.setVisible(True) # Persistent
 
         # GRID LAYOUT
         grid = QGridLayout()
@@ -1134,8 +1137,8 @@ class IngestTab(QWidget):
         self.cancel_btn = QPushButton("STOP"); self.cancel_btn.setObjectName("StopBtn"); self.cancel_btn.clicked.connect(self.cancel_import); self.cancel_btn.setEnabled(False)
         btn_layout.addWidget(self.import_btn); btn_layout.addWidget(self.cancel_btn); self.layout.addLayout(btn_layout)
         self.splitter = QSplitter(Qt.Orientation.Vertical)
-        self.copy_log = QTextEdit(); self.copy_log.setReadOnly(True); self.copy_log.setMinimumHeight(50); self.copy_log.setStyleSheet("background-color: #1e1e1e; color: #2ECC71; font-family: Consolas; font-size: 11px;"); self.copy_log.setPlaceholderText("Copy Log...")
-        self.transcode_log = QTextEdit(); self.transcode_log.setReadOnly(True); self.transcode_log.setMinimumHeight(50); self.transcode_log.setStyleSheet("background-color: #2c2c2c; color: #3498DB; font-family: Consolas; font-size: 11px;"); self.transcode_log.setPlaceholderText("Transcode Log..."); self.splitter.addWidget(self.copy_log); self.splitter.addWidget(self.transcode_log); self.layout.addWidget(self.splitter, 1)
+        self.copy_log = QTextEdit(); self.copy_log.setReadOnly(True); self.copy_log.setMinimumHeight(40); self.copy_log.setStyleSheet("background-color: #1e1e1e; color: #2ECC71; font-family: Consolas; font-size: 11px;"); self.copy_log.setPlaceholderText("Copy Log...")
+        self.transcode_log = QTextEdit(); self.transcode_log.setReadOnly(True); self.transcode_log.setMinimumHeight(40); self.transcode_log.setStyleSheet("background-color: #2c2c2c; color: #3498DB; font-family: Consolas; font-size: 11px;"); self.transcode_log.setPlaceholderText("Transcode Log..."); self.splitter.addWidget(self.copy_log); self.splitter.addWidget(self.transcode_log); self.layout.addWidget(self.splitter, 1)
         self.transcode_log.setVisible(False)
     def toggle_logs(self, show_copy, show_transcode): self.copy_log.setVisible(show_copy); self.transcode_log.setVisible(show_transcode); self.splitter.setVisible(show_copy or show_transcode)
     def toggle_transcode_ui(self, checked): 
