@@ -54,14 +54,18 @@ jobs:
           # Sync Python code version
           sed -i "s/CineBridge Pro v[0-9.]*/CineBridge Pro ${{ github.ref_name }}/g" src/cinebridge.py
           
-          # Extract version without 'v' prefix for windows metadata
-          VERSION_NUM=$(echo "${{ github.ref_name }}" | sed 's/v//g')
+          # Extract version components
+          VERSION_RAW=$(echo "${{ github.ref_name }}" | sed 's/v//g')
+          # Ensure 4-part version for Windows metadata (e.g. 4.15.0.0)
+          VERSION_4PART=$(echo "$VERSION_RAW.0.0.0" | cut -d. -f1-4)
+          VERSION_COMMA=$(echo "$VERSION_4PART" | sed 's/\./, /g')
           
-          # Sync windows_version_info.txt
-          sed -i "s/4.15.0/$VERSION_NUM/g" windows_version_info.txt
+          # Sync windows_version_info.txt strings and tuples
+          sed -i "s/4.15.0.0/$VERSION_4PART/g" windows_version_info.txt
+          sed -i "s/4, 15, 0, 0/$VERSION_COMMA/g" windows_version_info.txt
           
-          # Sync setup_script.iss
-          sed -i "s/AppVersion=4.15.0/AppVersion=$VERSION_NUM/g" setup_script.iss
+          # Sync setup_script.iss (replaces whatever version is currently there)
+          sed -i "s/AppVersion=[0-9.]*/AppVersion=$VERSION_RAW/g" setup_script.iss
 
       - name: Build with PyInstaller
         run: |
