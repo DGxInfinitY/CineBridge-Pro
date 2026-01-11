@@ -1,7 +1,7 @@
 VSVersionInfo(
   ffi=FixedFileInfo(
-    filevers=(4, 15, 0, 0),
-    prodvers=(4, 15, 0, 0),
+    filevers=(4, 16, 0, 0),
+    prodvers=(4, 16, 0, 0),
     mask=0x3f,
     flags=0x0,
     OS=0x40004,
@@ -14,14 +14,14 @@ VSVersionInfo(
       [
       StringTable(
         u'040904B0',
-        [StringProperty(u'CompanyName', u'DGxInfinitY'),
-        StringProperty(u'FileDescription', u'CineBridge Pro: DIT & Transcoding Suite'),
-        StringProperty(u'FileVersion', u'4.15.0.0'),
-        StringProperty(u'InternalName', u'CineBridgePro'),
-        StringProperty(u'LegalCopyright', u'Copyright (C) 2026 Donovan Goodwin'),
-        StringProperty(u'OriginalFilename', u'CineBridgePro.exe'),
-        StringProperty(u'ProductName', u'CineBridge Pro'),
-        StringProperty(u'ProductVersion', u'4.15.0.0')])
+        [StringStruct(u'CompanyName', u'DGxInfinitY'),
+        StringStruct(u'FileDescription', u'CineBridge Pro: DIT & Transcoding Suite'),
+        StringStruct(u'FileVersion', u'4.16.0.0'),
+        StringStruct(u'InternalName', u'CineBridgePro'),
+        StringStruct(u'LegalCopyright', u'Copyright (C) 2026 Donovan Goodwin'),
+        StringStruct(u'OriginalFilename', u'CineBridgePro.exe'),
+        StringStruct(u'ProductName', u'CineBridge Pro'),
+        StringStruct(u'ProductVersion', u'4.16.0.0')])
       ]), 
     VarFileInfo([VarProperty(u'Translation', [1033, 1200])])
   ]

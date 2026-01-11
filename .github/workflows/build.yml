@@ -61,8 +61,8 @@ jobs:
           VERSION_COMMA=$(echo "$VERSION_4PART" | sed 's/\./, /g')
           
           # Sync windows_version_info.txt strings and tuples
-          sed -i "s/4.15.0.0/$VERSION_4PART/g" windows_version_info.txt
-          sed -i "s/4, 15, 0, 0/$VERSION_COMMA/g" windows_version_info.txt
+          sed -i "s/4.16.0.0/$VERSION_4PART/g" windows_version_info.txt
+          sed -i "s/4, 16, 0, 0/$VERSION_COMMA/g" windows_version_info.txt
           
           # Sync setup_script.iss (replaces whatever version is currently there)
           sed -i "s/AppVersion=[0-9.]*/AppVersion=$VERSION_RAW/g" setup_script.iss
