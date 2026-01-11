@@ -1156,7 +1156,7 @@ class IngestTab(QWidget):
         self.tree.clear(); total_files = 0; sorted_dates = sorted(grouped_files.keys(), reverse=True)
         for date in sorted_dates:
             files = grouped_files[date]; total_files += len(files)
-            date_item = QTreeWidgetItem(self.tree); date_item.setText(0, f"{date} ({len(files)} files)"); date_item.setFlags(date_item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsTristate); date_item.setCheckState(0, Qt.CheckState.Checked)
+            date_item = QTreeWidgetItem(self.tree); date_item.setText(0, f"{date} ({len(files)} files)"); date_item.setFlags(date_item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsAutoTristate); date_item.setCheckState(0, Qt.CheckState.Checked)
             for f in files:
                 f_item = QTreeWidgetItem(date_item); f_item.setText(0, os.path.basename(f)); f_item.setData(0, Qt.ItemDataRole.UserRole, f); f_item.setFlags(f_item.flags() | Qt.ItemFlag.ItemIsUserCheckable); f_item.setCheckState(0, Qt.CheckState.Checked)
         self.tree.expandAll(); self.review_group.setVisible(True); self.import_btn.setEnabled(True); self.ingest_mode = "transfer"
