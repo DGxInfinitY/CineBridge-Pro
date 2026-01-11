@@ -995,6 +995,22 @@ class TranscodeSettingsWidget(QGroupBox):
         self.preset_combo.insertSeparator(self.preset_combo.count())
         self.preset_combo.addItem("Custom")
 
+    def init_codecs(self):
+        self.codec_combo.clear()
+        if self.mode == "general": self.codec_combo.addItems(["DNxHR (Avid)", "ProRes (Apple)", "H.264", "H.265 (HEVC)"])
+        else: self.codec_combo.addItems(["H.264", "H.265 (HEVC)"])
+
+    def update_profiles(self):
+        self.profile_combo.clear(); codec = self.codec_combo.currentText()
+        if "DNxHR" in codec: 
+            self.profile_combo.addItem("LB (Proxy)", "dnxhr_lb"); self.profile_combo.addItem("SQ (Standard)", "dnxhr_sq"); self.profile_combo.addItem("HQ (High Quality)", "dnxhr_hq")
+        elif "ProRes" in codec: 
+            self.profile_combo.addItem("Proxy", "0"); self.profile_combo.addItem("LT", "1"); self.profile_combo.addItem("422", "2"); self.profile_combo.addItem("HQ", "3")
+        elif "H.264" in codec: 
+            self.profile_combo.addItem("High", "high"); self.profile_combo.addItem("Main", "main")
+        elif "H.265" in codec: 
+            self.profile_combo.addItem("Main", "main"); self.profile_combo.addItem("Main 10", "main10")
+
     def save_custom_preset(self):
         name, ok = QInputDialog.getText(self, "Save Preset", "Enter a name for this preset:")
         if ok and name.strip():
