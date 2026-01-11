@@ -314,6 +314,19 @@ class DeviceRegistry:
             for root_hint in profile['roots']:
                 found_root = find_path(mount_point, root_hint)
                 if found_root and os.path.isdir(found_root):
+                    # Validation for Root-based matching (e.g. BMD uses '.')
+                    if root_hint == "." or root_hint == "":
+                        has_sig = False
+                        try:
+                            items = os.listdir(found_root)
+                            for item in items:
+                                if any(s.lower() in item.lower() for s in profile['signatures']):
+                                    has_sig = True; break
+                                if any(item.upper().endswith(e) for e in profile['exts']):
+                                    has_sig = True; break
+                        except: pass
+                        if not has_sig: continue
+
                     return name, found_root, profile['exts']
 
         # 2. Signature / Hint Match (Fallback)
