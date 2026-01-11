@@ -309,20 +309,22 @@ class DeviceRegistry:
                 if not found: return None
             return curr
 
+        # 1. Structure Match (Reliable)
+        for name, profile in DeviceRegistry.PROFILES.items():
+            for root_hint in profile['roots']:
+                found_root = find_path(mount_point, root_hint)
+                if found_root and os.path.isdir(found_root):
+                    return name, found_root, profile['exts']
+
+        # 2. Signature / Hint Match (Fallback)
         for name, profile in DeviceRegistry.PROFILES.items():
             hit = False
             for sig in profile['signatures']:
                 if any(sig.lower() in item.lower() for item in root_items): hit = True
                 if any(sig.lower() in h.lower() for h in usb_hints): hit = True
-                if hit: break
-            
-            if hit:
-                for root_hint in profile['roots']:
-                    found_root = find_path(mount_point, root_hint)
-                    if found_root and os.path.isdir(found_root):
-                        return name, found_root, profile['exts']
+                if hit: return name, mount_point, profile['exts']
         
-        # Fallback Android/Generic
+        # 3. Android/Generic Fallback
         dcim = find_path(mount_point, "DCIM")
         if dcim:
              cam = find_path(dcim, "Camera")
