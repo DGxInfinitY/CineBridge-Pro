@@ -1096,6 +1096,7 @@ class IngestTab(QWidget):
         self.review_group = QGroupBox("4. Select Media"); review_lay = QVBoxLayout()
         self.tree = QTreeWidget(); self.tree.setHeaderLabel("Media Grouped by Date")
         self.tree.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
+        self.tree.itemChanged.connect(self.update_transfer_button_text)
         review_lay.addWidget(self.tree); self.review_group.setLayout(review_lay)
         self.review_group.setVisible(False); self.layout.addWidget(self.review_group, 1)
 
@@ -1117,8 +1118,7 @@ class IngestTab(QWidget):
     def toggle_logs(self, show_copy, show_transcode): self.copy_log.setVisible(show_copy); self.transcode_log.setVisible(show_transcode); self.splitter.setVisible(show_copy or show_transcode)
     def toggle_transcode_ui(self, checked): 
         self.btn_config_trans.setVisible(checked); self.transcode_status_label.setVisible(checked)
-        if self.ingest_mode == "scan": self.import_btn.setText("SCAN SOURCE")
-        else: self.import_btn.setText("START TRANSFER & TRANSCODE" if checked else "START TRANSFER")
+        self.update_transfer_button_text()
     def open_transcode_config(self):
         dlg = TranscodeConfigDialog(self.transcode_widget, self); dlg.exec()
     def update_load_display(self, value): self.load_label.setText(f"🔥 CPU Load: {value}%")
@@ -1173,8 +1173,22 @@ class IngestTab(QWidget):
             for f in files:
                 f_item = QTreeWidgetItem(date_item); f_item.setText(0, os.path.basename(f)); f_item.setData(0, Qt.ItemDataRole.UserRole, f); f_item.setFlags(f_item.flags() | Qt.ItemFlag.ItemIsUserCheckable); f_item.setCheckState(0, Qt.CheckState.Checked)
         self.tree.expandAll(); self.review_group.setVisible(True); self.import_btn.setEnabled(True); self.ingest_mode = "transfer"
-        self.import_btn.setText("START TRANSFER" if not self.check_transcode.isChecked() else "START TRANSFER & TRANSCODE")
         self.status_label.setText(f"FOUND {total_files} FILES. SELECT MEDIA TO TRANSFER.")
+        self.update_transfer_button_text()
+
+    def update_transfer_button_text(self):
+        if self.ingest_mode == "scan":
+            self.import_btn.setText("SCAN SOURCE"); return
+        
+        count = 0; root = self.tree.invisibleRootItem()
+        for i in range(root.childCount()):
+            date_item = root.child(i)
+            for j in range(date_item.childCount()):
+                if date_item.child(j).checkState(0) == Qt.CheckState.Checked: count += 1
+        
+        action = "TRANSFER/TRANSCODE" if self.check_transcode.isChecked() else "TRANSFER"
+        self.import_btn.setText(f"START {action} ({count} FILES)")
+
     def start_transfer(self):
         selected_files = []
         if self.ingest_mode == "transfer":
