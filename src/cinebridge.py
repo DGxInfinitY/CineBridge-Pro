@@ -1369,7 +1369,7 @@ class IngestTab(QWidget):
         d = QFileDialog.getExistingDirectory(self, "Source", self.source_input.text()); 
         if d: self.source_input.setText(d)
     def browse_dest(self): 
-        d = QFileDialog.getExistingDirectory(self, "Dest", self.dest_input.text()); 
+        d = QFileDialog.getExistingDirectory(self, "Pick a Destination", self.dest_input.text()); 
         if d: self.dest_input.setText(d)
     def append_copy_log(self, text): self.copy_log.append(text); sb = self.copy_log.verticalScrollBar(); sb.setValue(sb.maximum())
     def append_transcode_log(self, text): self.transcode_log.append(text); sb = self.transcode_log.verticalScrollBar(); sb.setValue(sb.maximum())
@@ -1608,7 +1608,7 @@ class ConvertTab(QWidget):
         if files:
             [self.list.addItem(f) for f in files]; self.start_thumb_process(files)
     def browse_dest(self): 
-        d = QFileDialog.getExistingDirectory(self, "Select Output Folder")
+        d = QFileDialog.getExistingDirectory(self, "Pick a Destination")
         if d: self.out_input.setText(d)
     def dragEnterEvent(self, e): 
         if e.mimeData().hasUrls(): e.accept()
@@ -1662,7 +1662,7 @@ class DeliveryTab(QWidget):
         self.inp_file = FileDropLineEdit(); self.inp_file.setPlaceholderText("Drag Master File Here or Browse")
         b1 = QPushButton("Select Master"); b1.clicked.connect(lambda: self.inp_file.setText(QFileDialog.getOpenFileName(self, "Select Master File")[0]))
         self.inp_dest = QLineEdit(); self.inp_dest.setPlaceholderText("Default: Creates 'Final_Render' folder next to master file")
-        b2 = QPushButton("Select Output Folder"); b2.clicked.connect(lambda: self.inp_dest.setText(QFileDialog.getExistingDirectory(self, "Select Output Folder")))
+        b2 = QPushButton("Select Output Folder"); b2.clicked.connect(lambda: self.inp_dest.setText(QFileDialog.getExistingDirectory(self, "Pick a Destination")))
         r1 = QHBoxLayout(); r1.addWidget(self.inp_file); r1.addWidget(b1); r2 = QHBoxLayout(); r2.addWidget(self.inp_dest); r2.addWidget(b2)
         fl.addRow("Master File:", r1); fl.addRow("Output Location:", r2); form_group.setLayout(fl); layout.addWidget(form_group)
         self.drop_area = QLabel("\n⬇️\n\nDRAG MASTER FILE HERE\n\n"); self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter); self.drop_area.setStyleSheet("""QLabel { border: 3px dashed #666; border-radius: 10px; background-color: #2b2b2b; color: #aaa; font-weight: bold; } QLabel:hover { border-color: #3498DB; background-color: #333; color: white; }"""); layout.addWidget(self.drop_area, 1); layout.addStretch()
