@@ -26,7 +26,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QListWidget, QAbstractItemView, QToolButton, QRadioButton, QButtonGroup,
                              QTableWidget, QTableWidgetItem, QHeaderView, QMenu, QTreeWidget, QTreeWidgetItem, QGridLayout, QInputDialog)
 from PyQt6.QtGui import QAction, QPalette, QColor, QIcon, QFont, QDragEnterEvent, QDropEvent, QPixmap, QImage
-from PyQt6.QtCore import QThread, pyqtSignal, Qt, QSettings, QTimer, QMimeData, QObject, QSize
+from PyQt6.QtCore import QThread, pyqtSignal, Qt, QSettings, QTimer, QMimeData, QObject, QSize, QStandardPaths
 
 try:
     import psutil
@@ -37,17 +37,36 @@ except ImportError:
 DEBUG_MODE = False
 GUI_LOG_QUEUE = []
 
+class AppConfig:
+    """Centralized configuration for paths and OS standards."""
+    APP_NAME = "cinebridge-pro"
+    
+    @staticmethod
+    def get_data_dir():
+        # Standard location for app data (Linux: ~/.local/share, Windows: AppData/Local)
+        path = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.AppDataLocation)
+        if not path: # Fallback
+            path = os.path.join(os.path.expanduser("~"), ".cinebridge-pro")
+        return path
+
+    @staticmethod
+    def get_log_path():
+        return os.path.join(AppConfig.get_data_dir(), "logs", "cinebridge.log")
+
+    @staticmethod
+    def get_preset_dir():
+        return os.path.join(AppConfig.get_data_dir(), "presets")
+
 class AppLogger:
-    # Use XDG standard paths (~/.local/share/cinebridge-pro/logs)
-    _data_dir = os.path.join(os.path.expanduser("~"), ".local", "share", "cinebridge-pro")
-    _log_dir = os.path.join(_data_dir, "logs")
-    _log_path = os.path.join(_log_dir, "cinebridge.log")
+    _log_path = "" # Initialized in init_log
 
     @staticmethod
     def init_log():
         """Ensures log directory exists and writes a session header."""
+        AppLogger._log_path = AppConfig.get_log_path()
+        log_dir = os.path.dirname(AppLogger._log_path)
         try:
-            os.makedirs(AppLogger._log_dir, exist_ok=True)
+            os.makedirs(log_dir, exist_ok=True)
             with open(AppLogger._log_path, "a") as f:
                 f.write(f"\n{'='*60}\n")
                 f.write(f"SESSION START: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
@@ -62,12 +81,12 @@ class AppLogger:
         formatted = f"[{level}] {timestamp} | {msg}"
         
         try:
-            with open(AppLogger._log_path, "a") as f:
-                f.write(formatted + "\n")
+            if AppLogger._log_path:
+                with open(AppLogger._log_path, "a") as f:
+                    f.write(formatted + "\n")
         except: pass
 
         if DEBUG_MODE or level in ["INFO", "ERROR"]:
-            # In GUI, use shorter timestamp
             gui_msg = f"[{level} {timestamp}] {msg}"
             print(formatted)
             GUI_LOG_QUEUE.append(gui_msg)
@@ -271,17 +290,19 @@ class MediaInfoExtractor:
         except Exception as e: return {"error": str(e)}
 
 class PresetManager:
-    _preset_dir = os.path.join(os.path.expanduser("~"), ".local", "share", "cinebridge-pro", "presets")
+    @staticmethod
+    def _get_dir():
+        return AppConfig.get_preset_dir()
 
     @staticmethod
     def ensure_dir():
-        os.makedirs(PresetManager._preset_dir, exist_ok=True)
+        os.makedirs(PresetManager._get_dir(), exist_ok=True)
 
     @staticmethod
     def save_preset(name, settings):
         PresetManager.ensure_dir()
         filename = f"{name}.json"
-        path = os.path.join(PresetManager._preset_dir, filename)
+        path = os.path.join(PresetManager._get_dir(), filename)
         try:
             with open(path, 'w') as f:
                 json.dump(settings, f, indent=4)
@@ -296,10 +317,10 @@ class PresetManager:
         PresetManager.ensure_dir()
         presets = {}
         try:
-            for f in os.listdir(PresetManager._preset_dir):
+            for f in os.listdir(PresetManager._get_dir()):
                 if f.endswith(".json"):
                     name = f.replace(".json", "")
-                    path = os.path.join(PresetManager._preset_dir, f)
+                    path = os.path.join(PresetManager._get_dir(), f)
                     try:
                         with open(path, 'r') as p:
                             presets[name] = json.load(p)
@@ -309,7 +330,7 @@ class PresetManager:
 
     @staticmethod
     def delete_preset(name):
-        path = os.path.join(PresetManager._preset_dir, f"{name}.json")
+        path = os.path.join(PresetManager._get_dir(), f"{name}.json")
         if os.path.exists(path):
             os.remove(path)
             info_log(f"Presets: Deleted '{name}'")
@@ -347,6 +368,15 @@ class SystemNotifier:
             debug_log(f"Notification failed: {e}")
 
 class DeviceRegistry:
+    VIDEO_EXTS = {'.MP4', '.MOV', '.MKV', '.INSV', '.360', '.AVI', '.MXF', '.CRM', '.BRAW', '.VR'}
+    PHOTO_EXTS = {'.JPG', '.JPEG', '.PNG', '.ARW', '.CR2', '.CR3', '.DNG', '.GPR', '.HEIC'}
+    AUDIO_EXTS = {'.WAV', '.MP3', '.AAC'}
+    MISC_EXTS = {'.SRT', '.LRV', '.THM', '.XML', '.BIM', '.RSV', '.AAE'}
+
+    @staticmethod
+    def get_all_valid_exts():
+        return DeviceRegistry.VIDEO_EXTS | DeviceRegistry.PHOTO_EXTS | DeviceRegistry.AUDIO_EXTS | DeviceRegistry.MISC_EXTS
+
     PROFILES = {
         "Sony Pro (Alpha/FX)": {
             "signatures": ["M4ROOT", "AVCHD"], 
@@ -657,8 +687,9 @@ class IngestScanner(QThread):
         if self.allowed_exts:
             exts = set(self.allowed_exts)
         else:
-            exts = {'.MP4','.MOV','.MKV','.INSV','.360','.AVI','.MXF','.CRM','.BRAW'}
-            if not self.video_only: exts.update({'.JPG','.JPEG','.PNG','.ARW','.CR2','.DNG','.GPR','.WAV','.MP3','.AAC','.SRT','.LRV','.THM'})
+            exts = DeviceRegistry.VIDEO_EXTS
+            if not self.video_only: 
+                exts = DeviceRegistry.get_all_valid_exts()
         for root, dirs, files in os.walk(self.source):
             for f in files:
                 if os.path.splitext(f)[1].upper() in exts:
@@ -765,7 +796,7 @@ class CopyWorker(QThread):
         self.log_signal.emit(f"System: Analyzing source...")
         final_dest = self.dest
         if self.project_name: final_dest = os.path.join(self.dest, self.project_name)
-        valid_exts = ('.MP4', '.MOV', '.LRV', '.THM', '.JPG', '.JPEG', '.DNG', '.GPR', '.SRT', '.WAV', '.INSV', '.INSP', '.360', '.AAE')
+        valid_exts = tuple(DeviceRegistry.get_all_valid_exts())
         found_files = []
         
         if self.file_list:
@@ -1266,10 +1297,23 @@ class SettingsDialog(QDialog):
 class TranscodeConfigDialog(QDialog):
     def __init__(self, settings_widget, parent=None):
         super().__init__(parent); self.setWindowTitle("Transcode Configuration"); self.resize(500, 400); layout = QVBoxLayout(); self.setLayout(layout)
-        self.settings_widget = settings_widget; layout.addWidget(self.settings_widget)
+        self.settings_widget = settings_widget
+        # Detach from previous parent if any
+        if self.settings_widget.parent():
+            self.settings_widget.parent().layout().removeWidget(self.settings_widget)
+        layout.addWidget(self.settings_widget)
         btn = QPushButton("Done"); btn.clicked.connect(self.accept); layout.addWidget(btn)
-    def done(self, r):
-        self.layout().removeWidget(self.settings_widget); self.settings_widget.setParent(None); super().done(r)
+    
+    def accept(self):
+        # Explicitly remove widget from dialog before closing to keep it alive
+        self.layout().removeWidget(self.settings_widget)
+        self.settings_widget.setParent(None)
+        super().accept()
+
+    def reject(self):
+        self.layout().removeWidget(self.settings_widget)
+        self.settings_widget.setParent(None)
+        super().reject()
 
 class IngestTab(QWidget):
     def __init__(self, parent_app):
@@ -1277,7 +1321,6 @@ class IngestTab(QWidget):
         self.copy_worker = None; self.transcode_worker = None; self.scan_worker = None; self.found_devices = []; self.current_detected_path = None
         self.ingest_mode = "scan"; self.last_scan_results = None
         self.setup_ui(); self.load_tab_settings()
-        self.sys_monitor = SystemMonitor(); self.sys_monitor.cpu_signal.connect(self.update_load_display); self.sys_monitor.start()
         self.scan_watchdog = QTimer(); self.scan_watchdog.setSingleShot(True); self.scan_watchdog.timeout.connect(self.on_scan_timeout); QTimer.singleShot(500, self.run_auto_scan)
     def setup_ui(self):
         # 1. Source Group
@@ -1421,7 +1464,7 @@ class IngestTab(QWidget):
         if not self.last_scan_results:
             p = QTreeWidgetItem(self.tree); p.setText(0, "Scan source to review media selection."); p.setFlags(p.flags() & ~Qt.ItemFlag.ItemIsUserCheckable); return
         
-        sorted_dates = sorted(self.last_scan_results.keys(), reverse=True); video_exts = {'.MP4', '.MOV', '.MKV', '.INSV', '.360', '.AVI', '.MXF', '.CRM', '.BRAW'}
+        sorted_dates = sorted(self.last_scan_results.keys(), reverse=True); video_exts = DeviceRegistry.VIDEO_EXTS
         for date in sorted_dates:
             all_files = self.last_scan_results[date]
             files = [f for f in all_files if os.path.splitext(f)[1].upper() in video_exts] if self.check_videos_only.isChecked() else all_files
@@ -1600,9 +1643,9 @@ class ConvertTab(QWidget):
         queue_group.setLayout(queue_lay)
         layout.addWidget(queue_group)
         
-        self.sys_monitor = SystemMonitor()
-        self.sys_monitor.cpu_signal.connect(lambda v: self.load_label.setText(f"🔥 CPU: {v}%"))
-        self.sys_monitor.start()
+    def update_load_display(self, value):
+        self.load_label.setText(f"🔥 CPU: {value}%")
+
     def browse_files(self):
         files, _ = QFileDialog.getOpenFileNames(self, "Select Videos", "", "Video Files (*.mp4 *.mov *.mkv *.avi)")
         if files:
@@ -1623,8 +1666,9 @@ class ConvertTab(QWidget):
         else: self.start()
     def toggle_ui_state(self, running):
         self.is_processing = running
-        if running: self.btn_go.setText("STOP BATCH"); self.btn_go.setObjectName("StopBtn"); self.load_label.setVisible(True)
-        else: self.btn_go.setText("START BATCH"); self.btn_go.setObjectName("StartBtn"); self.load_label.setVisible(False)
+        self.load_label.setVisible(running)
+        if running: self.btn_go.setText("STOP BATCH"); self.btn_go.setObjectName("StopBtn")
+        else: self.btn_go.setText("START BATCH"); self.btn_go.setObjectName("StartBtn")
         self.btn_go.style().unpolish(self.btn_go); self.btn_go.style().polish(self.btn_go)
     def start(self):
         files = [self.list.item(i).text() for i in range(self.list.count())]
@@ -1726,16 +1770,28 @@ class CineBridgeApp(QMainWindow):
         self.settings_btn = QToolButton(); self.settings_btn.setText("⚙"); self.settings_btn.setStyleSheet("QToolButton { font-size: 20px; border: none; background: transparent; padding: 5px; } QToolButton:hover { color: #3498DB; }"); self.settings_btn.clicked.connect(self.open_settings); self.tabs.setCornerWidget(self.settings_btn, Qt.Corner.TopRightCorner)
         self.tab_ingest = IngestTab(self); self.tab_convert = ConvertTab(); self.tab_delivery = DeliveryTab(); self.tabs.addTab(self.tab_ingest, "📥 INGEST"); self.tabs.addTab(self.tab_convert, "🛠️ CONVERT"); self.tabs.addTab(self.tab_delivery, "🚀 DELIVERY"); self.setCentralWidget(self.tabs)
         self.tab_ingest.transcode_widget.chk_gpu.toggled.connect(self.sync_gpu_toggle); self.tab_convert.settings.chk_gpu.toggled.connect(self.sync_gpu_toggle); self.tab_delivery.settings.chk_gpu.toggled.connect(self.sync_gpu_toggle)
+        
+        # Global System Monitor
+        self.sys_monitor = SystemMonitor()
+        self.sys_monitor.cpu_signal.connect(self.tab_ingest.update_load_display)
+        self.sys_monitor.cpu_signal.connect(self.tab_convert.update_load_display)
+        self.sys_monitor.start()
+
         saved_gpu = self.settings.value("use_gpu_accel", False, type=bool); self.sync_gpu_toggle(saved_gpu); self.theme_mode = self.settings.value("theme_mode", "light"); self.set_theme(self.theme_mode)
         self.theme_timer = QTimer(self); self.theme_timer.timeout.connect(self.check_system_theme); self.theme_timer.start(2000)
     
     # --- NEW CLOSE EVENT HANDLER ---
     def closeEvent(self, event):
-        """Forces a save of all critical settings before the app dies."""
+        """Forces a save of all critical settings and ensures safe worker shutdown."""
         try:
             if hasattr(self, 'tab_convert'):
-                for worker in self.tab_convert.thumb_workers: worker.stop(); worker.wait()
+                for worker in self.tab_convert.thumb_workers:
+                    worker.stop()
+                    # Wait up to 500ms for clean exit, then terminate if stuck
+                    if not worker.wait(500):
+                        worker.terminate()
         except: pass
+        
         self.tab_ingest.save_tab_settings()
         self.settings.setValue("show_copy_log", self.tab_ingest.copy_log.isVisible())
         self.settings.setValue("show_trans_log", self.tab_ingest.transcode_log.isVisible())
