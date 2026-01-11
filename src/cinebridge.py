@@ -24,7 +24,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QCheckBox, QGroupBox, QComboBox, QTabWidget, QFrame, 
                              QSizePolicy, QSplitter, QFormLayout, QDialog,
                              QListWidget, QAbstractItemView, QToolButton, QRadioButton, QButtonGroup,
-                             QTableWidget, QTableWidgetItem, QHeaderView, QMenu, QTreeWidget, QTreeWidgetItem)
+                             QTableWidget, QTableWidgetItem, QHeaderView, QMenu, QTreeWidget, QTreeWidgetItem, QGridLayout)
 from PyQt6.QtGui import QAction, QPalette, QColor, QIcon, QFont, QDragEnterEvent, QDropEvent, QPixmap, QImage
 from PyQt6.QtCore import QThread, pyqtSignal, Qt, QSettings, QTimer, QMimeData, QObject, QSize
 
@@ -1063,7 +1063,7 @@ class IngestTab(QWidget):
         self.sys_monitor = SystemMonitor(); self.sys_monitor.cpu_signal.connect(self.update_load_display); self.sys_monitor.start()
         self.scan_watchdog = QTimer(); self.scan_watchdog.setSingleShot(True); self.scan_watchdog.timeout.connect(self.on_scan_timeout); QTimer.singleShot(500, self.run_auto_scan)
     def setup_ui(self):
-        io_container = QWidget(); io_layout = QHBoxLayout(); io_layout.setContentsMargins(0,0,0,0); io_container.setLayout(io_layout)
+        # 1. Source Group
         source_group = QGroupBox("1. Source Media"); source_inner = QVBoxLayout(); self.source_tabs = QTabWidget(); self.tab_auto = QWidget(); auto_lay = QVBoxLayout()
         self.scan_btn = QPushButton(" REFRESH DEVICES "); self.scan_btn.setMinimumHeight(50); self.scan_btn.clicked.connect(self.run_auto_scan)
         self.auto_info_label = QLabel("Scanning..."); self.auto_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
@@ -1077,11 +1077,15 @@ class IngestTab(QWidget):
         man_lay.addWidget(QLabel("Path:")); man_lay.addWidget(self.source_input); man_lay.addWidget(self.browse_src); man_lay.addStretch()
         self.tab_manual.setLayout(man_lay); self.source_tabs.addTab(self.tab_auto, "Auto"); self.source_tabs.addTab(self.tab_manual, "Manual")
         source_inner.addWidget(self.source_tabs); source_group.setLayout(source_inner)
+
+        # 2. Dest Group
         dest_group = QGroupBox("2. Destination"); dest_inner = QVBoxLayout()
         self.project_name_input = QLineEdit(); self.project_name_input.setPlaceholderText("Project Name")
         self.dest_input = QLineEdit(); self.browse_dest_btn = QPushButton("Browse"); self.browse_dest_btn.clicked.connect(self.browse_dest)
         dest_inner.addWidget(QLabel("Project Name:")); dest_inner.addWidget(self.project_name_input); dest_inner.addWidget(QLabel("Location:")); dest_inner.addWidget(self.dest_input); dest_inner.addWidget(self.browse_dest_btn); dest_inner.addStretch()
-        dest_group.setLayout(dest_inner); io_layout.addWidget(source_group); io_layout.addWidget(dest_group); self.layout.addWidget(io_container)
+        dest_group.setLayout(dest_inner)
+
+        # 3. Settings Group
         settings_group = QGroupBox("3. Processing Settings"); settings_layout = QVBoxLayout(); rules_row = QHBoxLayout()
         self.device_combo = QComboBox(); self.device_combo.addItems(["auto", "GoPro", "DJI", "Insta360", "Generic Storage"]); rules_row.addWidget(QLabel("Logic:")); rules_row.addWidget(self.device_combo)
         self.check_date = QCheckBox("Sort Date"); self.check_dupe = QCheckBox("Skip Dupes"); self.check_videos_only = QCheckBox("Video Only"); self.check_transcode = QCheckBox("Enable Transcode"); self.check_transcode.setStyleSheet("color: #E67E22; font-weight: bold;"); self.check_transcode.toggled.connect(self.toggle_transcode_ui)
@@ -1090,15 +1094,24 @@ class IngestTab(QWidget):
         
         self.btn_config_trans = QPushButton("Configure Transcode..."); self.btn_config_trans.setVisible(False); self.btn_config_trans.clicked.connect(self.open_transcode_config); settings_layout.addWidget(self.btn_config_trans)
         self.transcode_widget = TranscodeSettingsWidget(mode="general")
+        settings_group.setLayout(settings_layout)
         
-        settings_group.setLayout(settings_layout); self.layout.addWidget(settings_group)
-        
+        # 4. Review Group
         self.review_group = QGroupBox("4. Select Media"); review_lay = QVBoxLayout()
         self.tree = QTreeWidget(); self.tree.setHeaderLabel("Media Grouped by Date")
         self.tree.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.tree.itemChanged.connect(self.update_transfer_button_text)
         review_lay.addWidget(self.tree); self.review_group.setLayout(review_lay)
-        self.review_group.setVisible(False); self.layout.addWidget(self.review_group, 1)
+        self.review_group.setVisible(False)
+
+        # GRID LAYOUT
+        grid = QGridLayout()
+        grid.addWidget(source_group, 0, 0)
+        grid.addWidget(dest_group, 0, 1)
+        grid.addWidget(settings_group, 1, 0)
+        grid.addWidget(self.review_group, 1, 1)
+        grid.setRowStretch(1, 1); grid.setColumnStretch(0, 1); grid.setColumnStretch(1, 1)
+        self.layout.addLayout(grid)
 
         dash_frame = QFrame(); dash_frame.setObjectName("DashFrame"); dash_layout = QVBoxLayout(); dash_frame.setLayout(dash_layout)
         top_row = QHBoxLayout(); self.status_label = QLabel("READY TO INGEST"); self.status_label.setObjectName("StatusLabel"); self.speed_label = QLabel(""); self.speed_label.setObjectName("SpeedLabel")
