@@ -293,19 +293,32 @@ class DeviceRegistry:
     }
 
     @staticmethod
+    def safe_list_dir(path, timeout=5):
+        if platform.system() == "Linux" and ("gvfs" in path or "mtp" in path.lower()):
+            try:
+                result = subprocess.run(['ls', '-1', path], capture_output=True, text=True, timeout=timeout, env=EnvUtils.get_clean_env())
+                if result.returncode == 0: return [os.path.join(path, l.strip()) for l in result.stdout.splitlines() if l.strip()]
+            except: return []
+            return []
+        else:
+            try: return [os.path.join(path, f) for f in os.listdir(path)] if os.path.isdir(path) else []
+            except: return []
+
+    @staticmethod
     def identify(mount_point, usb_hints=set()):
-        try: root_items = os.listdir(mount_point)
-        except: return "Generic Storage", mount_point, None
+        root_items = DeviceRegistry.safe_list_dir(mount_point)
+        if not root_items: return "Generic Storage", mount_point, None
 
         def find_path(base, sub_path):
             curr = base; parts = sub_path.split('/')
             for part in parts:
                 if part == ".": continue
                 found = False
-                if os.path.isdir(curr):
-                    for item in os.listdir(curr):
-                        if item.lower() == part.lower():
-                            curr = os.path.join(curr, item); found = True; break
+                items = DeviceRegistry.safe_list_dir(curr)
+                for item_path in items:
+                    item_name = os.path.basename(item_path)
+                    if item_name.lower() == part.lower():
+                        curr = item_path; found = True; break
                 if not found: return None
             return curr
 
@@ -313,16 +326,17 @@ class DeviceRegistry:
         for name, profile in DeviceRegistry.PROFILES.items():
             for root_hint in profile['roots']:
                 found_root = find_path(mount_point, root_hint)
-                if found_root and os.path.isdir(found_root):
-                    # Validation for Root-based matching (e.g. BMD uses '.')
+                if found_root: # Directory check handled by find_path logic implied valid path
+                    # Validation for Root-based matching
                     if root_hint == "." or root_hint == "":
                         has_sig = False
                         try:
-                            items = os.listdir(found_root)
-                            for item in items:
-                                if any(s.lower() in item.lower() for s in profile['signatures']):
+                            items = DeviceRegistry.safe_list_dir(found_root)
+                            for item_path in items:
+                                item_name = os.path.basename(item_path)
+                                if any(s.lower() in item_name.lower() for s in profile['signatures']):
                                     has_sig = True; break
-                                if any(item.upper().endswith(e) for e in profile['exts']):
+                                if any(item_name.upper().endswith(e) for e in profile['exts']):
                                     has_sig = True; break
                         except: pass
                         if not has_sig: continue
@@ -333,7 +347,7 @@ class DeviceRegistry:
         for name, profile in DeviceRegistry.PROFILES.items():
             hit = False
             for sig in profile['signatures']:
-                if any(sig.lower() in item.lower() for item in root_items): hit = True
+                if any(sig.lower() in os.path.basename(item).lower() for item in root_items): hit = True
                 if any(sig.lower() in h.lower() for h in usb_hints): hit = True
                 if hit: return name, mount_point, profile['exts']
         
