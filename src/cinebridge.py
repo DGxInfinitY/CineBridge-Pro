@@ -41,19 +41,32 @@ class AppLogger:
     _log_path = os.path.join(os.path.expanduser("~"), "cinebridge_pro.log")
 
     @staticmethod
+    def init_log():
+        """Ensures log file exists and writes a session header."""
+        try:
+            with open(AppLogger._log_path, "a") as f:
+                f.write(f"\n{'='*60}\n")
+                f.write(f"SESSION START: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write(f"Platform: {platform.system()} | Python: {sys.version}\n")
+                f.write(f"{'='*60}\n")
+        except Exception as e:
+            print(f"CRITICAL: Could not initialize log file: {e}")
+
+    @staticmethod
     def log(msg, level="DEBUG"):
-        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        timestamp = datetime.now().strftime("%H:%M:%S")
         formatted = f"[{level}] {timestamp} | {msg}"
         
-        # Always log to file for troubleshooting
         try:
             with open(AppLogger._log_path, "a") as f:
                 f.write(formatted + "\n")
         except: pass
 
         if DEBUG_MODE or level in ["INFO", "ERROR"]:
+            # In GUI, use shorter timestamp
+            gui_msg = f"[{level} {timestamp}] {msg}"
             print(formatted)
-            GUI_LOG_QUEUE.append(formatted)
+            GUI_LOG_QUEUE.append(gui_msg)
             if len(GUI_LOG_QUEUE) > 500: GUI_LOG_QUEUE.pop(0)
 
 def debug_log(msg): AppLogger.log(msg, "DEBUG")
@@ -74,6 +87,20 @@ class EnvUtils:
             elif 'LD_LIBRARY_PATH' in env:
                 del env['LD_LIBRARY_PATH']
         return env
+
+    @staticmethod
+    def open_file(path):
+        """Opens a file using the system's default application."""
+        if not os.path.exists(path): return
+        try:
+            if platform.system() == "Windows":
+                os.startfile(path)
+            elif platform.system() == "Darwin":
+                subprocess.Popen(["open", path])
+            else:
+                subprocess.Popen(["xdg-open", path])
+        except Exception as e:
+            error_log(f"UI: Failed to open file {path}: {e}")
 
 class DependencyManager:
     @staticmethod
@@ -1089,6 +1116,7 @@ class SettingsDialog(QDialog):
         view_lay.addWidget(self.chk_copy); view_lay.addWidget(self.chk_trans); view_group.setLayout(view_lay); layout.addWidget(view_group)
         sys_group = QGroupBox("System"); sys_lay = QVBoxLayout()
         self.btn_ffmpeg = QPushButton("FFmpeg Settings"); self.btn_ffmpeg.clicked.connect(self.show_ffmpeg_info); sys_lay.addWidget(self.btn_ffmpeg)
+        self.btn_log = QPushButton("View Debug Log"); self.btn_log.clicked.connect(self.view_log); sys_lay.addWidget(self.btn_log)
         self.chk_debug = QCheckBox("Enable Debug Mode"); self.chk_debug.setChecked(DEBUG_MODE); self.chk_debug.toggled.connect(parent.toggle_debug); sys_lay.addWidget(self.chk_debug)
         self.btn_reset = QPushButton("Reset to Default Settings"); self.btn_reset.setStyleSheet("color: red;"); self.btn_reset.clicked.connect(parent.reset_to_defaults); sys_lay.addWidget(self.btn_reset)
         sys_group.setLayout(sys_lay); layout.addWidget(sys_group)
@@ -1099,6 +1127,7 @@ class SettingsDialog(QDialog):
         self.parent_app.settings.setValue("show_copy_log", self.chk_copy.isChecked())
         self.parent_app.settings.setValue("show_trans_log", self.chk_trans.isChecked())
     def show_ffmpeg_info(self): dlg = FFmpegConfigDialog(self); dlg.exec()
+    def view_log(self): EnvUtils.open_file(AppLogger._log_path)
 
 class TranscodeConfigDialog(QDialog):
     def __init__(self, settings_widget, parent=None):
@@ -1620,6 +1649,7 @@ class CineBridgeApp(QMainWindow):
 
 if __name__ == "__main__":
     signal.signal(signal.SIGINT, signal.SIG_DFL)
+    AppLogger.init_log()
     app = QApplication(sys.argv); app.setDesktopFileName("CineBridgePro")
     timer = QTimer(); timer.start(500); timer.timeout.connect(lambda: None) 
     app.setStyle("Fusion"); window = CineBridgeApp(); window.show(); sys.exit(app.exec())
