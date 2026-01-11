@@ -1050,9 +1050,10 @@ class SettingsDialog(QDialog):
 class TranscodeConfigDialog(QDialog):
     def __init__(self, settings_widget, parent=None):
         super().__init__(parent); self.setWindowTitle("Transcode Configuration"); self.resize(500, 400); layout = QVBoxLayout(); self.setLayout(layout)
-        # Re-parenting widget might require it to not be in another layout
-        layout.addWidget(settings_widget)
+        self.settings_widget = settings_widget; layout.addWidget(self.settings_widget)
         btn = QPushButton("Done"); btn.clicked.connect(self.accept); layout.addWidget(btn)
+    def done(self, r):
+        self.layout().removeWidget(self.settings_widget); self.settings_widget.setParent(None); super().done(r)
 
 class IngestTab(QWidget):
     def __init__(self, parent_app):
@@ -1195,24 +1196,22 @@ class IngestTab(QWidget):
         self.refresh_tree_view()
 
     def refresh_tree_view(self):
-        if not self.last_scan_results: return
-        self.tree.clear(); total_files = 0; sorted_dates = sorted(self.last_scan_results.keys(), reverse=True)
-        video_exts = {'.MP4', '.MOV', '.MKV', '.INSV', '.360', '.AVI', '.MXF', '.CRM', '.BRAW'}
+        self.tree.clear(); total_files = 0
+        if not self.last_scan_results:
+            p = QTreeWidgetItem(self.tree); p.setText(0, "Scan source to review media selection."); p.setFlags(p.flags() & ~Qt.ItemFlag.ItemIsUserCheckable); return
         
+        sorted_dates = sorted(self.last_scan_results.keys(), reverse=True); video_exts = {'.MP4', '.MOV', '.MKV', '.INSV', '.360', '.AVI', '.MXF', '.CRM', '.BRAW'}
         for date in sorted_dates:
             all_files = self.last_scan_results[date]
-            if self.check_videos_only.isChecked():
-                files = [f for f in all_files if os.path.splitext(f)[1].upper() in video_exts]
-            else:
-                files = all_files
-            
+            files = [f for f in all_files if os.path.splitext(f)[1].upper() in video_exts] if self.check_videos_only.isChecked() else all_files
             if not files: continue
-            
             total_files += len(files)
             date_item = QTreeWidgetItem(self.tree); date_item.setText(0, f"{date} ({len(files)} files)"); date_item.setFlags(date_item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsAutoTristate); date_item.setCheckState(0, Qt.CheckState.Checked)
             for f in files:
                 f_item = QTreeWidgetItem(date_item); f_item.setText(0, os.path.basename(f)); f_item.setData(0, Qt.ItemDataRole.UserRole, f); f_item.setFlags(f_item.flags() | Qt.ItemFlag.ItemIsUserCheckable); f_item.setCheckState(0, Qt.CheckState.Checked)
         
+        if total_files == 0:
+            p = QTreeWidgetItem(self.tree); p.setText(0, "No matching media found for current filters."); p.setFlags(p.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
         self.tree.expandAll(); self.review_group.setVisible(True); self.import_btn.setEnabled(True); self.ingest_mode = "transfer"
         self.status_label.setText(f"FOUND {total_files} FILES. SELECT MEDIA TO TRANSFER.")
         self.update_transfer_button_text()
@@ -1512,6 +1511,10 @@ class CineBridgeApp(QMainWindow):
     # --- NEW CLOSE EVENT HANDLER ---
     def closeEvent(self, event):
         """Forces a save of all critical settings before the app dies."""
+        try:
+            if hasattr(self, 'tab_convert'):
+                for worker in self.tab_convert.thumb_workers: worker.stop(); worker.wait()
+        except: pass
         self.tab_ingest.save_tab_settings()
         self.settings.setValue("show_copy_log", self.tab_ingest.copy_log.isVisible())
         self.settings.setValue("show_trans_log", self.tab_ingest.transcode_log.isVisible())
