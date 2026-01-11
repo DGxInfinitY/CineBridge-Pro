@@ -25,7 +25,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QSizePolicy, QSplitter, QFormLayout, QDialog,
                              QListWidget, QAbstractItemView, QToolButton, QRadioButton, QButtonGroup,
                              QTableWidget, QTableWidgetItem, QHeaderView, QMenu, QTreeWidget, QTreeWidgetItem)
-from PyQt6.QtGui import QAction, QPalette, QColor, QIcon, QFont, QDragEnterEvent, QDropEvent, QPixmap
+from PyQt6.QtGui import QAction, QPalette, QColor, QIcon, QFont, QDragEnterEvent, QDropEvent, QPixmap, QImage
 from PyQt6.QtCore import QThread, pyqtSignal, Qt, QSettings, QTimer, QMimeData, QObject, QSize
 
 try:
@@ -253,6 +253,83 @@ class SystemNotifier:
         except Exception as e:
             debug_log(f"Notification failed: {e}")
 
+class DeviceRegistry:
+    PROFILES = {
+        "Sony Pro (Alpha/FX)": {
+            "signatures": ["M4ROOT", "AVCHD"], 
+            "roots": ["private/M4ROOT/CLIP", "PRIVATE/M4ROOT/CLIP", "private/M4ROOT", "PRIVATE/AVCHD/BDMV/STREAM"],
+            "exts": {'.MXF', '.MP4', '.XML', '.BIM', '.RSV'}
+        },
+        "Blackmagic Design": {
+            "signatures": ["Blackmagic", "BRAW"],
+            "roots": ["."], 
+            "exts": {'.BRAW', '.MOV', '.VR'}
+        },
+        "Canon EOS/Cinema": {
+            "signatures": ["100CANON", "CONTENTS"],
+            "roots": ["DCIM/100CANON", "CONTENTS/CLIPS001"],
+            "exts": {'.CRM', '.MXF', '.MP4', '.MOV', '.CR2', '.CR3'}
+        },
+        "GoPro Hero": {
+            "signatures": ["GOPRO", "HERO"],
+            "roots": ["DCIM/100GOPRO"],
+            "exts": {'.MP4', '.LRV', '.THM', '.JPG', '.GPR'}
+        },
+        "DJI Drone/Osmo": {
+            "signatures": ["DJI", "100MEDIA"],
+            "roots": ["DCIM/100MEDIA", "DCIM/101MEDIA"],
+            "exts": {'.MP4', '.MOV', '.DNG', '.JPG', '.SRT'}
+        },
+        "Insta360": {
+            "signatures": ["Insta360"],
+            "roots": ["DCIM/Camera01", "DCIM/FileGroup01", "."],
+            "exts": {'.INSV', '.INSP', '.LOG', '.LRV'}
+        },
+        "Panasonic Lumix": {
+            "signatures": ["LUMIX", "100_PANA"],
+            "roots": ["DCIM/100_PANA", "PRIVATE/AVCHD/BDMV/STREAM"],
+            "exts": {'.MOV', '.MP4', '.RW2'}
+        }
+    }
+
+    @staticmethod
+    def identify(mount_point, usb_hints=set()):
+        try: root_items = os.listdir(mount_point)
+        except: return "Generic Storage", mount_point, None
+
+        def find_path(base, sub_path):
+            curr = base; parts = sub_path.split('/')
+            for part in parts:
+                if part == ".": continue
+                found = False
+                if os.path.isdir(curr):
+                    for item in os.listdir(curr):
+                        if item.lower() == part.lower():
+                            curr = os.path.join(curr, item); found = True; break
+                if not found: return None
+            return curr
+
+        for name, profile in DeviceRegistry.PROFILES.items():
+            hit = False
+            for sig in profile['signatures']:
+                if any(sig.lower() in item.lower() for item in root_items): hit = True
+                if any(sig.lower() in h.lower() for h in usb_hints): hit = True
+                if hit: break
+            
+            if hit:
+                for root_hint in profile['roots']:
+                    found_root = find_path(mount_point, root_hint)
+                    if found_root and os.path.isdir(found_root):
+                        return name, found_root, profile['exts']
+        
+        # Fallback Android/Generic
+        dcim = find_path(mount_point, "DCIM")
+        if dcim:
+             cam = find_path(dcim, "Camera")
+             if cam: return "Android/Phone", cam, {'.MP4', '.JPG', '.JPEG', '.DNG', '.HEIC'}
+             
+        return "Generic Storage", mount_point, None
+
 class DriveDetector:
     IGNORED_KEYWORDS = ["boot", "recovery", "snap", "loop", "var", "tmp", "sys"]
 
@@ -399,13 +476,10 @@ class ScanWorker(QThread):
                 try: 
                     if len(DriveDetector.safe_list_dir(mount)) > 0: has_files = True
                 except: pass
-                name, true_path = DriveDetector.fingerprint_device(mount, usb_hints)
-                if true_path != mount:
-                     try: 
-                         if len(DriveDetector.safe_list_dir(true_path)) > 0: has_files = True
-                         else: true_path = mount 
-                     except: pass
-                results.append({'path': true_path, 'display_name': name, 'root': mount, 'empty': not has_files})
+                
+                name, true_path, exts = DeviceRegistry.identify(mount, usb_hints)
+                
+                results.append({'path': true_path, 'display_name': name, 'root': mount, 'empty': not has_files, 'exts': exts})
             final = []
             seen = set()
             for r in sorted(results, key=lambda x: len(x['path']), reverse=True):
@@ -416,7 +490,7 @@ class ScanWorker(QThread):
             self.finished_signal.emit([])
 
 class ThumbnailWorker(QThread):
-    thumb_ready = pyqtSignal(str, QPixmap)
+    thumb_ready = pyqtSignal(str, QImage)
     def __init__(self, file_queue): super().__init__(); self.queue = file_queue; self.is_running = True
     def run(self):
         ffmpeg = DependencyManager.get_ffmpeg_path()
@@ -430,18 +504,22 @@ class ThumbnailWorker(QThread):
                 if platform.system() == 'Windows': startupinfo = subprocess.STARTUPINFO(); startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                 res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, startupinfo=startupinfo, env=EnvUtils.get_clean_env())
                 if res.stdout:
-                    pix = QPixmap(); pix.loadFromData(res.stdout)
-                    if not pix.isNull(): self.thumb_ready.emit(path, pix)
+                    img = QImage(); img.loadFromData(res.stdout)
+                    if not img.isNull(): self.thumb_ready.emit(path, img)
             except: pass
     def stop(self): self.is_running = False
 
 class IngestScanner(QThread):
     finished_signal = pyqtSignal(dict)
-    def __init__(self, source_path, video_only=False):
-        super().__init__(); self.source = source_path; self.video_only = video_only
+    def __init__(self, source_path, video_only=False, allowed_exts=None):
+        super().__init__(); self.source = source_path; self.video_only = video_only; self.allowed_exts = allowed_exts
     def run(self):
-        grouped = {}; exts = {'.MP4','.MOV','.MKV','.INSV','.360','.AVI','.MXF','.CRM','.BRAW'}
-        if not self.video_only: exts.update({'.JPG','.JPEG','.PNG','.ARW','.CR2','.DNG','.GPR','.WAV','.MP3','.AAC','.SRT','.LRV','.THM'})
+        grouped = {}
+        if self.allowed_exts:
+            exts = set(self.allowed_exts)
+        else:
+            exts = {'.MP4','.MOV','.MKV','.INSV','.360','.AVI','.MXF','.CRM','.BRAW'}
+            if not self.video_only: exts.update({'.JPG','.JPEG','.PNG','.ARW','.CR2','.DNG','.GPR','.WAV','.MP3','.AAC','.SRT','.LRV','.THM'})
         for root, dirs, files in os.walk(self.source):
             for f in files:
                 if os.path.splitext(f)[1].upper() in exts:
@@ -1031,7 +1109,15 @@ class IngestTab(QWidget):
         src = self.current_detected_path if self.source_tabs.currentIndex() == 0 else self.source_input.text()
         if not src or not os.path.exists(src): return QMessageBox.warning(self, "Error", "Invalid Source")
         self.import_btn.setEnabled(False); self.status_label.setText("SCANNING SOURCE..."); self.tree.clear(); self.review_group.setVisible(False)
-        self.scanner = IngestScanner(src, self.check_videos_only.isChecked()); self.scanner.finished_signal.connect(self.on_scan_complete); self.scanner.start()
+        
+        allowed_exts = None
+        if self.source_tabs.currentIndex() == 0 and self.found_devices:
+             idx = self.select_device_box.currentIndex()
+             if idx >= 0 and idx < len(self.found_devices):
+                 allowed_exts = self.found_devices[idx].get('exts')
+
+        self.scanner = IngestScanner(src, self.check_videos_only.isChecked(), allowed_exts)
+        self.scanner.finished_signal.connect(self.on_scan_complete); self.scanner.start()
     def on_scan_complete(self, grouped_files):
         self.tree.clear(); total_files = 0; sorted_dates = sorted(grouped_files.keys(), reverse=True)
         for date in sorted_dates:
@@ -1227,7 +1313,8 @@ class ConvertTab(QWidget):
         worker = ThumbnailWorker(files); worker.thumb_ready.connect(self.update_thumbnail)
         worker.finished.connect(lambda: self.thumb_workers.remove(worker) if worker in self.thumb_workers else None)
         worker.start(); self.thumb_workers.append(worker)
-    def update_thumbnail(self, path, pixmap):
+    def update_thumbnail(self, path, image):
+        pixmap = QPixmap.fromImage(image)
         items = self.list.findItems(path, Qt.MatchFlag.MatchExactly)
         for item in items: item.setIcon(QIcon(pixmap))
     def stop(self):
@@ -1293,8 +1380,6 @@ class AboutDialog(QDialog):
         if hasattr(sys, '_MEIPASS'): base_dir = sys._MEIPASS
         else: base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         logo_path = os.path.join(base_dir, "assets", "icon.svg")
-        if not os.path.exists(logo_path):
-            logo_path = os.path.join(base_dir, "assets", "icon.png")
         
         if os.path.exists(logo_path):
             pixmap = QPixmap(logo_path); logo_label.setPixmap(pixmap.scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
