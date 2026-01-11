@@ -23,6 +23,6 @@ VSVersionInfo(
         StringStruct(u'ProductName', u'CineBridge Pro'),
         StringStruct(u'ProductVersion', u'4.16.0.0')])
       ]), 
-    VarFileInfo([VarProperty(u'Translation', [1033, 1200])])
+    VarFileInfo([VarStruct(u'Translation', [1033, 1200])])
   ]
 )
