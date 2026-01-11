@@ -352,7 +352,12 @@ class DeviceRegistry:
                 if hit: return name, mount_point, profile['exts']
         
         # 3. Android/Generic Fallback
-        dcim = find_path(mount_point, "DCIM")
+        search_root = mount_point
+        internal = find_path(mount_point, "Internal shared storage")
+        if not internal: internal = find_path(mount_point, "Internal Storage")
+        if internal: search_root = internal
+
+        dcim = find_path(search_root, "DCIM")
         if dcim:
              cam = find_path(dcim, "Camera")
              if cam: return "Android/Phone", cam, {'.MP4', '.JPG', '.JPEG', '.DNG', '.HEIC'}
