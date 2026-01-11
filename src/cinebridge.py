@@ -8,6 +8,7 @@ import signal
 import subprocess
 import hashlib
 import json
+import xml.etree.ElementTree as ET
 from datetime import datetime
 from collections import deque
 
@@ -375,6 +376,30 @@ class ReportGenerator:
         printer.setPageLayout(QPageLayout(QPageSize(QPageSize.PageSizeId.A4), QPageLayout.Orientation.Portrait, QMarginsF(15, 15, 15, 15)))
         doc.print(printer)
         return dest_path
+
+class MHLGenerator:
+    @staticmethod
+    def generate(dest_root, transfer_data, project_name="CineBridge_Pro"):
+        """Generates an ASC-MHL compliant XML file for media integrity verification."""
+        timestamp = datetime.now().strftime("%Y-%m-%dT%H:%M:%S")
+        root = ET.Element("hashlist", version="1.1")
+        for f in transfer_data:
+            if f.get('hash') == "N/A": continue
+            hash_node = ET.SubElement(root, "hash")
+            ET.SubElement(hash_node, "file").text = f['name']
+            ET.SubElement(hash_node, "size").text = str(f['size'])
+            hash_tag = "xxhash64" if HAS_XXHASH else "md5"
+            ET.SubElement(hash_node, hash_tag).text = f['hash']
+            ET.SubElement(hash_node, "hashdate").text = timestamp
+        
+        tree = ET.ElementTree(root)
+        # ElementTree.indent is only available in Python 3.9+
+        if hasattr(ET, 'indent'): ET.indent(tree, space="  ", level=0)
+        
+        mhl_filename = f"{project_name}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.mhl"
+        mhl_path = os.path.join(dest_root, mhl_filename)
+        tree.write(mhl_path, encoding="utf-8", xml_declaration=True)
+        return mhl_path
 
 class PresetManager:
     @staticmethod
@@ -1665,6 +1690,14 @@ class IngestTab(QWidget):
                     self.append_copy_log(f"📝 Report: {report_path}")
                 except Exception as e:
                     error_log(f"Report: Failed to generate PDF: {e}")
+            
+            # Generate MHL if verification was active
+            if self.check_verify.isChecked() and self.copy_worker:
+                try:
+                    mhl_path = MHLGenerator.generate(self.dest_input.text(), self.copy_worker.transfer_data, self.project_name_input.text() or "CineBridge")
+                    self.append_copy_log(f"🛡️ MHL: {os.path.basename(mhl_path)}")
+                except Exception as e:
+                    error_log(f"MHL: Failed to generate: {e}")
         else: 
             SystemNotifier.notify("Ingest Failed", "Operation failed or cancelled.")
         
