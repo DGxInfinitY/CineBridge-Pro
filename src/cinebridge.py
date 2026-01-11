@@ -180,6 +180,21 @@ class DependencyManager:
 
 class TranscodeEngine:
     @staticmethod
+    def get_font_path():
+        """Returns a system font path for drawtext."""
+        paths = []
+        if platform.system() == "Windows":
+            paths = ["C:/Windows/Fonts/arial.ttf", "C:/Windows/Fonts/Tahoma.ttf"]
+        elif platform.system() == "Darwin":
+            paths = ["/Library/Fonts/Arial.ttf", "/System/Library/Fonts/Helvetica.ttc"]
+        else: # Linux
+            paths = ["/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf", "/usr/share/fonts/TTF/DejaVuSans.ttf"]
+        
+        for p in paths:
+            if os.path.exists(p): return p.replace('\\', '/')
+        return None
+
+    @staticmethod
     def build_command(input_path, output_path, settings, use_gpu=False):
         ffmpeg_bin = DependencyManager.get_ffmpeg_path()
         if not ffmpeg_bin: return None
@@ -195,9 +210,23 @@ class TranscodeEngine:
         
         cmd.extend(['-i', input_path])
         
+        vf_chain = []
         if settings.get("lut_path"):
             lut_file = settings['lut_path'].replace('\\', '/').replace(':', '\\:').replace("'", "'\\''")
-            cmd.extend(['-vf', f"lut3d='{lut_file}'"])
+            vf_chain.append(f"lut3d='{lut_file}'")
+        
+        font = TranscodeEngine.get_font_path()
+        if font:
+            if settings.get("burn_file"):
+                vf_chain.append(f"drawtext=text='%{{filename}}':x=10:y=H-th-10:fontfile='{font}':fontcolor=white:fontsize=24:box=1:boxcolor=black@0.5")
+            if settings.get("burn_tc"):
+                vf_chain.append(f"drawtext=text='%{{pts\\:hms}}':x=W-tw-10:y=H-th-10:fontfile='{font}':fontcolor=white:fontsize=24:box=1:boxcolor=black@0.5")
+            if settings.get("watermark"):
+                txt = settings['watermark'].replace("'", "")
+                vf_chain.append(f"drawtext=text='{txt}':x=(W-tw)/2:y=10:fontfile='{font}':fontcolor=white@0.3:fontsize=32")
+
+        if vf_chain:
+            cmd.extend(['-vf', ','.join(vf_chain)])
 
         if v_codec in ['dnxhd', 'prores_ks']:
             cmd.extend(['-c:v', v_codec, '-profile:v', v_profile])
@@ -1001,6 +1030,14 @@ class TranscodeSettingsWidget(QGroupBox):
         lut_lay.addWidget(QLabel("Look:")); lut_lay.addWidget(self.lut_path); lut_lay.addWidget(self.btn_lut); lut_lay.addWidget(self.btn_clr_lut)
         self.layout.addLayout(lut_lay)
 
+        # Overlays Section
+        overlay_group = QGroupBox("Visual Overlays (Burn-in)"); overlay_lay = QGridLayout(); overlay_group.setLayout(overlay_lay)
+        self.chk_burn_file = QCheckBox("Burn Filename"); self.chk_burn_tc = QCheckBox("Burn Timecode")
+        self.inp_watermark = QLineEdit(); self.inp_watermark.setPlaceholderText("Watermark Text (Optional)")
+        overlay_lay.addWidget(self.chk_burn_file, 0, 0); overlay_lay.addWidget(self.chk_burn_tc, 0, 1)
+        overlay_lay.addWidget(QLabel("Watermark:"), 1, 0); overlay_lay.addWidget(self.inp_watermark, 1, 1)
+        self.layout.addWidget(overlay_group)
+
         self.advanced_frame = QFrame(); adv_layout = QFormLayout(); self.advanced_frame.setLayout(adv_layout)
         self.codec_combo = QComboBox(); self.init_codecs(); self.codec_combo.currentIndexChanged.connect(self.update_profiles)
         self.profile_combo = QComboBox(); self.audio_combo = QComboBox(); self.audio_combo.addItems(["PCM (Uncompressed)", "AAC (Compressed)"])
@@ -1095,6 +1132,9 @@ class TranscodeSettingsWidget(QGroupBox):
             self.audio_combo.setCurrentIndex(1 if data.get('a_codec') == 'aac' else 0)
             self.chk_audio_fix.setChecked(data.get('audio_fix', False))
             self.lut_path.setText(data.get('lut_path', ""))
+            self.chk_burn_file.setChecked(data.get('burn_file', False))
+            self.chk_burn_tc.setChecked(data.get('burn_tc', False))
+            self.inp_watermark.setText(data.get('watermark', ""))
             return
 
         if is_custom_entry: return
@@ -1130,7 +1170,10 @@ class TranscodeSettingsWidget(QGroupBox):
             "v_codec": v_codec_map.get(self.codec_combo.currentText(), "dnxhd"), 
             "v_profile": self.profile_combo.currentData(), 
             "a_codec": a_codec_map.get(self.audio_combo.currentText(), "pcm_s16le"),
-            "audio_fix": self.chk_audio_fix.isChecked()
+            "audio_fix": self.chk_audio_fix.isChecked(),
+            "burn_file": self.chk_burn_file.isChecked(),
+            "burn_tc": self.chk_burn_tc.isChecked(),
+            "watermark": self.inp_watermark.text().strip()
         }
         if self.lut_path.text().strip(): settings["lut_path"] = self.lut_path.text().strip()
         return settings
@@ -1739,6 +1782,74 @@ class DeliveryTab(QWidget):
         SystemNotifier.notify("Render Complete", "Delivery render finished.")
         self.toggle_ui_state(False); self.status.setText("Delivery Render Complete!"); dest = self.inp_dest.text(); msg = f"File saved to:\n{dest}" if dest else "File saved to 'Final_Render' folder next to the master file."; dlg = JobReportDialog("Render Complete", f"<h3>Render Successful</h3><p>{msg}</p>", self); dlg.exec()
 
+class WatchTab(QWidget):
+    def __init__(self):
+        super().__init__(); layout = QVBoxLayout(); layout.setSpacing(15); layout.setContentsMargins(20, 20, 20, 20); self.setLayout(layout)
+        self.is_active = False; self.processed_files = set(); self.timer = QTimer(); self.timer.timeout.connect(self.check_folder)
+        
+        self.settings = TranscodeSettingsWidget("Watch Folder Transcode Settings", mode="general")
+        layout.addWidget(self.settings)
+        
+        io_group = QGroupBox("Watch Configuration"); io_lay = QFormLayout(); io_group.setLayout(io_lay)
+        self.inp_watch = QLineEdit(); btn_watch = QPushButton("Browse..."); btn_watch.clicked.connect(self.browse_watch)
+        row1 = QHBoxLayout(); row1.addWidget(self.inp_watch); row1.addWidget(btn_watch)
+        self.inp_dest = QLineEdit(); btn_dest = QPushButton("Browse..."); btn_dest.clicked.connect(self.browse_dest)
+        row2 = QHBoxLayout(); row2.addWidget(self.inp_dest); row2.addWidget(btn_dest)
+        io_lay.addRow("Watch Directory:", row1); io_lay.addRow("Proxy Destination:", row2)
+        layout.addWidget(io_group)
+        
+        status_frame = QFrame(); status_frame.setObjectName("DashFrame"); sl = QVBoxLayout(status_frame)
+        self.status_label = QLabel("Watch Folder: INACTIVE"); self.status_label.setStyleSheet("font-weight: bold; color: #888;"); sl.addWidget(self.status_label)
+        self.pbar = QProgressBar(); self.pbar.setVisible(False); sl.addWidget(self.pbar); layout.addWidget(status_frame)
+        
+        self.btn_toggle = QPushButton("ACTIVATE WATCH FOLDER"); self.btn_toggle.setObjectName("StartBtn"); self.btn_toggle.setMinimumHeight(50); self.btn_toggle.clicked.connect(self.toggle_watch); layout.addWidget(self.btn_toggle)
+        layout.addStretch()
+
+    def browse_watch(self):
+        d = QFileDialog.getExistingDirectory(self, "Select Folder to Watch")
+        if d: self.inp_watch.setText(d)
+    def browse_dest(self):
+        d = QFileDialog.getExistingDirectory(self, "Pick a Destination")
+        if d: self.inp_dest.setText(d)
+
+    def toggle_watch(self):
+        if self.is_active:
+            self.is_active = False; self.timer.stop(); self.btn_toggle.setText("ACTIVATE WATCH FOLDER"); self.btn_toggle.setObjectName("StartBtn")
+            self.status_label.setText("Watch Folder: INACTIVE"); self.status_label.setStyleSheet("color: #888;")
+        else:
+            if not self.inp_watch.text() or not self.inp_dest.text(): return QMessageBox.warning(self, "Error", "Set Watch/Dest folders.")
+            self.is_active = True; self.timer.start(5000); self.btn_toggle.setText("DEACTIVATE WATCH FOLDER"); self.btn_toggle.setObjectName("StopBtn")
+            self.status_label.setText("Watch Folder: ACTIVE - Scanning every 5s..."); self.status_label.setStyleSheet("color: #27AE60;")
+        self.btn_toggle.style().unpolish(self.btn_toggle); self.btn_toggle.style().polish(self.btn_toggle)
+
+    def check_folder(self):
+        watch_path = self.inp_watch.text()
+        if not os.path.exists(watch_path): return
+        
+        files = []
+        for f in os.listdir(watch_path):
+            full = os.path.join(watch_path, f)
+            if os.path.isfile(full) and full not in self.processed_files:
+                if f.lower().endswith(tuple(x.lower() for x in DeviceRegistry.VIDEO_EXTS)):
+                    files.append(full)
+        
+        if files:
+            # We found new files. For simplicity in v4.16, we'll process them one by one.
+            # Real professional tools check if file size is stable (transfer complete)
+            self.start_batch(files)
+
+    def start_batch(self, files):
+        dest = self.inp_dest.text()
+        self.worker = BatchTranscodeWorker(files, dest, self.settings.get_settings(), mode="convert", use_gpu=self.settings.is_gpu_enabled())
+        self.worker.progress_signal.connect(self.pbar.setValue); self.worker.finished_signal.connect(self.on_batch_finished)
+        self.pbar.setVisible(True); self.timer.stop() # Pause polling
+        for f in files: self.processed_files.add(f)
+        self.worker.start()
+
+    def on_batch_finished(self):
+        self.pbar.setVisible(False); self.timer.start(5000) # Resume polling
+        SystemNotifier.notify("Watch Folder", "New proxies processed.")
+
 class AboutDialog(QDialog):
     def __init__(self, parent=None):
         super().__init__(parent); self.setWindowTitle("About CineBridge Pro"); self.setFixedWidth(400); layout = QVBoxLayout()
@@ -1768,8 +1879,10 @@ class CineBridgeApp(QMainWindow):
         elif os.path.exists(icon_png): self.setWindowIcon(QIcon(icon_png))
         self.tabs = QTabWidget(); self.tabs.setTabPosition(QTabWidget.TabPosition.North); self.tabs.setStyleSheet("QTabBar::tab { height: 40px; width: 150px; font-weight: bold; }")
         self.settings_btn = QToolButton(); self.settings_btn.setText("⚙"); self.settings_btn.setStyleSheet("QToolButton { font-size: 20px; border: none; background: transparent; padding: 5px; } QToolButton:hover { color: #3498DB; }"); self.settings_btn.clicked.connect(self.open_settings); self.tabs.setCornerWidget(self.settings_btn, Qt.Corner.TopRightCorner)
-        self.tab_ingest = IngestTab(self); self.tab_convert = ConvertTab(); self.tab_delivery = DeliveryTab(); self.tabs.addTab(self.tab_ingest, "📥 INGEST"); self.tabs.addTab(self.tab_convert, "🛠️ CONVERT"); self.tabs.addTab(self.tab_delivery, "🚀 DELIVERY"); self.setCentralWidget(self.tabs)
-        self.tab_ingest.transcode_widget.chk_gpu.toggled.connect(self.sync_gpu_toggle); self.tab_convert.settings.chk_gpu.toggled.connect(self.sync_gpu_toggle); self.tab_delivery.settings.chk_gpu.toggled.connect(self.sync_gpu_toggle)
+        self.tab_ingest = IngestTab(self); self.tab_convert = ConvertTab(); self.tab_delivery = DeliveryTab(); self.tab_watch = WatchTab()
+        self.tabs.addTab(self.tab_ingest, "📥 INGEST"); self.tabs.addTab(self.tab_convert, "🛠️ CONVERT"); self.tabs.addTab(self.tab_delivery, "🚀 DELIVERY"); self.tabs.addTab(self.tab_watch, "👀 WATCH")
+        self.setCentralWidget(self.tabs)
+        self.tab_ingest.transcode_widget.chk_gpu.toggled.connect(self.sync_gpu_toggle); self.tab_convert.settings.chk_gpu.toggled.connect(self.sync_gpu_toggle); self.tab_delivery.settings.chk_gpu.toggled.connect(self.sync_gpu_toggle); self.tab_watch.settings.chk_gpu.toggled.connect(self.sync_gpu_toggle)
         
         # Global System Monitor
         self.sys_monitor = SystemMonitor()
