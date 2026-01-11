@@ -24,7 +24,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QWidget, QVBoxLayout,
                              QCheckBox, QGroupBox, QComboBox, QTabWidget, QFrame, 
                              QSizePolicy, QSplitter, QFormLayout, QDialog,
                              QListWidget, QAbstractItemView, QToolButton, QRadioButton, QButtonGroup,
-                             QTableWidget, QTableWidgetItem, QHeaderView, QMenu, QTreeWidget, QTreeWidgetItem, QGridLayout)
+                             QTableWidget, QTableWidgetItem, QHeaderView, QMenu, QTreeWidget, QTreeWidgetItem, QGridLayout, QInputDialog)
 from PyQt6.QtGui import QAction, QPalette, QColor, QIcon, QFont, QDragEnterEvent, QDropEvent, QPixmap, QImage
 from PyQt6.QtCore import QThread, pyqtSignal, Qt, QSettings, QTimer, QMimeData, QObject, QSize
 
@@ -38,12 +38,16 @@ DEBUG_MODE = False
 GUI_LOG_QUEUE = []
 
 class AppLogger:
-    _log_path = os.path.join(os.path.expanduser("~"), "cinebridge_pro.log")
+    # Use XDG standard paths (~/.local/share/cinebridge-pro/logs)
+    _data_dir = os.path.join(os.path.expanduser("~"), ".local", "share", "cinebridge-pro")
+    _log_dir = os.path.join(_data_dir, "logs")
+    _log_path = os.path.join(_log_dir, "cinebridge.log")
 
     @staticmethod
     def init_log():
-        """Ensures log file exists and writes a session header."""
+        """Ensures log directory exists and writes a session header."""
         try:
+            os.makedirs(AppLogger._log_dir, exist_ok=True)
             with open(AppLogger._log_path, "a") as f:
                 f.write(f"\n{'='*60}\n")
                 f.write(f"SESSION START: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
@@ -265,6 +269,52 @@ class MediaInfoExtractor:
                     info["audio_streams"].append(a_info)
             return info
         except Exception as e: return {"error": str(e)}
+
+class PresetManager:
+    _preset_dir = os.path.join(os.path.expanduser("~"), ".local", "share", "cinebridge-pro", "presets")
+
+    @staticmethod
+    def ensure_dir():
+        os.makedirs(PresetManager._preset_dir, exist_ok=True)
+
+    @staticmethod
+    def save_preset(name, settings):
+        PresetManager.ensure_dir()
+        filename = f"{name}.json"
+        path = os.path.join(PresetManager._preset_dir, filename)
+        try:
+            with open(path, 'w') as f:
+                json.dump(settings, f, indent=4)
+            info_log(f"Presets: Saved '{name}' to {path}")
+            return True
+        except Exception as e:
+            error_log(f"Presets: Failed to save {name}: {e}")
+            return False
+
+    @staticmethod
+    def list_presets():
+        PresetManager.ensure_dir()
+        presets = {}
+        try:
+            for f in os.listdir(PresetManager._preset_dir):
+                if f.endswith(".json"):
+                    name = f.replace(".json", "")
+                    path = os.path.join(PresetManager._preset_dir, f)
+                    try:
+                        with open(path, 'r') as p:
+                            presets[name] = json.load(p)
+                    except: continue
+            return presets
+        except: return {}
+
+    @staticmethod
+    def delete_preset(name):
+        path = os.path.join(PresetManager._preset_dir, f"{name}.json")
+        if os.path.exists(path):
+            os.remove(path)
+            info_log(f"Presets: Deleted '{name}'")
+            return True
+        return False
 
 # =============================================================================
 # NOTIFICATION SYSTEM
@@ -903,7 +953,15 @@ class TranscodeSettingsWidget(QGroupBox):
         super().__init__(title); self.layout = QVBoxLayout(); self.setLayout(self.layout); self.mode = mode
         self.chk_gpu = QCheckBox("Use Hardware Acceleration (if available)"); self.chk_gpu.setStyleSheet("font-weight: bold; color: #3498DB;"); self.layout.addWidget(self.chk_gpu)
         top_row = QHBoxLayout(); top_row.addWidget(QLabel("Preset:")); self.preset_combo = QComboBox(); self.init_presets() 
-        self.preset_combo.currentIndexChanged.connect(self.apply_preset); top_row.addWidget(self.preset_combo, 1); self.layout.addLayout(top_row)
+        self.preset_combo.currentIndexChanged.connect(self.apply_preset); top_row.addWidget(self.preset_combo, 1)
+        
+        # Preset Management Buttons
+        self.btn_save_preset = QToolButton(); self.btn_save_preset.setText("💾"); self.btn_save_preset.setToolTip("Save Current as Preset"); self.btn_save_preset.clicked.connect(self.save_custom_preset)
+        self.btn_import_preset = QToolButton(); self.btn_import_preset.setText("📥"); self.btn_import_preset.setToolTip("Import Preset File"); self.btn_import_preset.clicked.connect(self.import_preset_file)
+        self.btn_del_preset = QToolButton(); self.btn_del_preset.setText("🗑️"); self.btn_del_preset.setToolTip("Delete Selected Preset"); self.btn_del_preset.clicked.connect(self.delete_current_preset)
+        top_row.addWidget(self.btn_save_preset); top_row.addWidget(self.btn_import_preset); top_row.addWidget(self.btn_del_preset)
+        
+        self.layout.addLayout(top_row)
         
         lut_lay = QHBoxLayout(); self.lut_path = QLineEdit(); self.lut_path.setPlaceholderText("Select 3D LUT (.cube) - Optional")
         self.btn_lut = QPushButton("Browse LUT"); self.btn_lut.clicked.connect(self.browse_lut)
@@ -922,22 +980,63 @@ class TranscodeSettingsWidget(QGroupBox):
         self.preset_combo.clear()
         if self.mode == "general":
             p = "Linux " if platform.system() == "Linux" else ""
-            self.preset_combo.addItems([f"{p}Edit-Ready (DNxHR HQ)", f"{p}Proxy (DNxHR LB)", "ProRes 422 HQ", "ProRes Proxy", "H.264 (Standard)", "H.265 (High Compress)", "Custom"])
-        else: self.preset_combo.addItems(["YouTube 4K (H.265 / HEVC)", "YouTube 1080p (H.264 / AVC)", "Social / Mobile (H.264)", "Master Archive (H.265 10-bit)", "Custom"])
-    def init_codecs(self):
-        self.codec_combo.clear()
-        if self.mode == "general": self.codec_combo.addItems(["DNxHR (Avid)", "ProRes (Apple)", "H.264", "H.265 (HEVC)"])
-        else: self.codec_combo.addItems(["H.264", "H.265 (HEVC)"])
-    def update_profiles(self):
-        self.profile_combo.clear(); codec = self.codec_combo.currentText()
-        if "DNxHR" in codec: self.profile_combo.addItem("LB (Proxy)", "dnxhr_lb"); self.profile_combo.addItem("SQ (Standard)", "dnxhr_sq"); self.profile_combo.addItem("HQ (High Quality)", "dnxhr_hq")
-        elif "ProRes" in codec: self.profile_combo.addItem("Proxy", "0"); self.profile_combo.addItem("LT", "1"); self.profile_combo.addItem("422", "2"); self.profile_combo.addItem("HQ", "3")
-        elif "H.264" in codec: self.profile_combo.addItem("High", "high"); self.profile_combo.addItem("Main", "main")
-        elif "H.265" in codec: self.profile_combo.addItem("Main", "main"); self.profile_combo.addItem("Main 10", "main10")
+            self.preset_combo.addItems([f"{p}Edit-Ready (DNxHR HQ)", f"{p}Proxy (DNxHR LB)", "ProRes 422 HQ", "ProRes Proxy", "H.264 (Standard)", "H.265 (High Compress)"])
+        else:
+            self.preset_combo.addItems(["YouTube 4K (H.265 / HEVC)", "YouTube 1080p (H.264 / AVC)", "Social / Mobile (H.264)", "Master Archive (H.265 10-bit)"])
+        
+        # Load Custom Presets
+        self.custom_presets = PresetManager.list_presets()
+        if self.custom_presets:
+            self.preset_combo.insertSeparator(self.preset_combo.count())
+            for name in sorted(self.custom_presets.keys()):
+                self.preset_combo.addItem(f"⭐ {name}", self.custom_presets[name])
+        
+        self.preset_combo.insertSeparator(self.preset_combo.count())
+        self.preset_combo.addItem("Custom")
+
+    def save_custom_preset(self):
+        name, ok = QInputDialog.getText(self, "Save Preset", "Enter a name for this preset:")
+        if ok and name.strip():
+            if PresetManager.save_preset(name.strip(), self.get_settings()):
+                self.init_presets()
+                idx = self.preset_combo.findText(f"⭐ {name.strip()}")
+                if idx >= 0: self.preset_combo.setCurrentIndex(idx)
+
+    def import_preset_file(self):
+        f, _ = QFileDialog.getOpenFileName(self, "Import Preset", "", "JSON Files (*.json)")
+        if f:
+            try:
+                with open(f, 'r') as p: data = json.load(p)
+                name = os.path.splitext(os.path.basename(f))[0]
+                if PresetManager.save_preset(name, data):
+                    self.init_presets(); QMessageBox.information(self, "Success", f"Imported '{name}'")
+            except Exception as e: QMessageBox.critical(self, "Error", f"Failed to import: {e}")
+
+    def delete_current_preset(self):
+        text = self.preset_combo.currentText()
+        if not text.startswith("⭐ "): return
+        name = text.replace("⭐ ", "")
+        if PresetManager.delete_preset(name): self.init_presets()
+
     def apply_preset(self):
-        idx = self.preset_combo.currentIndex(); is_custom = (self.preset_combo.currentText() == "Custom")
-        self.advanced_frame.setEnabled(is_custom)
-        if is_custom: return
+        text = self.preset_combo.currentText(); is_custom_entry = (text == "Custom")
+        self.advanced_frame.setEnabled(is_custom_entry or text.startswith("⭐ "))
+        
+        data = self.preset_combo.currentData()
+        if data and isinstance(data, dict):
+            v_map = {"dnxhd": 0, "prores_ks": 1, "libx264": 2, "libx265": 3}
+            if self.mode != "general": v_map = {"libx264": 0, "libx265": 1}
+            self.codec_combo.setCurrentIndex(v_map.get(data.get('v_codec'), 0))
+            self.update_profiles()
+            p_idx = self.profile_combo.findData(data.get('v_profile'))
+            if p_idx >= 0: self.profile_combo.setCurrentIndex(p_idx)
+            self.audio_combo.setCurrentIndex(1 if data.get('a_codec') == 'aac' else 0)
+            self.chk_audio_fix.setChecked(data.get('audio_fix', False))
+            self.lut_path.setText(data.get('lut_path', ""))
+            return
+
+        if is_custom_entry: return
+        idx = self.preset_combo.currentIndex()
         if self.mode == "general":
             if idx == 0: self.set_combo(0, "dnxhr_hq", 0)
             elif idx == 1: self.set_combo(0, "dnxhr_lb", 0)
@@ -950,8 +1049,12 @@ class TranscodeSettingsWidget(QGroupBox):
             elif idx == 1: self.set_combo(0, "high", 1)
             elif idx == 2: self.set_combo(0, "main", 1)
             elif idx == 3: self.set_combo(1, "main10", 1)
+
     def set_combo(self, codec_idx, profile_data, audio_idx):
-        self.codec_combo.setCurrentIndex(codec_idx); self.update_profiles()
+        self.codec_combo.blockSignals(True)
+        self.codec_combo.setCurrentIndex(codec_idx)
+        self.codec_combo.blockSignals(False)
+        self.update_profiles()
         if profile_data: self.profile_combo.setCurrentIndex(self.profile_combo.findData(profile_data))
         else: self.profile_combo.setCurrentIndex(0)
         self.audio_combo.setCurrentIndex(audio_idx)
