@@ -1047,6 +1047,13 @@ class SettingsDialog(QDialog):
         self.parent_app.settings.setValue("show_trans_log", self.chk_trans.isChecked())
     def show_ffmpeg_info(self): dlg = FFmpegConfigDialog(self); dlg.exec()
 
+class TranscodeConfigDialog(QDialog):
+    def __init__(self, settings_widget, parent=None):
+        super().__init__(parent); self.setWindowTitle("Transcode Configuration"); self.resize(500, 400); layout = QVBoxLayout(); self.setLayout(layout)
+        # Re-parenting widget might require it to not be in another layout
+        layout.addWidget(settings_widget)
+        btn = QPushButton("Done"); btn.clicked.connect(self.accept); layout.addWidget(btn)
+
 class IngestTab(QWidget):
     def __init__(self, parent_app):
         super().__init__(); self.app = parent_app; self.layout = QVBoxLayout(); self.layout.setSpacing(10); self.layout.setContentsMargins(20, 20, 20, 20); self.setLayout(self.layout)
@@ -1080,7 +1087,11 @@ class IngestTab(QWidget):
         self.check_date = QCheckBox("Sort Date"); self.check_dupe = QCheckBox("Skip Dupes"); self.check_videos_only = QCheckBox("Video Only"); self.check_transcode = QCheckBox("Enable Transcode"); self.check_transcode.setStyleSheet("color: #E67E22; font-weight: bold;"); self.check_transcode.toggled.connect(self.toggle_transcode_ui)
         self.check_verify = QCheckBox("Verify Copy"); self.check_verify.setStyleSheet("color: #27AE60; font-weight: bold;"); self.check_verify.setToolTip("Performs hash verification (xxHash/MD5) after copy.")
         rules_row.addWidget(self.check_date); rules_row.addWidget(self.check_dupe); rules_row.addWidget(self.check_videos_only); rules_row.addWidget(self.check_verify); rules_row.addWidget(self.check_transcode); settings_layout.addLayout(rules_row)
-        self.transcode_widget = TranscodeSettingsWidget(mode="general"); self.transcode_widget.setVisible(False); settings_layout.addWidget(self.transcode_widget); settings_group.setLayout(settings_layout); self.layout.addWidget(settings_group)
+        
+        self.btn_config_trans = QPushButton("Configure Transcode..."); self.btn_config_trans.setVisible(False); self.btn_config_trans.clicked.connect(self.open_transcode_config); settings_layout.addWidget(self.btn_config_trans)
+        self.transcode_widget = TranscodeSettingsWidget(mode="general")
+        
+        settings_group.setLayout(settings_layout); self.layout.addWidget(settings_group)
         
         self.review_group = QGroupBox("4. Select Media"); review_lay = QVBoxLayout()
         self.tree = QTreeWidget(); self.tree.setHeaderLabel("Media Grouped by Date")
@@ -1105,9 +1116,11 @@ class IngestTab(QWidget):
         self.transcode_log.setVisible(False)
     def toggle_logs(self, show_copy, show_transcode): self.copy_log.setVisible(show_copy); self.transcode_log.setVisible(show_transcode); self.splitter.setVisible(show_copy or show_transcode)
     def toggle_transcode_ui(self, checked): 
-        self.transcode_widget.setVisible(checked); self.transcode_status_label.setVisible(checked)
+        self.btn_config_trans.setVisible(checked); self.transcode_status_label.setVisible(checked)
         if self.ingest_mode == "scan": self.import_btn.setText("SCAN SOURCE")
         else: self.import_btn.setText("START TRANSFER & TRANSCODE" if checked else "START TRANSFER")
+    def open_transcode_config(self):
+        dlg = TranscodeConfigDialog(self.transcode_widget, self); dlg.exec()
     def update_load_display(self, value): self.load_label.setText(f"🔥 CPU Load: {value}%")
     def set_transcode_active(self, active): self.load_label.setVisible(active); self.transcode_status_label.setVisible(active)
     def browse_source(self): 
