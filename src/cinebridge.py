@@ -1058,7 +1058,7 @@ class IngestTab(QWidget):
     def __init__(self, parent_app):
         super().__init__(); self.app = parent_app; self.layout = QVBoxLayout(); self.layout.setSpacing(10); self.layout.setContentsMargins(20, 20, 20, 20); self.setLayout(self.layout)
         self.copy_worker = None; self.transcode_worker = None; self.scan_worker = None; self.found_devices = []; self.current_detected_path = None
-        self.ingest_mode = "scan"
+        self.ingest_mode = "scan"; self.last_scan_results = None
         self.setup_ui(); self.load_tab_settings()
         self.sys_monitor = SystemMonitor(); self.sys_monitor.cpu_signal.connect(self.update_load_display); self.sys_monitor.start()
         self.scan_watchdog = QTimer(); self.scan_watchdog.setSingleShot(True); self.scan_watchdog.timeout.connect(self.on_scan_timeout); QTimer.singleShot(500, self.run_auto_scan)
@@ -1094,7 +1094,7 @@ class IngestTab(QWidget):
         rules_grid = QGridLayout()
         self.check_date = QCheckBox("Sort Date"); rules_grid.addWidget(self.check_date, 0, 0)
         self.check_dupe = QCheckBox("Skip Dupes"); rules_grid.addWidget(self.check_dupe, 0, 1)
-        self.check_videos_only = QCheckBox("Video Only"); rules_grid.addWidget(self.check_videos_only, 0, 2)
+        self.check_videos_only = QCheckBox("Video Only"); self.check_videos_only.toggled.connect(self.refresh_tree_view); rules_grid.addWidget(self.check_videos_only, 0, 2)
         self.check_verify = QCheckBox("Verify Copy"); self.check_verify.setStyleSheet("color: #27AE60; font-weight: bold;"); rules_grid.addWidget(self.check_verify, 1, 0)
         self.check_verify.setToolTip("Performs hash verification (xxHash/MD5) after copy.")
         self.check_transcode = QCheckBox("Enable Transcode"); self.check_transcode.setStyleSheet("color: #E67E22; font-weight: bold;"); self.check_transcode.toggled.connect(self.toggle_transcode_ui)
@@ -1191,17 +1191,34 @@ class IngestTab(QWidget):
         self.scanner = IngestScanner(src, self.check_videos_only.isChecked(), allowed_exts)
         self.scanner.finished_signal.connect(self.on_scan_complete); self.scanner.start()
     def on_scan_complete(self, grouped_files):
-        self.tree.clear(); total_files = 0; sorted_dates = sorted(grouped_files.keys(), reverse=True)
+        self.last_scan_results = grouped_files
+        self.refresh_tree_view()
+
+    def refresh_tree_view(self):
+        if not self.last_scan_results: return
+        self.tree.clear(); total_files = 0; sorted_dates = sorted(self.last_scan_results.keys(), reverse=True)
+        video_exts = {'.MP4', '.MOV', '.MKV', '.INSV', '.360', '.AVI', '.MXF', '.CRM', '.BRAW'}
+        
         for date in sorted_dates:
-            files = grouped_files[date]; total_files += len(files)
+            all_files = self.last_scan_results[date]
+            if self.check_videos_only.isChecked():
+                files = [f for f in all_files if os.path.splitext(f)[1].upper() in video_exts]
+            else:
+                files = all_files
+            
+            if not files: continue
+            
+            total_files += len(files)
             date_item = QTreeWidgetItem(self.tree); date_item.setText(0, f"{date} ({len(files)} files)"); date_item.setFlags(date_item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsAutoTristate); date_item.setCheckState(0, Qt.CheckState.Checked)
             for f in files:
                 f_item = QTreeWidgetItem(date_item); f_item.setText(0, os.path.basename(f)); f_item.setData(0, Qt.ItemDataRole.UserRole, f); f_item.setFlags(f_item.flags() | Qt.ItemFlag.ItemIsUserCheckable); f_item.setCheckState(0, Qt.CheckState.Checked)
+        
         self.tree.expandAll(); self.review_group.setVisible(True); self.import_btn.setEnabled(True); self.ingest_mode = "transfer"
         self.status_label.setText(f"FOUND {total_files} FILES. SELECT MEDIA TO TRANSFER.")
         self.update_transfer_button_text()
 
     def update_transfer_button_text(self):
+        if not hasattr(self, 'import_btn'): return
         if self.ingest_mode == "scan":
             self.import_btn.setText("SCAN SOURCE"); return
         
