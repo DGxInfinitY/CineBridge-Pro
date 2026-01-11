@@ -37,12 +37,28 @@ except ImportError:
 DEBUG_MODE = False
 GUI_LOG_QUEUE = []
 
-def debug_log(msg):
-    timestamp = datetime.now().strftime("%H:%M:%S")
-    formatted_msg = f"[DEBUG {timestamp}] {msg}"
-    if DEBUG_MODE: 
-        print(formatted_msg)
-        GUI_LOG_QUEUE.append(formatted_msg)
+class AppLogger:
+    _log_path = os.path.join(os.path.expanduser("~"), "cinebridge_pro.log")
+
+    @staticmethod
+    def log(msg, level="DEBUG"):
+        timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        formatted = f"[{level}] {timestamp} | {msg}"
+        
+        # Always log to file for troubleshooting
+        try:
+            with open(AppLogger._log_path, "a") as f:
+                f.write(formatted + "\n")
+        except: pass
+
+        if DEBUG_MODE or level in ["INFO", "ERROR"]:
+            print(formatted)
+            GUI_LOG_QUEUE.append(formatted)
+            if len(GUI_LOG_QUEUE) > 500: GUI_LOG_QUEUE.pop(0)
+
+def debug_log(msg): AppLogger.log(msg, "DEBUG")
+def info_log(msg): AppLogger.log(msg, "INFO")
+def error_log(msg): AppLogger.log(msg, "ERROR")
 
 # =============================================================================
 # BACKEND UTILS
@@ -62,40 +78,33 @@ class EnvUtils:
 class DependencyManager:
     @staticmethod
     def get_ffmpeg_path():
-        # 1. Check Custom User Path
         settings = QSettings("CineBridgePro", "Config")
         custom_path = settings.value("ffmpeg_custom_path", "")
         if custom_path and os.path.exists(custom_path):
+            debug_log(f"FFmpeg: Using custom path {custom_path}")
             return custom_path
 
-        # 2. Check Bundled (PyInstaller)
         if hasattr(sys, '_MEIPASS'):
             bundle_path = os.path.join(sys._MEIPASS, "ffmpeg")
             if platform.system() == "Windows": bundle_path += ".exe"
-            if os.path.exists(bundle_path): return bundle_path
+            if os.path.exists(bundle_path):
+                debug_log(f"FFmpeg: Found bundled binary at {bundle_path}")
+                return bundle_path
         
-        # 3. Check Local Bin Folder
         script_dir = os.path.dirname(os.path.abspath(__file__))
         local_bin = os.path.join(script_dir, "bin", "ffmpeg")
         if platform.system() == "Windows": local_bin += ".exe"
-        if os.path.exists(local_bin): return local_bin
+        if os.path.exists(local_bin):
+            debug_log(f"FFmpeg: Found local binary at {local_bin}")
+            return local_bin
         
-        # 4. Check System PATH
         system_bin = shutil.which("ffmpeg")
-        if system_bin: return system_bin
+        if system_bin:
+            debug_log(f"FFmpeg: Found system binary at {system_bin}")
+            return system_bin
+        
+        error_log("FFmpeg binary NOT found in any known location.")
         return None
-
-    @staticmethod
-    def get_binary_path(binary_name):
-        if hasattr(sys, '_MEIPASS'):
-            bundle_path = os.path.join(sys._MEIPASS, binary_name)
-            if platform.system() == "Windows": bundle_path += ".exe"
-            if os.path.exists(bundle_path): return bundle_path
-        script_dir = os.path.dirname(os.path.abspath(__file__))
-        local_bin = os.path.join(script_dir, "bin", binary_name)
-        if platform.system() == "Windows": local_bin += ".exe"
-        if os.path.exists(local_bin): return local_bin
-        return shutil.which(binary_name)
 
     @staticmethod
     def detect_hw_accel():
@@ -106,10 +115,17 @@ class DependencyManager:
             output = res.stdout + res.stderr
             enc_res = subprocess.run([ffmpeg, '-encoders'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=EnvUtils.get_clean_env())
             enc_out = enc_res.stdout
-            if "cuda" in output and "h264_nvenc" in enc_out: return "cuda"
-            if "qsv" in output and "h264_qsv" in enc_out: return "qsv"
-            if "vaapi" in output: return "vaapi"
-        except: pass
+            if "cuda" in output and "h264_nvenc" in enc_out: 
+                debug_log("HW: Detected NVIDIA CUDA/NVENC")
+                return "cuda"
+            if "qsv" in output and "h264_qsv" in enc_out: 
+                debug_log("HW: Detected Intel QuickSync")
+                return "qsv"
+            if "vaapi" in output: 
+                debug_log("HW: Detected Linux VAAPI")
+                return "vaapi"
+        except Exception as e:
+            debug_log(f"HW Detection Error: {e}")
         return None
 
 class TranscodeEngine:
@@ -122,14 +138,14 @@ class TranscodeEngine:
         a_codec = settings.get('a_codec', 'pcm_s16le')
         cmd = [ffmpeg_bin, '-y']
         hw_method = DependencyManager.detect_hw_accel() if use_gpu else None
+        
         if hw_method == "cuda": cmd.extend(['-hwaccel', 'cuda'])
         elif hw_method == "qsv": cmd.extend(['-hwaccel', 'qsv', '-c:v', 'h264_qsv'])
         elif hw_method == "vaapi": cmd.extend(['-hwaccel', 'vaapi', '-hwaccel_device', '/dev/dri/renderD128', '-hwaccel_output_format', 'yuv420p'])
+        
         cmd.extend(['-i', input_path])
         
-        # Apply LUT if present
         if settings.get("lut_path"):
-            # Escape for FFmpeg filter syntax: backslashes to forward, colon escaping, and single quote escaping
             lut_file = settings['lut_path'].replace('\\', '/').replace(':', '\\:').replace("'", "'\\''")
             cmd.extend(['-vf', f"lut3d='{lut_file}'"])
 
@@ -145,15 +161,15 @@ class TranscodeEngine:
             else:
                 cmd.extend(['-c:v', v_codec, '-preset', 'fast', '-crf', '18'])
                 if v_codec == 'libx264': cmd.extend(['-pix_fmt', 'yuv420p'])
+        
         if a_codec == 'pcm_s16le': cmd.extend(['-c:a', 'pcm_s16le', '-ar', '48000'])
         elif a_codec == 'aac': cmd.extend(['-c:a', 'aac', '-b:a', '320k', '-ar', '48000'])
         
         if settings.get('audio_fix'):
-            # Fix audio drift (aresample) and potential loudness issues (loudnorm could be added but might change mix)
-            # async=1 fills gaps/trims overlaps to match timestamps
             cmd.extend(['-af', 'aresample=async=1:min_comp=0.01:first_pts=0'])
 
         cmd.append(output_path)
+        debug_log(f"FFmpeg CMD: {' '.join(cmd)}")
         return cmd
 
     @staticmethod
@@ -306,8 +322,11 @@ class DeviceRegistry:
 
     @staticmethod
     def identify(mount_point, usb_hints=set()):
+        debug_log(f"Registry: Identifying {mount_point} | USB Hints: {usb_hints}")
         root_items = DeviceRegistry.safe_list_dir(mount_point)
-        if not root_items: return "Generic Storage", mount_point, None
+        if not root_items: 
+            debug_log(f"Registry: {mount_point} is inaccessible or empty.")
+            return "Generic Storage", mount_point, None
 
         def find_path(base, sub_path):
             curr = base; parts = sub_path.split('/')
@@ -326,8 +345,7 @@ class DeviceRegistry:
         for name, profile in DeviceRegistry.PROFILES.items():
             for root_hint in profile['roots']:
                 found_root = find_path(mount_point, root_hint)
-                if found_root: # Directory check handled by find_path logic implied valid path
-                    # Validation for Root-based matching
+                if found_root:
                     if root_hint == "." or root_hint == "":
                         has_sig = False
                         try:
@@ -341,27 +359,37 @@ class DeviceRegistry:
                         except: pass
                         if not has_sig: continue
 
+                    debug_log(f"Registry: Matched {name} structure at {found_root}")
                     return name, found_root, profile['exts']
 
         # 2. Signature / Hint Match (Fallback)
         for name, profile in DeviceRegistry.PROFILES.items():
             hit = False
             for sig in profile['signatures']:
-                if any(sig.lower() in os.path.basename(item).lower() for item in root_items): hit = True
-                if any(sig.lower() in h.lower() for h in usb_hints): hit = True
+                if any(sig.lower() in os.path.basename(item).lower() for item in root_items): 
+                    debug_log(f"Registry: Signature '{sig}' matched in filenames.")
+                    hit = True
+                if any(sig.lower() in h.lower() for h in usb_hints): 
+                    debug_log(f"Registry: Signature '{sig}' matched in USB hints.")
+                    hit = True
                 if hit: return name, mount_point, profile['exts']
         
         # 3. Android/Generic Fallback
         search_root = mount_point
         internal = find_path(mount_point, "Internal shared storage")
         if not internal: internal = find_path(mount_point, "Internal Storage")
-        if internal: search_root = internal
+        if internal: 
+            debug_log(f"Registry: Found Android storage layer: {internal}")
+            search_root = internal
 
         dcim = find_path(search_root, "DCIM")
         if dcim:
              cam = find_path(dcim, "Camera")
-             if cam: return "Android/Phone", cam, {'.MP4', '.JPG', '.JPEG', '.DNG', '.HEIC'}
+             if cam: 
+                 debug_log("Registry: Identified Android Phone via DCIM/Camera")
+                 return "Android/Phone", cam, {'.MP4', '.JPG', '.JPEG', '.DNG', '.HEIC'}
              
+        debug_log(f"Registry: No specific profile match for {mount_point}. Falling back to Generic.")
         return "Generic Storage", mount_point, None
 
 class DriveDetector:
@@ -584,21 +612,32 @@ class AsyncTranscoder(QThread):
             try:
                 startupinfo = None; 
                 if platform.system() == 'Windows': startupinfo = subprocess.STARTUPINFO(); startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                # FIX: Use DEVNULL for stdout to prevent buffer deadlocks
                 process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, universal_newlines=True, startupinfo=startupinfo, env=EnvUtils.get_clean_env())
+                
+                error_lines = []
                 while True:
                     if not self.is_running: process.kill(); break
                     line = process.stderr.readline()
                     if not line and process.poll() is not None: break
                     if line:
-                        self.log_signal.emit(f"   [FFmpeg] {line.strip()}")
+                        stripped = line.strip()
+                        error_lines.append(stripped)
+                        if len(error_lines) > 15: error_lines.pop(0)
+                        self.log_signal.emit(f"   [FFmpeg] {stripped}")
                         if duration > 0:
                             pct, speed_str = TranscodeEngine.parse_progress(line, duration)
                             if pct > 0: self.progress_signal.emit(pct)
                             if speed_str: self.metrics_signal.emit(f"{base_status} | {speed_str}")
-                if process.returncode == 0: self.log_signal.emit(f"✅ Transcode Finished: {job['name']}")
-                else: self.log_signal.emit(f"❌ Transcode Failed: {job['name']}")
-            except Exception as e: self.log_signal.emit(f"❌ Exception: {e}")
+                
+                if process.returncode == 0: 
+                    self.log_signal.emit(f"✅ Transcode Finished: {job['name']}")
+                else: 
+                    msg = f"❌ Transcode Failed: {job['name']} (Exit Code: {process.returncode})"
+                    self.log_signal.emit(msg)
+                    error_log(f"{msg}\nRecent Output:\n" + "\n".join(error_lines))
+            except Exception as e: 
+                self.log_signal.emit(f"❌ Exception: {e}")
+                error_log(f"Transcode Critical Error: {e}")
             self.completed_jobs += 1
     def stop(self): self.is_running = False
 
@@ -782,19 +821,31 @@ class BatchTranscodeWorker(QThread):
             try:
                 startupinfo = None; 
                 if platform.system() == 'Windows': startupinfo = subprocess.STARTUPINFO(); startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                # FIX: Use DEVNULL here too
                 process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, universal_newlines=True, startupinfo=startupinfo, env=EnvUtils.get_clean_env())
+                
+                error_lines = []
                 while True:
                     if not self.is_running: process.kill(); break
                     line = process.stderr.readline()
                     if not line and process.poll() is not None: break
-                    if line and duration > 0:
-                        pct, speed = TranscodeEngine.parse_progress(line, duration)
-                        if pct > 0: self.progress_signal.emit(pct)
-                        if speed: self.status_signal.emit(f"Processing {i+1}/{total}: {speed}")
-                if process.returncode == 0: self.log_signal.emit(f"✅ Finished: {out_name}")
-                else: self.log_signal.emit(f"❌ Error on {filename}")
-            except Exception as e: self.log_signal.emit(f"❌ Exception: {e}")
+                    if line:
+                        stripped = line.strip()
+                        error_lines.append(stripped)
+                        if len(error_lines) > 15: error_lines.pop(0)
+                        if duration > 0:
+                            pct, speed = TranscodeEngine.parse_progress(line, duration)
+                            if pct > 0: self.pbar.setValue(pct) if hasattr(self, 'pbar') else self.progress_signal.emit(pct)
+                            if speed: self.status_signal.emit(f"Processing {i+1}/{total}: {speed}")
+                
+                if process.returncode == 0: 
+                    self.log_signal.emit(f"✅ Finished: {out_name}")
+                else: 
+                    msg = f"❌ Error on {filename} (Exit Code: {process.returncode})"
+                    self.log_signal.emit(msg)
+                    error_log(f"{msg}\nRecent Output:\n" + "\n".join(error_lines))
+            except Exception as e: 
+                self.log_signal.emit(f"❌ Exception: {e}")
+                error_log(f"Batch Transcode Error: {e}")
         self.finished_signal.emit(True)
     def stop(self): self.is_running = False
 
@@ -1178,11 +1229,15 @@ class IngestTab(QWidget):
             for d in self.found_devices: self.select_device_box.addItem(f"{d.get('display_name', d.get('type', 'Unknown'))} ({'Empty' if d['empty'] else 'Data'})")
             self.select_device_box.setCurrentIndex(self.found_devices.index(dev)); self.select_device_box.blockSignals(False); self.select_device_box.setStyleSheet(f"background-color: #1e1e1e; color: white; border: 1px solid {'#27AE60' if not dev['empty'] else '#F39C12'};")
     def on_import_click(self):
+        debug_log(f"UI: Ingest Click | Mode: {self.ingest_mode}")
         if self.ingest_mode == "scan": self.start_scan()
         else: self.start_transfer()
     def start_scan(self):
         src = self.current_detected_path if self.source_tabs.currentIndex() == 0 else self.source_input.text()
-        if not src or not os.path.exists(src): return QMessageBox.warning(self, "Error", "Invalid Source")
+        debug_log(f"UI: Scan Started | Source: {src}")
+        if not src or not os.path.exists(src): 
+            debug_log("UI: Scan Aborted - Invalid source path.")
+            return QMessageBox.warning(self, "Error", "Invalid Source")
         self.import_btn.setEnabled(False); self.status_label.setText("SCANNING SOURCE..."); self.tree.clear(); self.review_group.setVisible(False)
         
         allowed_exts = None
@@ -1190,6 +1245,7 @@ class IngestTab(QWidget):
              idx = self.select_device_box.currentIndex()
              if idx >= 0 and idx < len(self.found_devices):
                  allowed_exts = self.found_devices[idx].get('exts')
+                 debug_log(f"UI: Using device specific extensions: {allowed_exts}")
 
         self.scanner = IngestScanner(src, self.check_videos_only.isChecked(), allowed_exts)
         self.scanner.finished_signal.connect(self.on_scan_complete); self.scanner.start()
