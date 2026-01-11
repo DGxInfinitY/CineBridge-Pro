@@ -1,10 +1,19 @@
-# CineBridge Pro: The Linux DIT Suite
+# CineBridge Pro: The Professional Linux DIT Suite
 
 [![License: GPL v3](https://img.shields.io/badge/License-GPLv3-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey.svg)]()
 
-**CineBridge Pro** is an open-source Digital Imaging Technician (DIT) tool designed to solve the "Resolve on Linux" problem. It handles secure media offloading, checksum verification, and edit-ready transcoding (DNxHR/ProRes) in a single, streamlined interface.
+**CineBridge Pro** is an open-source Digital Imaging Technician (DIT) and Post-Production suite specifically engineered to solve the **"Resolve on Linux" problem**.
+
+### 🐧 The Linux Gap
+While DaVinci Resolve is a world-class NLE on Linux, the **Free Version** lacks native support for standard H.264/H.265 (HEVC) codecs due to licensing restrictions. This often leaves Linux users with "Media Offline" errors or the need for complex command-line transcoding.
+
+**CineBridge Pro bridges this gap** by providing a high-performance, GUI-driven workflow to:
+1. **Offload** media securely from professional cameras.
+2. **Verify** data integrity with industry-standard checksums (xxHash64/MD5).
+3. **Automate** organization into dated, camera-specific hierarchies.
+4. **Transcode** consumer/phone footage into edit-ready, high-fidelity formats like **DNxHR** and **ProRes** that work natively in Resolve on Linux.
 
 ![CineBridge Pro Screenshot](assets/screenshot.png)
 
@@ -12,78 +21,75 @@
 
 ## 🚀 Key Features
 
-### 📥 Intelligent Ingest
-* **Auto-Detection (Registry):** High-reliability detection for Sony (Alpha/FX), Blackmagic (BRAW), Canon (CRM), DJI, GoPro, Insta360, and Android.
-* **Ingest Preview:** Scan your source and select exactly which days or files to transfer before starting.
-* **Smart Filtering:** Automatically filters file extensions based on the detected camera profile.
-* **Checksum Verification:** Bit-for-bit verification using **xxHash64** (fastest) or MD5 (compatibility).
-* **Pre-Flight Storage Check:** Prevents ingest if the destination drive lacks sufficient space.
+### 📥 Professional Ingest
+* **Device Registry:** Intelligent, high-reliability auto-detection for Sony (Alpha/FX), Blackmagic (BRAW), Canon (CRM), DJI, GoPro, Insta360, and Android devices.
+* **Scan & Select:** A powerful preview phase allowing you to scan your media and select exactly which shoot days or specific clips to transfer.
+* **Smart Filtering:** Automatically excludes system files and only targets media extensions relevant to your specific camera profile.
+* **Standardized Organization:** Automatically sorts files by Date -> Camera -> Category (Video/Photo/Audio/Misc).
 
-### 🛠️ Transcoding Engine
-* **Edit-Ready Codecs:** Converts H.264/H.265/BRAW into **DNxHR** or **ProRes** for smooth editing in DaVinci Resolve.
-* **3D LUT Burn-in:** Apply .cube LUTs during transcode for instant dailies.
-* **Audio Drift Fix:** Automatically synchronizes variable frame rate audio and normalizes to 48kHz.
-* **Hardware Acceleration:** Full support for NVIDIA (NVENC), Intel (QSV), VAAPI, and MacOS VideoToolbox.
-* **Batch Mode:** Drag-and-drop interface with **Visual Thumbnails** for bulk converting footage.
+### 🛠️ Transcoding & Dailies
+* **Edit-Ready Workflows:** Single-click conversion to Linux-friendly codecs (**DNxHR HQ/LB** and **ProRes 422/Proxy**).
+* **Visual Overlays (Burn-in):** Professional "Dailies" tools to burn Filenames, Timecodes, and custom Watermarks into your proxies.
+* **3D LUT Support:** Apply `.cube` LUTs during transcoding to see your creative intent immediately.
+* **Audio Drift Correction:** Specialized logic to sync variable-frame-rate audio (common in phone footage) and normalize to 48kHz.
+* **Hardware Acceleration:** Native support for NVIDIA (NVENC), Intel (QSV), VAAPI, and MacOS VideoToolbox.
 
-### 🛡️ Safety & Reliability
-* **Metadata Viewer:** Right-click any file in the queue to inspect codec, bitrate, and resolution.
-* **Configurable FFmpeg:** Easily select custom FFmpeg binaries to unlock specialized hardware features.
-* **Detailed Debugging:** Structured logging saved to `~/cinebridge_pro.log` for professional troubleshooting.
-* **Theme Aware:** Automatically syncs with system Dark/Light mode.
+### 🛡️ Data Integrity & Reporting
+* **MHL Support:** Generates ASC-MHL compliant XML checksum lists to ensure bit-for-bit accuracy throughout the pipeline.
+* **DIT Transfer Reports:** Automatically generates professional PDF reports with project metadata and transfer summaries.
+* **Checksum Verification:** Built-in verification using **xxHash64** (fastest) or MD5.
+* **Pre-Flight Check:** Prevents transfers if the destination drive lacks sufficient space.
 
 ---
 
 ## 📦 Installation
 
 ### 📥 Releases (Pre-Compiled)
-Download the standalone executable for your OS.
+For most users, we recommend downloading the standalone installer for your OS.
 
 * **[Download Latest Release Here](https://github.com/DGxInfinitY/CineBridge-Pro/releases/latest)**
 
 ### 🛠️ Manual Build (For Developers)
-
-1.  **Clone the Repository:**
-    ```bash
-    git clone https://github.com/DGxInfinitY/CineBridge-Pro.git
-    cd CineBridge-Pro
-    ```
-
-2.  **Install Dependencies:**
-    ```bash
-    pip install PyQt6 psutil xxhash
-    ```
-
-3.  **Run the App:**
-    ```bash
-    python3 src/cinebridge.py
-    ```
+1.  **Clone the Repository:** `git clone https://github.com/DGxInfinitY/CineBridge-Pro.git`
+2.  **Install Dependencies:** `pip install PyQt6 psutil xxhash`
+3.  **Run:** `python3 src/cinebridge.py`
 
 ### 📋 Prerequisites
-* **Python 3.10+** (If running from source)
-* **FFmpeg** (Included in releases, or install on system)
-    * **Linux:** `sudo apt install ffmpeg`
-    * **Mac:** `brew install ffmpeg`
+* **Python 3.10+**
+* **FFmpeg** (Included in Windows/Mac releases; Linux users should install via `apt install ffmpeg`)
 
 ---
 
 ## 📝 Change Log
 
-### v4.14.0 (Current Release)
-* **New Feature:** **Ingest Overhaul.** Added a "Scan Source" phase allowing users to select specific dates/files via a Tree View before transfer.
-* **New Feature:** **Device Registry.** Professional fingerprinting for Sony, BMD, Canon, GoPro, DJI, and Insta360.
-* **New Feature:** **3D LUT Support.** Users can now select a `.cube` file to burn into transcoded footage.
-* **New Feature:** **Metadata Viewer.** Added "Inspect Media Info" context menu to the job queue.
-* **New Feature:** **Visual Queue.** Added high-quality thumbnails to the Batch Conversion queue.
-* **New Feature:** **FFmpeg Configuration Center.** Fully overhauled FFmpeg settings with custom binary selection and hardware strategy display.
-* **Improvement:** Added **Audio Drift Fix** toggle to solve audio sync issues in DaVinci Resolve.
-* **Improvement:** Implemented structured logging to `~/cinebridge_pro.log` for better support.
-* **UX:** New "Dashboard" layout for Ingest Tab to better utilize widescreen real estate.
-* **Design:** Updated App Icon to new modern "Bridge" design.
+### v4.16.1 (Current Release)
+* **UI/UX:** Added "Experimental / Pro Features" section in Settings to toggle the visibility of **Watch Folder** and **Burn-in Tools**.
+* **Improvement:** Optimized system resources by consolidating background monitors into a single global instance.
+* **Stability:** Hardened application shutdown logic to prevent hangs during heavy background processing.
+
+### v4.16.0
+* **New Feature:** **Watch Folder Service.** Background proxy generation for any files dropped into a watched directory.
+* **New Feature:** **Professional Burn-In.** Added Timecode, Filename, and Watermark overlays for Dailies.
+* **New Feature:** **DIT PDF Reports.** Beautiful project hand-off documents generated automatically.
+* **New Feature:** **MHL Support.** Industry-standard XML checksum lists for media integrity.
+
+### v4.15.x
+* **Refactor:** Standardized data storage using **XDG XDG Base Directory** specs (`~/.local/share/cinebridge-pro`).
+* **New Feature:** **Transcode Preset Management.** Full suite to Save, Import, and Export custom profiles.
+* **Distribution:** Added a professional Windows Setup Installer and automated metadata synchronization.
+
+### v4.14.0
+* **New Feature:** **Ingest Overhaul.** High-performance "Scan Source" phase with Tree View selection.
+* **New Feature:** **Metadata Viewer.** Right-click queue items to inspect codec, resolution, and bitrate.
+* **New Feature:** **Visual Thumbnails.** Added high-quality frame extraction for the job queue.
+* **Design:** Completely updated UI with a responsive Dashboard layout and new modern "Bridge" icon.
 
 ---
 
-### v4.13.5
-* **New Feature:** Added Native OS Notifications and sound alerts.
-* **New Feature:** Added "Verify Copy" toggle using xxHash64.
-* **New Feature:** Added Pre-Flight Storage Check.
+## ⚙️ Configuration & Debugging
+* **FFmpeg Settings:** Manually select custom FFmpeg binaries to unlock specialized hardware features.
+* **Troubleshooting:** Detailed, structured logs are saved to `~/cinebridge_pro.log` (accessible via the Settings menu).
+
+---
+
+Developed by **Donovan Goodwin** with help from Gemini AI.
