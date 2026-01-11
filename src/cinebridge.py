@@ -842,7 +842,9 @@ class TranscodeSettingsWidget(QGroupBox):
         self.layout.addWidget(self.advanced_frame); self.update_profiles(); self.apply_preset() 
     def init_presets(self):
         self.preset_combo.clear()
-        if self.mode == "general": self.preset_combo.addItems(["Linux Edit-Ready (DNxHR HQ)", "Linux Proxy (DNxHR LB)", "ProRes 422 HQ", "ProRes Proxy", "H.264 (Standard)", "H.265 (High Compress)", "Custom"])
+        if self.mode == "general":
+            p = "Linux " if platform.system() == "Linux" else ""
+            self.preset_combo.addItems([f"{p}Edit-Ready (DNxHR HQ)", f"{p}Proxy (DNxHR LB)", "ProRes 422 HQ", "ProRes Proxy", "H.264 (Standard)", "H.265 (High Compress)", "Custom"])
         else: self.preset_combo.addItems(["YouTube 4K (H.265 / HEVC)", "YouTube 1080p (H.264 / AVC)", "Social / Mobile (H.264)", "Master Archive (H.265 10-bit)", "Custom"])
     def init_codecs(self):
         self.codec_combo.clear()
