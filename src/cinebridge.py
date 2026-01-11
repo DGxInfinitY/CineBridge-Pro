@@ -1126,12 +1126,12 @@ class TranscodeSettingsWidget(QGroupBox):
         self.layout.addLayout(lut_lay)
 
         # Overlays Section
-        overlay_group = QGroupBox("Visual Overlays (Burn-in)"); overlay_lay = QGridLayout(); overlay_group.setLayout(overlay_lay)
+        self.overlay_group = QGroupBox("Visual Overlays (Burn-in)"); overlay_lay = QGridLayout(); self.overlay_group.setLayout(overlay_lay)
         self.chk_burn_file = QCheckBox("Burn Filename"); self.chk_burn_tc = QCheckBox("Burn Timecode")
         self.inp_watermark = QLineEdit(); self.inp_watermark.setPlaceholderText("Watermark Text (Optional)")
         overlay_lay.addWidget(self.chk_burn_file, 0, 0); overlay_lay.addWidget(self.chk_burn_tc, 0, 1)
         overlay_lay.addWidget(QLabel("Watermark:"), 1, 0); overlay_lay.addWidget(self.inp_watermark, 1, 1)
-        self.layout.addWidget(overlay_group)
+        self.layout.addWidget(self.overlay_group)
 
         self.advanced_frame = QFrame(); adv_layout = QFormLayout(); self.advanced_frame.setLayout(adv_layout)
         self.codec_combo = QComboBox(); self.init_codecs(); self.codec_combo.currentIndexChanged.connect(self.update_profiles)
@@ -1417,6 +1417,25 @@ class SettingsDialog(QDialog):
         self.chk_copy.setChecked(parent.tab_ingest.copy_log.isVisible()); self.chk_trans.setChecked(parent.tab_ingest.transcode_log.isVisible())
         self.chk_copy.toggled.connect(self.apply_view_options); self.chk_trans.toggled.connect(self.apply_view_options)
         view_lay.addWidget(self.chk_copy); view_lay.addWidget(self.chk_trans); view_group.setLayout(view_lay); layout.addWidget(view_group)
+
+        feat_group = QGroupBox("Experimental / Pro Features"); feat_lay = QVBoxLayout(); feat_group.setLayout(feat_lay)
+        
+        # Watch Folder Toggle
+        self.chk_watch_feat = QCheckBox("Enable Watch Folder Service")
+        self.chk_watch_feat.setChecked(parent.settings.value("feature_watch_folder", False, type=bool))
+        self.chk_watch_feat.toggled.connect(parent.update_feature_visibility)
+        feat_lay.addWidget(self.chk_watch_feat)
+        feat_lay.addWidget(QLabel("<small><i>Automates proxy generation for any files dropped into a specific folder.</i></small>"))
+        
+        # Burn-in Toggle
+        self.chk_burn_feat = QCheckBox("Enable Burn-in Tools")
+        self.chk_burn_feat.setChecked(parent.settings.value("feature_burn_in", False, type=bool))
+        self.chk_burn_feat.toggled.connect(parent.update_feature_visibility)
+        feat_lay.addWidget(self.chk_burn_feat)
+        feat_lay.addWidget(QLabel("<small><i>Adds filename, timecode, and watermark overlays to transcoded media.</i></small>"))
+        
+        layout.addWidget(feat_group)
+
         sys_group = QGroupBox("System"); sys_lay = QVBoxLayout()
         self.btn_ffmpeg = QPushButton("FFmpeg Settings"); self.btn_ffmpeg.clicked.connect(self.show_ffmpeg_info); sys_lay.addWidget(self.btn_ffmpeg)
         self.btn_log = QPushButton("View Debug Log"); self.btn_log.clicked.connect(self.view_log); sys_lay.addWidget(self.btn_log)
@@ -1980,7 +1999,10 @@ class AboutDialog(QDialog):
             pixmap = QPixmap(logo_path); logo_label.setPixmap(pixmap.scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         layout.addWidget(logo_label)
         title = QLabel("CineBridge Pro"); title.setStyleSheet("font-size: 22px; font-weight: bold; color: #3498DB;"); title.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(title)
-        version = QLabel("v4.16.0 (Dev)"); version.setStyleSheet("font-size: 14px; color: #888;"); version.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(version)
+        version = QLabel("v4.16.1 (Dev)"); version.setStyleSheet("font-size: 14px; color: #888;"); version.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(version)
+# ...
+        self.tab_ingest = IngestTab(self); self.tab_convert = ConvertTab(); self.tab_delivery = DeliveryTab(); self.tab_watch = WatchTab()
+        self.tabs.addTab(self.tab_ingest, "📥 INGEST"); self.tabs.addTab(self.tab_convert, "🛠️ CONVERT"); self.tabs.addTab(self.tab_delivery, "🚀 DELIVERY"); self.tabs.addTab(self.tab_watch, "Watch Folder")
         desc = QLabel("The Linux DIT & Post-Production Suite.\nSolving the 'Resolve on Linux' problem."); desc.setWordWrap(True); desc.setStyleSheet("font-size: 13px;"); desc.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(desc)
         credits = QLabel("<b>Developed by:</b><br>Donovan Goodwin<br>(with Gemini AI)"); credits.setStyleSheet("font-size: 13px;"); credits.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(credits)
         links = QLabel('<a href="mailto:ddg2goodwin@gmail.com" style="color: #3498DB;">ddg2goodwin@gmail.com</a><br><br><a href="https://github.com/DGxInfinitY" style="color: #3498DB;">GitHub: DGxInfinitY</a>'); links.setOpenExternalLinks(True); links.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(links)
@@ -1997,7 +2019,8 @@ class CineBridgeApp(QMainWindow):
         self.tabs = QTabWidget(); self.tabs.setTabPosition(QTabWidget.TabPosition.North); self.tabs.setStyleSheet("QTabBar::tab { height: 40px; width: 150px; font-weight: bold; }")
         self.settings_btn = QToolButton(); self.settings_btn.setText("⚙"); self.settings_btn.setStyleSheet("QToolButton { font-size: 20px; border: none; background: transparent; padding: 5px; } QToolButton:hover { color: #3498DB; }"); self.settings_btn.clicked.connect(self.open_settings); self.tabs.setCornerWidget(self.settings_btn, Qt.Corner.TopRightCorner)
         self.tab_ingest = IngestTab(self); self.tab_convert = ConvertTab(); self.tab_delivery = DeliveryTab(); self.tab_watch = WatchTab()
-        self.tabs.addTab(self.tab_ingest, "📥 INGEST"); self.tabs.addTab(self.tab_convert, "🛠️ CONVERT"); self.tabs.addTab(self.tab_delivery, "🚀 DELIVERY"); self.tabs.addTab(self.tab_watch, "👀 WATCH")
+        self.tabs.addTab(self.tab_ingest, "📥 INGEST"); self.tabs.addTab(self.tab_convert, "🛠️ CONVERT"); self.tabs.addTab(self.tab_delivery, "🚀 DELIVERY")
+        # Watch tab is added dynamically by update_feature_visibility
         self.setCentralWidget(self.tabs)
         self.tab_ingest.transcode_widget.chk_gpu.toggled.connect(self.sync_gpu_toggle); self.tab_convert.settings.chk_gpu.toggled.connect(self.sync_gpu_toggle); self.tab_delivery.settings.chk_gpu.toggled.connect(self.sync_gpu_toggle); self.tab_watch.settings.chk_gpu.toggled.connect(self.sync_gpu_toggle)
         
@@ -2007,6 +2030,7 @@ class CineBridgeApp(QMainWindow):
         self.sys_monitor.cpu_signal.connect(self.tab_convert.update_load_display)
         self.sys_monitor.start()
 
+        self.update_feature_visibility() # Set initial visibility
         saved_gpu = self.settings.value("use_gpu_accel", False, type=bool); self.sync_gpu_toggle(saved_gpu); self.theme_mode = self.settings.value("theme_mode", "light"); self.set_theme(self.theme_mode)
         self.theme_timer = QTimer(self); self.theme_timer.timeout.connect(self.check_system_theme); self.theme_timer.start(2000)
     
@@ -2044,6 +2068,38 @@ class CineBridgeApp(QMainWindow):
         try: return QApplication.palette().color(QPalette.ColorRole.Window).lightness() < 128
         except: return False
     def open_settings(self): dlg = SettingsDialog(self); dlg.exec()
+    
+    def update_feature_visibility(self):
+        # 1. Watch Folder Tab
+        show_watch = self.settings.value("feature_watch_folder", False, type=bool)
+        if hasattr(self, 'sender') and self.sender() and hasattr(self.sender(), 'text'):
+            if "Watch Folder" in self.sender().text():
+                show_watch = self.sender().isChecked()
+                self.settings.setValue("feature_watch_folder", show_watch)
+        
+        # We find the tab index
+        watch_idx = -1
+        for i in range(self.tabs.count()):
+            if self.tabs.tabText(i) == "Watch Folder":
+                watch_idx = i; break
+        
+        if show_watch:
+            if watch_idx == -1: self.tabs.addTab(self.tab_watch, "Watch Folder")
+        else:
+            if watch_idx != -1: self.tabs.removeTab(watch_idx)
+
+        # 2. Burn-in Tools
+        show_burn = self.settings.value("feature_burn_in", False, type=bool)
+        if hasattr(self, 'sender') and self.sender() and hasattr(self.sender(), 'text'):
+            if "Burn-in" in self.sender().text():
+                show_burn = self.sender().isChecked()
+                self.settings.setValue("feature_burn_in", show_burn)
+
+        # Update all transcode widgets (Ingest, Convert, Delivery, Watch)
+        for tab in [self.tab_ingest, self.tab_convert, self.tab_delivery, self.tab_watch]:
+            if hasattr(tab, 'transcode_widget'): tab.transcode_widget.overlay_group.setVisible(show_burn)
+            elif hasattr(tab, 'settings'): tab.settings.overlay_group.setVisible(show_burn)
+
     def update_log_visibility(self): pass
     def reset_to_defaults(self):
         reply = QMessageBox.question(self, "Confirm Reset", "Are you sure you want to reset all settings to default? This cannot be undone.", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
