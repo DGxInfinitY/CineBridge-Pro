@@ -1086,11 +1086,20 @@ class IngestTab(QWidget):
         dest_group.setLayout(dest_inner)
 
         # 3. Settings Group
-        settings_group = QGroupBox("3. Processing Settings"); settings_layout = QVBoxLayout(); rules_row = QHBoxLayout()
-        self.device_combo = QComboBox(); self.device_combo.addItems(["auto", "GoPro", "DJI", "Insta360", "Generic Storage"]); rules_row.addWidget(QLabel("Logic:")); rules_row.addWidget(self.device_combo)
-        self.check_date = QCheckBox("Sort Date"); self.check_dupe = QCheckBox("Skip Dupes"); self.check_videos_only = QCheckBox("Video Only"); self.check_transcode = QCheckBox("Enable Transcode"); self.check_transcode.setStyleSheet("color: #E67E22; font-weight: bold;"); self.check_transcode.toggled.connect(self.toggle_transcode_ui)
-        self.check_verify = QCheckBox("Verify Copy"); self.check_verify.setStyleSheet("color: #27AE60; font-weight: bold;"); self.check_verify.setToolTip("Performs hash verification (xxHash/MD5) after copy.")
-        rules_row.addWidget(self.check_date); rules_row.addWidget(self.check_dupe); rules_row.addWidget(self.check_videos_only); rules_row.addWidget(self.check_verify); rules_row.addWidget(self.check_transcode); settings_layout.addLayout(rules_row)
+        settings_group = QGroupBox("3. Processing Settings"); settings_layout = QVBoxLayout()
+        logic_row = QHBoxLayout(); logic_row.addWidget(QLabel("Logic:")); 
+        self.device_combo = QComboBox(); self.device_combo.addItems(["auto", "GoPro", "DJI", "Insta360", "Generic Storage"]); logic_row.addWidget(self.device_combo)
+        settings_layout.addLayout(logic_row)
+
+        rules_grid = QGridLayout()
+        self.check_date = QCheckBox("Sort Date"); rules_grid.addWidget(self.check_date, 0, 0)
+        self.check_dupe = QCheckBox("Skip Dupes"); rules_grid.addWidget(self.check_dupe, 0, 1)
+        self.check_videos_only = QCheckBox("Video Only"); rules_grid.addWidget(self.check_videos_only, 0, 2)
+        self.check_verify = QCheckBox("Verify Copy"); self.check_verify.setStyleSheet("color: #27AE60; font-weight: bold;"); rules_grid.addWidget(self.check_verify, 1, 0)
+        self.check_verify.setToolTip("Performs hash verification (xxHash/MD5) after copy.")
+        self.check_transcode = QCheckBox("Enable Transcode"); self.check_transcode.setStyleSheet("color: #E67E22; font-weight: bold;"); self.check_transcode.toggled.connect(self.toggle_transcode_ui)
+        rules_grid.addWidget(self.check_transcode, 1, 1, 1, 2)
+        settings_layout.addLayout(rules_grid)
         
         self.btn_config_trans = QPushButton("Configure Transcode..."); self.btn_config_trans.setVisible(False); self.btn_config_trans.clicked.connect(self.open_transcode_config); settings_layout.addWidget(self.btn_config_trans)
         self.transcode_widget = TranscodeSettingsWidget(mode="general")
