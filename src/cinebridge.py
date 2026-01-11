@@ -958,8 +958,9 @@ class TranscodeSettingsWidget(QGroupBox):
         # Preset Management Buttons
         self.btn_save_preset = QToolButton(); self.btn_save_preset.setText("💾"); self.btn_save_preset.setToolTip("Save Current as Preset"); self.btn_save_preset.clicked.connect(self.save_custom_preset)
         self.btn_import_preset = QToolButton(); self.btn_import_preset.setText("📥"); self.btn_import_preset.setToolTip("Import Preset File"); self.btn_import_preset.clicked.connect(self.import_preset_file)
+        self.btn_export_preset = QToolButton(); self.btn_export_preset.setText("📤"); self.btn_export_preset.setToolTip("Export Selected Preset"); self.btn_export_preset.clicked.connect(self.export_preset_file)
         self.btn_del_preset = QToolButton(); self.btn_del_preset.setText("🗑️"); self.btn_del_preset.setToolTip("Delete Selected Preset"); self.btn_del_preset.clicked.connect(self.delete_current_preset)
-        top_row.addWidget(self.btn_save_preset); top_row.addWidget(self.btn_import_preset); top_row.addWidget(self.btn_del_preset)
+        top_row.addWidget(self.btn_save_preset); top_row.addWidget(self.btn_import_preset); top_row.addWidget(self.btn_export_preset); top_row.addWidget(self.btn_del_preset)
         
         self.layout.addLayout(top_row)
         
@@ -1011,6 +1012,20 @@ class TranscodeSettingsWidget(QGroupBox):
                 if PresetManager.save_preset(name, data):
                     self.init_presets(); QMessageBox.information(self, "Success", f"Imported '{name}'")
             except Exception as e: QMessageBox.critical(self, "Error", f"Failed to import: {e}")
+
+    def export_preset_file(self):
+        text = self.preset_combo.currentText()
+        data = self.preset_combo.currentData()
+        if not data or not isinstance(data, dict):
+            data = self.get_settings()
+        
+        clean_name = text.replace("⭐ ", "").replace("Linux ", "").replace(" ", "_")
+        f, _ = QFileDialog.getSaveFileName(self, "Export Preset", f"{clean_name}.json", "JSON Files (*.json)")
+        if f:
+            try:
+                with open(f, 'w') as p: json.dump(data, p, indent=4)
+                QMessageBox.information(self, "Success", f"Exported to {f}")
+            except Exception as e: QMessageBox.critical(self, "Error", f"Failed to export: {e}")
 
     def delete_current_preset(self):
         text = self.preset_combo.currentText()
