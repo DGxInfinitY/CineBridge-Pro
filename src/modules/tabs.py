@@ -600,34 +600,44 @@ class ConvertTab(QWidget):
         self.is_processing = running
         self.stats_row.setVisible(running)
         if running: self.btn_go.setText("STOP BATCH"); self.btn_go.setObjectName("StopBtn")
-            def start(self):
-                files = [self.list.item(i).text() for i in range(self.list.count())]
-                if not files: return QMessageBox.warning(self, "Empty", "Queue is empty.")
-                self.toggle_ui_state(True); dest_folder = self.out_input.text().strip(); use_gpu = self.settings.is_gpu_enabled()
-                self.worker = BatchTranscodeWorker(files, dest_folder, self.settings.get_settings(), mode="convert", use_gpu=use_gpu)
-                self.worker.progress_signal.connect(self.pbar.setValue); self.worker.status_signal.connect(self.status_label.setText); self.worker.log_signal.connect(lambda s: self.status_label.setText(s)); self.worker.finished_signal.connect(self.on_finished); self.worker.start()
-            def start_thumb_process(self, files):
-                worker = ThumbnailWorker(files); worker.thumb_ready.connect(self.update_thumbnail)
-                worker.finished.connect(lambda: self.thumb_workers.remove(worker) if worker in self.thumb_workers else None)
-                worker.start(); self.thumb_workers.append(worker)
-            def update_thumbnail(self, path, image):
-                pixmap = QPixmap.fromImage(image)
-                items = self.list.findItems(path, Qt.MatchFlag.MatchExactly)
-                for item in items: item.setIcon(QIcon(pixmap))
-            def stop(self):
-                if self.worker: self.worker.stop(); self.status_label.setText("Stopping...")
-            def on_finished(self):
-                SystemNotifier.notify("Conversion Complete", "Batch transcode finished.")
-                self.toggle_ui_state(False); self.status_label.setText("Batch Complete!"); dest = self.out_input.text(); msg = f"Files saved to:\n{dest}" if dest else "Files saved to 'Converted' folder next to the source file(s)."; 
-                dlg = JobReportDialog("Conversion Complete", f"<h3>Transcode Successful</h3><p>All files in the queue have been converted.<br>Your media is ready for edit.</p>", self)
-                dlg.exec()
-            def show_context_menu(self, pos):
-                item = self.list.itemAt(pos)
-                if item:
-                    menu = QMenu(self); action = QAction("Inspect Media Info", self); action.triggered.connect(lambda: self.inspect_file(item)); menu.addAction(action); menu.exec(self.list.mapToGlobal(pos))
-            def inspect_file(self, item):
-                path = item.text()
-                if os.path.exists(path):
+        else: self.btn_go.setText("START BATCH"); self.btn_go.setObjectName("StartBtn")
+        self.btn_go.style().unpolish(self.btn_go); self.btn_go.style().polish(self.btn_go)
+
+    def start(self):
+        files = [self.list.item(i).text() for i in range(self.list.count())]
+        if not files: return QMessageBox.warning(self, "Empty", "Queue is empty.")
+        self.toggle_ui_state(True); dest_folder = self.out_input.text().strip(); use_gpu = self.settings.is_gpu_enabled()
+        self.worker = BatchTranscodeWorker(files, dest_folder, self.settings.get_settings(), mode="convert", use_gpu=use_gpu)
+        self.worker.progress_signal.connect(self.pbar.setValue); self.worker.status_signal.connect(self.status_label.setText); self.worker.log_signal.connect(lambda s: self.status_label.setText(s)); self.worker.finished_signal.connect(self.on_finished); self.worker.start()
+
+    def start_thumb_process(self, files):
+        worker = ThumbnailWorker(files); worker.thumb_ready.connect(self.update_thumbnail)
+        worker.finished.connect(lambda: self.thumb_workers.remove(worker) if worker in self.thumb_workers else None)
+        worker.start(); self.thumb_workers.append(worker)
+
+    def update_thumbnail(self, path, image):
+        pixmap = QPixmap.fromImage(image)
+        items = self.list.findItems(path, Qt.MatchFlag.MatchExactly)
+        for item in items: item.setIcon(QIcon(pixmap))
+
+    def stop(self):
+        if self.worker: self.worker.stop(); self.status_label.setText("Stopping...")
+
+    def on_finished(self):
+        SystemNotifier.notify("Conversion Complete", "Batch transcode finished.")
+        self.toggle_ui_state(False); self.status_label.setText("Batch Complete!"); dest = self.out_input.text(); msg = f"Files saved to:\n{dest}" if dest else "Files saved to 'Converted' folder next to the source file(s)."; 
+        dlg = JobReportDialog("Conversion Complete", f"<h3>Transcode Successful</h3><p>All files in the queue have been converted.<br>Your media is ready for edit.</p>", self)
+        dlg.exec()
+
+    def show_context_menu(self, pos):
+        item = self.list.itemAt(pos)
+        if item:
+            menu = QMenu(self); action = QAction("Inspect Media Info", self); action.triggered.connect(lambda: self.inspect_file(item)); menu.addAction(action); menu.exec(self.list.mapToGlobal(pos))
+
+    def inspect_file(self, item):
+        path = item.text()
+        if os.path.exists(path):
+            info = MediaInfoExtractor.get_info(path); dlg = MediaInfoDialog(info, self); dlg.exec()
                     info = MediaInfoExtractor.get_info(path); dlg = MediaInfoDialog(info, self); dlg.exec()
         
         class DeliveryTab(QWidget):
