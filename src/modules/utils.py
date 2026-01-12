@@ -468,8 +468,8 @@ class DeviceRegistry:
             "exts": {'.MP4', '.LRV', '.THM', '.JPG', '.GPR'}
         },
         "DJI Drone/Osmo": {
-            "signatures": ["DJI", "100MEDIA"],
-            "roots": ["DCIM/100MEDIA", "DCIM/101MEDIA"],
+            "signatures": ["DJI", "100MEDIA", "DJI_001"],
+            "roots": ["DCIM/100MEDIA", "DCIM/101MEDIA", "DCIM/DJI_001"],
             "exts": {'.MP4', '.MOV', '.DNG', '.JPG', '.SRT'}
         },
         "Insta360": {

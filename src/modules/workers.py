@@ -266,6 +266,13 @@ class CopyWorker(QThread):
             self.status_signal.emit(f"Copying {idx + 1}/{total_files}: {filename}")
             try:
                 # COPY PHASE
+                if HAS_XXHASH: 
+                    copy_hash = xxhash.xxh64()
+                    algo_name = "xxHash64"
+                else: 
+                    copy_hash = hashlib.md5()
+                    algo_name = "MD5"
+
                 with open(src_path, 'rb') as fsrc:
                     with open(dest_path, 'wb') as fdst:
                         copied_this_file = 0; chunk_size = 1024 * 1024 * 4
@@ -273,6 +280,9 @@ class CopyWorker(QThread):
                             if not self.is_running: break
                             buf = fsrc.read(chunk_size)
                             if not buf: break
+                            
+                            if self.verify_copy: copy_hash.update(buf)
+                            
                             fdst.write(buf)
                             len_buf = len(buf); copied_this_file += len_buf; bytes_since_last_time += len_buf
                             current_time = time.time()
@@ -287,11 +297,13 @@ class CopyWorker(QThread):
                 current_hash = "N/A"
                 if self.verify_copy and self.is_running:
                     self.status_signal.emit(f"Verifying {idx + 1}/{total_files}: {filename}")
-                    src_hash, algo = self.calculate_hash(src_path)
+                    
+                    # Zero-overhead source hash
+                    src_hash = copy_hash.hexdigest()
                     dest_hash, _ = self.calculate_hash(dest_path)
                     
                     if src_hash and dest_hash and src_hash == dest_hash:
-                        self.log_signal.emit(f"✅ Verified ({algo}): {filename}")
+                        self.log_signal.emit(f"✅ Verified ({algo_name}): {filename}")
                         current_hash = src_hash
                     else:
                         self.log_signal.emit(f"❌ VERIFICATION FAILED: {filename}")
