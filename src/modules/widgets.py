@@ -8,7 +8,7 @@ from PyQt6.QtWidgets import (
     QFileDialog, QTextEdit, QMessageBox, QCheckBox, QGroupBox, QComboBox, 
     QFrame, QFormLayout, QDialog, QToolButton, QRadioButton, QButtonGroup, 
     QGridLayout, QInputDialog, QTableWidget, QTableWidgetItem, QHeaderView,
-    QSlider, QStyle
+    QSlider, QStyle, QSizePolicy
 )
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QPixmap, QPalette
 from PyQt6.QtCore import Qt, QSize, QSettings, QUrl
@@ -430,9 +430,10 @@ class VideoPreviewDialog(QDialog):
     def __init__(self, video_path, parent=None):
         super().__init__(parent)
         self.setWindowTitle(f"Preview: {os.path.basename(video_path)}")
-        self.resize(800, 500)
+        self.resize(900, 600)
         self.layout = QVBoxLayout()
         self.layout.setContentsMargins(0, 0, 0, 0)
+        self.layout.setSpacing(0)
         self.setLayout(self.layout)
         
         if not HAS_MULTIMEDIA:
@@ -443,34 +444,70 @@ class VideoPreviewDialog(QDialog):
         self.player = QMediaPlayer()
         self.audio = QAudioOutput()
         self.player.setAudioOutput(self.audio)
+        self.audio.setVolume(1.0) # Default 100%
         
         self.video_widget = QVideoWidget()
+        self.video_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
         self.player.setVideoOutput(self.video_widget)
         self.layout.addWidget(self.video_widget)
         
-        # Controls
-        controls = QHBoxLayout()
-        controls.setContentsMargins(10, 10, 10, 10)
+        # Controls Container
+        ctrl_frame = QFrame()
+        ctrl_frame.setStyleSheet("background-color: #222; border-top: 1px solid #444;")
+        ctrl_frame.setFixedHeight(50)
+        ctrl_layout = QHBoxLayout()
+        ctrl_layout.setContentsMargins(10, 5, 10, 5)
+        ctrl_frame.setLayout(ctrl_layout)
         
-        self.play_btn = QPushButton()
-        self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause)) # Start playing
+        # Play/Pause
+        self.play_btn = QToolButton()
+        self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
         self.play_btn.clicked.connect(self.toggle_play)
-        controls.addWidget(self.play_btn)
+        ctrl_layout.addWidget(self.play_btn)
         
+        # Time
+        self.lbl_curr = QLabel("00:00")
+        self.lbl_curr.setStyleSheet("color: #ccc; font-family: monospace;")
+        ctrl_layout.addWidget(self.lbl_curr)
+        
+        # Seek Slider
         self.slider = QSlider(Qt.Orientation.Horizontal)
         self.slider.setRange(0, 0)
         self.slider.sliderMoved.connect(self.set_position)
-        controls.addWidget(self.slider)
+        ctrl_layout.addWidget(self.slider)
         
-        self.lbl_time = QLabel("00:00 / 00:00")
-        controls.addWidget(self.lbl_time)
+        # Total Time
+        self.lbl_total = QLabel("00:00")
+        self.lbl_total.setStyleSheet("color: #ccc; font-family: monospace;")
+        ctrl_layout.addWidget(self.lbl_total)
         
-        self.layout.addLayout(controls)
+        # Spacer
+        ctrl_layout.addSpacing(10)
+        
+        # Volume
+        vol_icon = QLabel(); vol_icon.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaVolume).pixmap(16,16))
+        ctrl_layout.addWidget(vol_icon)
+        self.vol_slider = QSlider(Qt.Orientation.Horizontal)
+        self.vol_slider.setFixedWidth(80)
+        self.vol_slider.setRange(0, 100)
+        self.vol_slider.setValue(100)
+        self.vol_slider.valueChanged.connect(lambda v: self.audio.setVolume(v / 100))
+        ctrl_layout.addWidget(self.vol_slider)
+        
+        # Fullscreen
+        self.fs_btn = QToolButton()
+        self.fs_btn.setText("⛶") # Simple Unicode icon
+        self.fs_btn.setToolTip("Toggle Fullscreen")
+        self.fs_btn.clicked.connect(self.toggle_fullscreen)
+        ctrl_layout.addWidget(self.fs_btn)
+        
+        self.layout.addWidget(ctrl_frame)
         
         # Connections
         self.player.positionChanged.connect(self.position_changed)
         self.player.durationChanged.connect(self.duration_changed)
         self.player.mediaStatusChanged.connect(self.status_changed)
+        self.player.errorOccurred.connect(self.handle_errors)
         
         # Start
         self.player.setSource(QUrl.fromLocalFile(video_path))
@@ -484,29 +521,45 @@ class VideoPreviewDialog(QDialog):
             self.player.play()
             self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
 
+    def toggle_fullscreen(self):
+        if self.isFullScreen():
+            self.showNormal()
+        else:
+            self.showFullScreen()
+
     def set_position(self, position):
         self.player.setPosition(position)
 
     def position_changed(self, position):
-        self.slider.setValue(position)
-        self.update_duration_info(position)
+        if not self.slider.isSliderDown():
+            self.slider.setValue(position)
+        self.update_time_label(position, self.player.duration())
 
     def duration_changed(self, duration):
         self.slider.setRange(0, duration)
+        self.update_time_label(self.player.position(), duration)
 
-    def update_duration_info(self, current_ms):
-        duration_ms = self.player.duration()
-        cur_min = (current_ms // 1000) // 60
-        cur_sec = (current_ms // 1000) % 60
-        tot_min = (duration_ms // 1000) // 60
-        tot_sec = (duration_ms // 1000) % 60
-        self.lbl_time.setText(f"{cur_min:02}:{cur_sec:02} / {tot_min:02}:{tot_sec:02}")
+    def update_time_label(self, current_ms, total_ms):
+        def fmt(ms):
+            s = (ms // 1000) % 60
+            m = (ms // 1000) // 60
+            return f"{m:02}:{s:02}"
+        self.lbl_curr.setText(fmt(current_ms))
+        self.lbl_total.setText(fmt(total_ms))
         
     def status_changed(self, status):
         if status == QMediaPlayer.MediaStatus.EndOfMedia:
             self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
 
+    def handle_errors(self):
+        self.play_btn.setEnabled(False)
+        self.lbl_curr.setText("Error")
+
     def closeEvent(self, event):
         if HAS_MULTIMEDIA:
             self.player.stop()
+            self.player.setSource(QUrl()) # Detach source
+            self.player.setVideoOutput(None) # Detach widget
+            # Explicitly delete logic handled by Qt parenting, 
+            # but unlinking might help GLib reference counting.
         event.accept()
