@@ -514,6 +514,11 @@ class VideoPreviewDialog(QDialog):
         self.setWindowTitle(f"Preview: {os.path.basename(video_path)}")
         self.play_btn.setEnabled(True)
         self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
+        
+        # Reset video output to ensure surface is valid
+        self.player.setVideoOutput(None)
+        self.player.setVideoOutput(self.video_widget)
+        
         self.player.setSource(QUrl.fromLocalFile(video_path))
         self.player.play()
 

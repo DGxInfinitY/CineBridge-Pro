@@ -85,7 +85,10 @@ class IngestTab(QWidget):
         self.tree.itemDoubleClicked.connect(self.open_video_preview)
         # Add Placeholder
         placeholder = QTreeWidgetItem(self.tree); placeholder.setText(0, "Scan source to review media selection."); placeholder.setFlags(placeholder.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
-        review_lay.addWidget(self.tree); self.review_group.setLayout(review_lay)
+        review_lay.addWidget(self.tree)
+        hint_lbl = QLabel("💡 Hint: Double-click a video file to preview it."); hint_lbl.setStyleSheet("color: #777; font-style: italic; font-size: 10px; margin-top: 2px;"); hint_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
+        review_lay.addWidget(hint_lbl)
+        self.review_group.setLayout(review_lay)
         self.review_group.setVisible(True) # Persistent
 
         # GRID LAYOUT
