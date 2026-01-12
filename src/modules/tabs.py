@@ -18,7 +18,7 @@ from .workers import (
 )
 from .widgets import (
     TranscodeSettingsWidget, JobReportDialog, FileDropLineEdit, 
-    TranscodeConfigDialog, MediaInfoDialog
+    TranscodeConfigDialog, MediaInfoDialog, VideoPreviewDialog
 )
 
 class IngestTab(QWidget):
@@ -82,6 +82,7 @@ class IngestTab(QWidget):
         self.tree = QTreeWidget(); self.tree.setHeaderLabel("Media Review")
         self.tree.setSelectionMode(QAbstractItemView.SelectionMode.NoSelection)
         self.tree.itemChanged.connect(self.update_transfer_button_text)
+        self.tree.itemDoubleClicked.connect(self.open_video_preview)
         # Add Placeholder
         placeholder = QTreeWidgetItem(self.tree); placeholder.setText(0, "Scan source to review media selection."); placeholder.setFlags(placeholder.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
         review_lay.addWidget(self.tree); self.review_group.setLayout(review_lay)
@@ -181,6 +182,17 @@ class IngestTab(QWidget):
     def on_scan_complete(self, grouped_files):
         self.last_scan_results = grouped_files
         self.refresh_tree_view()
+
+    def open_video_preview(self, item, column):
+        path = item.data(0, Qt.ItemDataRole.UserRole)
+        if path and os.path.exists(path):
+            ext = os.path.splitext(path)[1].upper()
+            if ext in DeviceRegistry.VIDEO_EXTS:
+                try:
+                    dlg = VideoPreviewDialog(path, self)
+                    dlg.exec()
+                except Exception as e:
+                    error_log(f"Preview Error: {e}")
 
     def refresh_tree_view(self):
         try:

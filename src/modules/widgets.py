@@ -7,10 +7,18 @@ from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, 
     QFileDialog, QTextEdit, QMessageBox, QCheckBox, QGroupBox, QComboBox, 
     QFrame, QFormLayout, QDialog, QToolButton, QRadioButton, QButtonGroup, 
-    QGridLayout, QInputDialog, QTableWidget, QTableWidgetItem, QHeaderView
+    QGridLayout, QInputDialog, QTableWidget, QTableWidgetItem, QHeaderView,
+    QSlider, QStyle
 )
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QPixmap, QPalette
-from PyQt6.QtCore import Qt, QSize, QSettings
+from PyQt6.QtCore import Qt, QSize, QSettings, QUrl
+
+try:
+    from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
+    from PyQt6.QtMultimediaWidgets import QVideoWidget
+    HAS_MULTIMEDIA = True
+except ImportError:
+    HAS_MULTIMEDIA = False
 
 # Internal Module Imports
 from .config import DEBUG_MODE, AppConfig, AppLogger, debug_log, info_log, error_log
@@ -417,3 +425,88 @@ class AboutDialog(QDialog):
         credits = QLabel("<b>Developed by:</b><br>Donovan Goodwin<br>(with Gemini AI)"); credits.setStyleSheet("font-size: 13px;"); credits.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(credits)
         links = QLabel('<a href="mailto:ddg2goodwin@gmail.com" style="color: #3498DB;">ddg2goodwin@gmail.com</a><br><br><a href="https://github.com/DGxInfinitY" style="color: #3498DB;">GitHub: DGxInfinitY</a>'); links.setOpenExternalLinks(True); links.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(links)
         layout.addStretch(); btn_box = QHBoxLayout(); ok_btn = QPushButton("Close"); ok_btn.setFixedWidth(100); ok_btn.clicked.connect(self.accept); btn_box.addStretch(); btn_box.addWidget(ok_btn); btn_box.addStretch(); layout.addLayout(btn_box); self.setLayout(layout)
+
+class VideoPreviewDialog(QDialog):
+    def __init__(self, video_path, parent=None):
+        super().__init__(parent)
+        self.setWindowTitle(f"Preview: {os.path.basename(video_path)}")
+        self.resize(800, 500)
+        self.layout = QVBoxLayout()
+        self.layout.setContentsMargins(0, 0, 0, 0)
+        self.setLayout(self.layout)
+        
+        if not HAS_MULTIMEDIA:
+            self.layout.addWidget(QLabel("Video Preview not available.\nMissing 'PyQt6.QtMultimedia' module.\n\nPlease install: python3-pyqt6.qtmultimedia (Linux) or PyQt6 (Pip).", alignment=Qt.AlignmentFlag.AlignCenter))
+            return
+
+        # Player Setup
+        self.player = QMediaPlayer()
+        self.audio = QAudioOutput()
+        self.player.setAudioOutput(self.audio)
+        
+        self.video_widget = QVideoWidget()
+        self.player.setVideoOutput(self.video_widget)
+        self.layout.addWidget(self.video_widget)
+        
+        # Controls
+        controls = QHBoxLayout()
+        controls.setContentsMargins(10, 10, 10, 10)
+        
+        self.play_btn = QPushButton()
+        self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause)) # Start playing
+        self.play_btn.clicked.connect(self.toggle_play)
+        controls.addWidget(self.play_btn)
+        
+        self.slider = QSlider(Qt.Orientation.Horizontal)
+        self.slider.setRange(0, 0)
+        self.slider.sliderMoved.connect(self.set_position)
+        controls.addWidget(self.slider)
+        
+        self.lbl_time = QLabel("00:00 / 00:00")
+        controls.addWidget(self.lbl_time)
+        
+        self.layout.addLayout(controls)
+        
+        # Connections
+        self.player.positionChanged.connect(self.position_changed)
+        self.player.durationChanged.connect(self.duration_changed)
+        self.player.mediaStatusChanged.connect(self.status_changed)
+        
+        # Start
+        self.player.setSource(QUrl.fromLocalFile(video_path))
+        self.player.play()
+
+    def toggle_play(self):
+        if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
+            self.player.pause()
+            self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+        else:
+            self.player.play()
+            self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
+
+    def set_position(self, position):
+        self.player.setPosition(position)
+
+    def position_changed(self, position):
+        self.slider.setValue(position)
+        self.update_duration_info(position)
+
+    def duration_changed(self, duration):
+        self.slider.setRange(0, duration)
+
+    def update_duration_info(self, current_ms):
+        duration_ms = self.player.duration()
+        cur_min = (current_ms // 1000) // 60
+        cur_sec = (current_ms // 1000) % 60
+        tot_min = (duration_ms // 1000) // 60
+        tot_sec = (duration_ms // 1000) % 60
+        self.lbl_time.setText(f"{cur_min:02}:{cur_sec:02} / {tot_min:02}:{tot_sec:02}")
+        
+    def status_changed(self, status):
+        if status == QMediaPlayer.MediaStatus.EndOfMedia:
+            self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+
+    def closeEvent(self, event):
+        if HAS_MULTIMEDIA:
+            self.player.stop()
+        event.accept()
