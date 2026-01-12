@@ -11,7 +11,7 @@ from PyQt6.QtWidgets import (
     QSlider, QStyle, QSizePolicy
 )
 from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QPixmap, QPalette
-from PyQt6.QtCore import Qt, QSize, QSettings, QUrl
+from PyQt6.QtCore import Qt, QSize, QSettings, QUrl, QTimer
 
 try:
     from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
@@ -509,8 +509,13 @@ class VideoPreviewDialog(QDialog):
         self.player.mediaStatusChanged.connect(self.status_changed)
         self.player.errorOccurred.connect(self.handle_errors)
         
-        # Start
-        self.player.setSource(QUrl.fromLocalFile(video_path))
+        # Delayed Start to fix GLib errors
+        self.video_path = video_path
+        QTimer.singleShot(200, self.start_playback)
+
+    def start_playback(self):
+        if not HAS_MULTIMEDIA: return
+        self.player.setSource(QUrl.fromLocalFile(self.video_path))
         self.player.play()
 
     def set_volume(self, v):
