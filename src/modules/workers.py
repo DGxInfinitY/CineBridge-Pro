@@ -467,14 +467,30 @@ class SystemMonitor(QThread):
 
             # 3. Probe Intel (Linux sysfs - limited) - Only if others not found
             if not stats['has_gpu'] and platform.system() == "Linux":
-                # Basic Intel check (often requires root for load, but we can try vendor ID)
                 try:
                     for card in glob.glob('/sys/class/drm/card*/device/vendor'):
                         with open(card, 'r') as f:
                             if "0x8086" in f.read().lower(): # Intel Vendor ID
                                 stats['has_gpu'] = True; stats['gpu_vendor'] = 'Intel'
-                                # Note: Actual load for Intel on Linux usually needs 'intel_gpu_top' (root)
                                 break
+                except: pass
+
+            # 4. Probe Windows Generic (AMD/Intel) - Only if NVIDIA not found
+            if not stats['has_gpu'] and platform.system() == "Windows":
+                try:
+                    # Identify Vendor via WMIC
+                    v_res = subprocess.run(['wmic', 'path', 'Win32_VideoController', 'get', 'Name'], capture_output=True, text=True, timeout=1)
+                    v_out = v_res.stdout.upper()
+                    vendor = 'GPU'
+                    if "AMD" in v_out: vendor = 'AMD'
+                    elif "INTEL" in v_out: vendor = 'Intel'
+                    
+                    # Generic Windows GPU Load via PowerShell (Aggregated)
+                    ps_cmd = "(Get-Counter '\\GPU Engine(*)\\Utilization Percentage' -ErrorAction SilentlyContinue).CounterSamples | Measure-Object -Property CookedValue -Max | Select-Object -ExpandProperty Maximum"
+                    l_res = subprocess.run(['powershell', '-Command', ps_cmd], capture_output=True, text=True, timeout=1)
+                    if l_res.returncode == 0 and l_res.stdout.strip():
+                        stats['gpu_load'] = int(float(l_res.stdout.strip()))
+                        stats['has_gpu'] = True; stats['gpu_vendor'] = vendor
                 except: pass
 
             self.stats_signal.emit(stats)
