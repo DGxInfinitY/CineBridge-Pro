@@ -194,6 +194,8 @@ class IngestTab(QWidget):
             if not self.last_scan_results:
                 p = QTreeWidgetItem(self.tree); p.setText(0, "Scan Complete: No media found on device."); p.setFlags(p.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
                 self.review_group.setVisible(True)
+                self.ingest_mode = "transfer"
+                self.update_transfer_button_text()
                 return
             
             sorted_dates = sorted(self.last_scan_results.keys(), reverse=True); video_exts = DeviceRegistry.VIDEO_EXTS
