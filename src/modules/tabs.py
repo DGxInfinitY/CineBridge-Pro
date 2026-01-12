@@ -45,7 +45,7 @@ class IngestTab(QWidget):
         self.source_input.textChanged.connect(self.reset_ingest_mode)
         man_lay.addWidget(QLabel("Path:")); man_lay.addWidget(self.source_input); man_lay.addWidget(self.browse_src); man_lay.addStretch()
         self.tab_manual.setLayout(man_lay); self.source_tabs.addTab(self.tab_auto, "Auto"); self.source_tabs.addTab(self.tab_manual, "Manual")
-        source_inner.addWidget(self.source_tabs); source_group.setLayout(source_inner)
+        source_inner.addWidget(self.source_tabs); source_inner.addStretch(); source_group.setLayout(source_inner)
 
         # 2. Dest Group
         dest_group = QGroupBox("2. Destination"); self.dest_inner = QVBoxLayout()
@@ -72,8 +72,13 @@ class IngestTab(QWidget):
 
         # 3. Settings Group
         settings_group = QGroupBox("3. Processing Settings"); settings_layout = QVBoxLayout()
-        logic_row = QHBoxLayout(); logic_row.addWidget(QLabel("Logic:")); 
-        self.device_combo = QComboBox(); self.device_combo.addItems(["auto", "GoPro", "DJI", "Insta360", "Generic Storage"]); logic_row.addWidget(self.device_combo)
+        logic_row = QHBoxLayout(); logic_row.addWidget(QLabel("Camera Profile:")); 
+        self.device_combo = QComboBox(); 
+        self.device_combo.addItem("Auto-Detect", "auto")
+        for profile_name in sorted(DeviceRegistry.PROFILES.keys()):
+            self.device_combo.addItem(profile_name, profile_name)
+        self.device_combo.addItem("Generic Storage", "Generic_Device")
+        logic_row.addWidget(self.device_combo)
         settings_layout.addLayout(logic_row)
 
         rules_grid = QGridLayout()
@@ -104,7 +109,7 @@ class IngestTab(QWidget):
         placeholder = QTreeWidgetItem(self.tree); placeholder.setText(0, "Scan source to review media selection."); placeholder.setFlags(placeholder.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
         review_lay.addWidget(self.tree)
         hint_lbl = QLabel("💡 Hint: Double-click a video file to preview it."); hint_lbl.setStyleSheet("color: #777; font-style: italic; font-size: 10px; margin-top: 2px;"); hint_lbl.setAlignment(Qt.AlignmentFlag.AlignRight)
-        review_lay.addWidget(hint_lbl)
+        review_lay.addWidget(hint_lbl); review_lay.addStretch()
         self.review_group.setLayout(review_lay)
         self.review_group.setVisible(True) # Persistent
 
@@ -182,6 +187,12 @@ class IngestTab(QWidget):
         if len(path_short) > 35: path_short = path_short[:15] + "..." + path_short[-15:]
         self.result_label.setText(f"<h3 style='color:{'#27AE60' if not dev['empty'] else '#F39C12'}'>{msg}</h3><span style='color:white;'>{path_short}</span>")
         self.result_card.setStyleSheet(f"background-color: {'#2e3b33' if not dev['empty'] else '#4d3d2a'}; border: 2px solid {'#27AE60' if not dev['empty'] else '#F39C12'};"); self.result_card.setVisible(True)
+        
+        # Sync Camera Profile Dropdown
+        idx = self.device_combo.findText(name)
+        if idx >= 0: self.device_combo.setCurrentIndex(idx)
+        elif name == "Generic Storage": self.device_combo.setCurrentIndex(self.device_combo.findData("Generic_Device"))
+        
         if multi:
             self.select_device_box.setVisible(True); self.select_device_box.blockSignals(True); self.select_device_box.clear()
             for d in self.found_devices: self.select_device_box.addItem(f"{d.get('display_name', d.get('type', 'Unknown'))} ({'Empty' if d['empty'] else 'Data'})")
@@ -333,7 +344,18 @@ class IngestTab(QWidget):
         if tc_enabled:
             self.transcode_worker = AsyncTranscoder(tc_settings, use_gpu); self.transcode_worker.log_signal.connect(self.append_transcode_log); self.transcode_worker.status_signal.connect(self.transcode_status_label.setText); self.transcode_worker.metrics_signal.connect(self.transcode_status_label.setText); self.transcode_worker.all_finished_signal.connect(self.on_all_transcodes_finished); self.transcode_worker.start(); self.set_transcode_active(True)
         else: self.transcode_status_label.setVisible(False)
-        self.copy_worker = CopyWorker(src, dest_list, self.project_name_input.text(), self.check_date.isChecked(), self.check_dupe.isChecked(), self.check_videos_only.isChecked(), self.device_combo.currentText(), self.check_verify.isChecked(), file_list=selected_files)
+        # Determine Camera Name for folder structure
+        cam_name = self.device_combo.currentText()
+        if self.device_combo.currentData() == "auto":
+            # If auto-detect is selected, use the detected name or Generic
+            if self.found_devices and self.select_device_box.currentIndex() >= 0:
+                cam_name = self.found_devices[self.select_device_box.currentIndex()].get('display_name', "Generic_Device")
+            else:
+                cam_name = "Generic_Device"
+        elif self.device_combo.currentData() == "Generic_Device":
+            cam_name = "Generic_Device"
+
+        self.copy_worker = CopyWorker(src, dest_list, self.project_name_input.text(), self.check_date.isChecked(), self.check_dupe.isChecked(), self.check_videos_only.isChecked(), cam_name, self.check_verify.isChecked(), file_list=selected_files)
         self.copy_worker.log_signal.connect(self.append_copy_log); self.copy_worker.progress_signal.connect(self.progress_bar.setValue); self.copy_worker.status_signal.connect(self.status_label.setText); self.copy_worker.speed_signal.connect(self.speed_label.setText); self.copy_worker.finished_signal.connect(self.on_copy_finished)
         self.copy_worker.storage_check_signal.connect(self.update_storage_display_bar)
         if tc_enabled: self.copy_worker.transcode_count_signal.connect(self.transcode_worker.set_total_jobs); self.copy_worker.file_ready_signal.connect(self.queue_for_transcode)
@@ -503,6 +525,7 @@ class ConvertTab(QWidget):
         queue_lay.addLayout(h)
         queue_group.setLayout(queue_lay)
         layout.addWidget(queue_group)
+        layout.addStretch()
         
     def update_load_display(self, value):
         self.load_label.setText(f"🔥 CPU: {value}%")
@@ -574,6 +597,7 @@ class DeliveryTab(QWidget):
         dash_frame = QFrame(); dash_frame.setObjectName("DashFrame"); dl = QVBoxLayout(dash_frame)
         self.status = QLabel("Ready to Render"); dl.addWidget(self.status); self.pbar = QProgressBar(); self.pbar.setTextVisible(True); dl.addWidget(self.pbar); layout.addWidget(dash_frame)
         self.btn_go = QPushButton("RENDER"); self.btn_go.setObjectName("StartBtn"); self.btn_go.setMinimumHeight(50); self.btn_go.clicked.connect(self.on_btn_click); layout.addWidget(self.btn_go)
+        layout.addStretch()
     def dragEnterEvent(self, e): 
         if e.mimeData().hasUrls(): e.accept()
     def dropEvent(self, e):
