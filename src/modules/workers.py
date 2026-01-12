@@ -52,19 +52,22 @@ class ScanWorker(QThread):
             self.finished_signal.emit([])
 
 class ThumbnailWorker(QThread):
-    thumb_ready = pyqtSignal(str, QImage)
+    thumb_ready = pyqtSignal(str, QImage); status_signal = pyqtSignal(str)
     def __init__(self, file_queue): super().__init__(); self.queue = file_queue; self.is_running = True
     def run(self):
         ffmpeg = DependencyManager.get_ffmpeg_path()
         if not ffmpeg: 
             error_log("ThumbnailWorker: FFmpeg binary not found. Thumbnails disabled."); return
         
-        for path in self.queue:
+        total = len(self.queue)
+        for idx, path in enumerate(self.queue):
             if not self.is_running: break
             if not os.path.exists(path): continue
+            
+            self.status_signal.emit(f"Extracting Thumbnails ({idx+1}/{total})")
             try:
-                # Seek 0.5s to avoid black frame at start
-                cmd = [ffmpeg, '-y', '-ss', '00:00:00.5', '-i', path, '-vframes', '1', '-vf', 'scale=160:-1', '-f', 'image2pipe', '-']
+                # Seek 0.5s to avoid black frame at start. Scale to 320 width for reports.
+                cmd = [ffmpeg, '-y', '-ss', '00:00:00.5', '-i', path, '-vframes', '1', '-vf', 'scale=320:-1', '-f', 'image2pipe', '-']
                 startupinfo = None
                 if platform.system() == 'Windows': startupinfo = subprocess.STARTUPINFO(); startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                 

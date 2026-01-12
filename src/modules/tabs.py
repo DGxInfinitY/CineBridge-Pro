@@ -418,11 +418,12 @@ class IngestTab(QWidget):
         is_visual = self.app.settings.value("feature_visual_report", False, type=bool)
         
         if is_visual:
-            self.status_label.setText("GENERATING THUMBNAILS...")
             video_files = [f['path'] for f in self.copy_worker.transfer_data if f['name'].upper().endswith(tuple(DeviceRegistry.VIDEO_EXTS))]
             if video_files:
+                self.status_label.setText(f"PREPARING REPORT (0/{len(video_files)} THUMBS)...")
                 self.report_thumbs = {}
                 self.report_thumb_worker = ThumbnailWorker(video_files)
+                self.report_thumb_worker.status_signal.connect(self.status_label.setText)
                 self.report_thumb_worker.thumb_ready.connect(self.on_report_thumb_ready)
                 self.report_thumb_worker.finished.connect(lambda: self.generate_final_pdf(report_path, project))
                 self.report_thumb_worker.start()
