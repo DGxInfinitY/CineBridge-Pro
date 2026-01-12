@@ -171,6 +171,13 @@ class IngestTab(QWidget):
         try:
             self.tree.clear(); total_files = 0
             
+            # State 1: Haven't scanned yet (Idle)
+            if self.last_scan_results is None:
+                p = QTreeWidgetItem(self.tree); p.setText(0, "Select a source and click 'SCAN SOURCE' to view media."); p.setFlags(p.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+                self.review_group.setVisible(True)
+                return
+            
+            # State 2: Scanned, but result is empty
             if not self.last_scan_results:
                 p = QTreeWidgetItem(self.tree); p.setText(0, "Scan Complete: No media found on device."); p.setFlags(p.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
                 self.review_group.setVisible(True)
