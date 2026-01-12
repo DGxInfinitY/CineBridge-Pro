@@ -366,7 +366,7 @@ class ReportGenerator:
                 </tbody>
             </table>
             <p><b>Summary:</b> Total Data {total_bytes/(1024**3):.2f} GB transferred and verified.</p>
-            <div class="footer">CineBridge Pro v4.16.0 - Professional DIT & Post-Production Suite</div>
+            <div class="footer">CineBridge Pro v4.16.3 (Dev) - Professional DIT & Post-Production Suite</div>
         </body>
         </html>
         """
@@ -2000,7 +2000,7 @@ class AboutDialog(QDialog):
             pixmap = QPixmap(logo_path); logo_label.setPixmap(pixmap.scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         layout.addWidget(logo_label)
         title = QLabel("CineBridge Pro"); title.setStyleSheet("font-size: 22px; font-weight: bold; color: #3498DB;"); title.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(title)
-        version = QLabel("v4.16.2 (Dev)"); version.setStyleSheet("font-size: 14px; color: #888;"); version.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(version)
+        version = QLabel("v4.16.3 (Dev)"); version.setStyleSheet("font-size: 14px; color: #888;"); version.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(version)
 # ...
         self.tab_ingest = IngestTab(self); self.tab_convert = ConvertTab(); self.tab_delivery = DeliveryTab(); self.tab_watch = WatchTab()
         self.tabs.addTab(self.tab_ingest, "📥 INGEST"); self.tabs.addTab(self.tab_convert, "🛠️ CONVERT"); self.tabs.addTab(self.tab_delivery, "🚀 DELIVERY"); self.tabs.addTab(self.tab_watch, "Watch Folder")
