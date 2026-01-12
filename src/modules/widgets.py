@@ -38,8 +38,11 @@ class FileDropLineEdit(QLineEdit):
 class TranscodeSettingsWidget(QGroupBox):
     def __init__(self, title="Transcode Settings", mode="general"):
         super().__init__(title); self.layout = QVBoxLayout(); self.setLayout(self.layout); self.mode = mode
-        self.chk_gpu = QCheckBox("Use Hardware Acceleration (if available)"); self.chk_gpu.setStyleSheet("font-weight: bold; color: #3498DB;"); self.layout.addWidget(self.chk_gpu)
+        self.chk_gpu = QCheckBox("Use Hardware Acceleration (if available)"); self.chk_gpu.setStyleSheet("font-weight: bold; color: #3498DB;")
+        self.chk_gpu.setToolTip("Enables hardware acceleration (NVENC/QSV/VAAPI) for significantly faster transcoding.")
+        self.layout.addWidget(self.chk_gpu)
         top_row = QHBoxLayout(); top_row.addWidget(QLabel("Preset:")); self.preset_combo = QComboBox(); self.init_presets() 
+        self.preset_combo.setToolTip("Choose from optimized industry-standard presets or create your own.")
         self.preset_combo.currentIndexChanged.connect(self.apply_preset); top_row.addWidget(self.preset_combo, 1)
         
         # Preset Management Buttons
@@ -52,6 +55,7 @@ class TranscodeSettingsWidget(QGroupBox):
         self.layout.addLayout(top_row)
         
         lut_lay = QHBoxLayout(); self.lut_path = QLineEdit(); self.lut_path.setPlaceholderText("Select 3D LUT (.cube) - Optional")
+        self.lut_path.setToolTip("Apply a 3D LUT (.cube) during transcoding to see your creative look on proxies.")
         self.btn_lut = QPushButton("Browse LUT"); self.btn_lut.clicked.connect(self.browse_lut)
         self.btn_clr_lut = QPushButton("X"); self.btn_clr_lut.setFixedWidth(30); self.btn_clr_lut.clicked.connect(self.lut_path.clear)
         lut_lay.addWidget(QLabel("Look:")); lut_lay.addWidget(self.lut_path); lut_lay.addWidget(self.btn_lut); lut_lay.addWidget(self.btn_clr_lut)
@@ -60,15 +64,22 @@ class TranscodeSettingsWidget(QGroupBox):
         # Overlays Section
         self.overlay_group = QGroupBox("Visual Overlays (Burn-in)"); overlay_lay = QGridLayout(); self.overlay_group.setLayout(overlay_lay)
         self.chk_burn_file = QCheckBox("Burn Filename"); self.chk_burn_tc = QCheckBox("Burn Timecode")
+        self.chk_burn_file.setToolTip("Overlay the source filename on the bottom left of the video.")
+        self.chk_burn_tc.setToolTip("Overlay the timecode or duration on the bottom right of the video.")
         self.inp_watermark = QLineEdit(); self.inp_watermark.setPlaceholderText("Watermark Text (Optional)")
+        self.inp_watermark.setToolTip("Add a custom text watermark to the center of the frame.")
         overlay_lay.addWidget(self.chk_burn_file, 0, 0); overlay_lay.addWidget(self.chk_burn_tc, 0, 1)
         overlay_lay.addWidget(QLabel("Watermark:"), 1, 0); overlay_lay.addWidget(self.inp_watermark, 1, 1)
         self.layout.addWidget(self.overlay_group)
 
         self.advanced_frame = QFrame(); adv_layout = QFormLayout(); self.advanced_frame.setLayout(adv_layout)
         self.codec_combo = QComboBox(); self.init_codecs(); self.codec_combo.currentIndexChanged.connect(self.update_profiles)
+        self.codec_combo.setToolTip("Select the video encoding engine.")
         self.profile_combo = QComboBox(); self.audio_combo = QComboBox(); self.audio_combo.addItems(["PCM (Uncompressed)", "AAC (Compressed)"])
+        self.profile_combo.setToolTip("Select the specific quality profile for the chosen codec.")
+        self.audio_combo.setToolTip("Select the audio encoding format (PCM is recommended for edit-ready files).")
         self.chk_audio_fix = QCheckBox("Fix Audio Drift (48kHz)")
+        self.chk_audio_fix.setToolTip("Attempts to correct audio drift and normalizes to 48kHz.")
         adv_layout.addRow("Video Codec:", self.codec_combo); adv_layout.addRow("Profile:", self.profile_combo)
         adv_layout.addRow("Audio Codec:", self.audio_combo); adv_layout.addRow("Processing:", self.chk_audio_fix)
         self.layout.addWidget(self.advanced_frame); self.update_profiles(); self.apply_preset() 
@@ -351,37 +362,44 @@ class AdvancedFeaturesDialog(QDialog):
         # Watch Folder
         self.chk_watch = QCheckBox("Enable Watch Folder Service")
         self.chk_watch.setChecked(self.settings.value("feature_watch_folder", False, type=bool))
+        self.chk_watch.setToolTip("Monitor a folder and automatically transcode any new files dropped into it.")
         feat_lay.addWidget(self.chk_watch)
         
         # Burn-in
         self.chk_burn = QCheckBox("Enable Burn-in Tools (Dailies)")
         self.chk_burn.setChecked(self.settings.value("feature_burn_in", False, type=bool))
+        self.chk_burn.setToolTip("Enable professional overlays like timecode and watermarks in all tabs.")
         feat_lay.addWidget(self.chk_burn)
 
         # Multi-Dest
         self.chk_multi = QCheckBox("Enable Multi-Destination Ingest")
         self.chk_multi.setChecked(self.settings.value("feature_multi_dest", False, type=bool))
+        self.chk_multi.setToolTip("Enables offloading to up to 3 destinations simultaneously.")
         feat_lay.addWidget(self.chk_multi)
 
         # MHL
         self.chk_mhl = QCheckBox("Enable MHL Generation (Media Hash List)")
         self.chk_mhl.setChecked(self.settings.value("feature_mhl", False, type=bool))
+        self.chk_mhl.setToolTip("Enables ASC-MHL checksum list generation in the Ingest tab.")
         feat_lay.addWidget(self.chk_mhl)
 
         # PDF Reports
         self.chk_pdf = QCheckBox("Enable PDF Transfer Reports")
         self.chk_pdf.setChecked(self.settings.value("feature_pdf_report", True, type=bool))
+        self.chk_pdf.setToolTip("Enables professional PDF Transfer Report generation in the Ingest tab.")
         feat_lay.addWidget(self.chk_pdf)
 
         # Visual PDF
         self.chk_visual = QCheckBox("Use Visual PDF Reports (Thumbnails)")
         self.chk_visual.setChecked(self.settings.value("feature_visual_report", False, type=bool))
+        self.chk_visual.setToolTip("Include frame-accurate thumbnails in your PDF transfer reports.")
         feat_lay.addWidget(self.chk_visual)
         
         layout.addWidget(feat_group)
 
         dest_group = QGroupBox("Report & MHL Destination"); dest_lay = QVBoxLayout(); dest_group.setLayout(dest_lay)
         self.combo_dest = QComboBox()
+        self.combo_dest.setToolTip("Choose where deliverables like PDF reports and MHL files should be stored.")
         self.combo_dest.addItem("Follow Project Folder (Default)", "project")
         self.combo_dest.addItem("Fixed Global Destination", "fixed")
         self.combo_dest.addItem("Ask / Change Per Job", "custom")

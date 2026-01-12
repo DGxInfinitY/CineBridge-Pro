@@ -74,6 +74,7 @@ class IngestTab(QWidget):
         settings_group = QGroupBox("3. Processing Settings"); settings_layout = QVBoxLayout()
         logic_row = QHBoxLayout(); logic_row.addWidget(QLabel("Camera Profile:")); 
         self.device_combo = QComboBox(); 
+        self.device_combo.setToolTip("Select a specific camera profile or use Auto-Detect for intelligent folder naming.")
         self.device_combo.addItem("Auto-Detect", "auto")
         for profile_name in sorted(DeviceRegistry.PROFILES.keys()):
             self.device_combo.addItem(profile_name, profile_name)
@@ -82,20 +83,28 @@ class IngestTab(QWidget):
         settings_layout.addLayout(logic_row)
 
         rules_grid = QGridLayout()
-        self.check_date = QCheckBox("Sort Date"); rules_grid.addWidget(self.check_date, 0, 0)
-        self.check_dupe = QCheckBox("Skip Dupes"); rules_grid.addWidget(self.check_dupe, 0, 1)
-        self.check_videos_only = QCheckBox("Video Only"); self.check_videos_only.toggled.connect(self.refresh_tree_view); rules_grid.addWidget(self.check_videos_only, 0, 2)
+        self.check_date = QCheckBox("Sort Date"); self.check_date.setToolTip("Organizes offloaded media into folders by capture date.")
+        rules_grid.addWidget(self.check_date, 0, 0)
+        self.check_dupe = QCheckBox("Skip Dupes"); self.check_dupe.setToolTip("Skips copying files that already exist in the destination with the same size.")
+        rules_grid.addWidget(self.check_dupe, 0, 1)
+        self.check_videos_only = QCheckBox("Video Only"); self.check_videos_only.setToolTip("Only scans and transfers video file formats, ignoring photos and metadata.")
+        self.check_videos_only.toggled.connect(self.refresh_tree_view); rules_grid.addWidget(self.check_videos_only, 0, 2)
         
-        self.check_verify = QCheckBox("Verify Copy"); self.check_verify.setStyleSheet("color: #27AE60; font-weight: bold;"); rules_grid.addWidget(self.check_verify, 1, 0)
-        self.check_verify.setToolTip("Performs hash verification (xxHash/MD5) after copy.")
+        self.check_verify = QCheckBox("Verify Copy"); self.check_verify.setStyleSheet("color: #27AE60; font-weight: bold;")
+        self.check_verify.setToolTip("Performs xxHash64 or MD5 checksum verification after copy to ensure bit-perfect data integrity.")
+        rules_grid.addWidget(self.check_verify, 1, 0)
         
-        self.check_report = QCheckBox("Gen Report"); self.check_report.setToolTip("Generate professional PDF DIT Report on completion.")
+        self.check_report = QCheckBox("Gen Report")
+        self.check_report.setToolTip("Generates a professional PDF Transfer Report upon completion.")
         rules_grid.addWidget(self.check_report, 1, 1)
         
-        self.check_mhl = QCheckBox("Gen MHL"); self.check_mhl.setToolTip("Generate ASC-MHL compliant checksum list.")
+        self.check_mhl = QCheckBox("Gen MHL")
+        self.check_mhl.setToolTip("Generates an industry-standard ASC-MHL compliant media hash list for data tracking.")
         rules_grid.addWidget(self.check_mhl, 1, 2)
 
-        self.check_transcode = QCheckBox("Enable Transcode"); self.check_transcode.setStyleSheet("color: #E67E22; font-weight: bold;"); self.check_transcode.toggled.connect(self.toggle_transcode_ui)
+        self.check_transcode = QCheckBox("Enable Transcode"); self.check_transcode.setStyleSheet("color: #E67E22; font-weight: bold;")
+        self.check_transcode.setToolTip("Automatically queues all transferred videos for proxy or dailies conversion.")
+        self.check_transcode.toggled.connect(self.toggle_transcode_ui)
         rules_grid.addWidget(self.check_transcode, 2, 0, 1, 1, Qt.AlignmentFlag.AlignLeft)
         settings_layout.addLayout(rules_grid)
         
@@ -143,7 +152,9 @@ class IngestTab(QWidget):
         self.load_label = QLabel("🔥 CPU Load: 0%"); self.load_label.setAlignment(Qt.AlignmentFlag.AlignCenter); self.load_label.setStyleSheet("color: #E74C3C; font-weight: bold; font-size: 11px;"); self.load_label.setVisible(False); dash_layout.addWidget(self.load_label); self.layout.addWidget(dash_frame)
         btn_layout = QHBoxLayout()
         self.import_btn = QPushButton("SCAN SOURCE"); self.import_btn.setObjectName("StartBtn"); self.import_btn.clicked.connect(self.on_import_click)
+        self.import_btn.setToolTip("Click to scan the source media or start the transfer process.")
         self.cancel_btn = QPushButton("STOP"); self.cancel_btn.setObjectName("StopBtn"); self.cancel_btn.clicked.connect(self.cancel_import); self.cancel_btn.setEnabled(False)
+        self.cancel_btn.setToolTip("Aborts all current copy and transcode operations.")
         self.clear_logs_btn = QPushButton("Clear Logs"); self.clear_logs_btn.setToolTip("Clear the status logs below."); self.clear_logs_btn.clicked.connect(self.clear_logs)
         btn_layout.addWidget(self.import_btn); btn_layout.addWidget(self.cancel_btn); btn_layout.addWidget(self.clear_logs_btn); self.layout.addLayout(btn_layout)
         self.splitter = QSplitter(Qt.Orientation.Vertical)
@@ -514,119 +525,122 @@ class ConvertTab(QWidget):
         self.settings = TranscodeSettingsWidget("1. Conversion Settings", mode="general")
         layout.addWidget(self.settings)
         
-        # 2. Input Media
-        input_group = QGroupBox("2. Input Media"); input_lay = QVBoxLayout()
-        self.btn_browse = QPushButton("Select Video Files..."); self.btn_browse.clicked.connect(self.browse_files); input_lay.addWidget(self.btn_browse)
-        self.drop_area = QLabel("\n⬇️\n\nDRAG & DROP VIDEO FILES HERE\n\n"); self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.drop_area.setStyleSheet("QLabel { border: 3px dashed #666; border-radius: 10px; background-color: #2b2b2b; color: #aaa; font-weight: bold; } QLabel:hover { border-color: #3498DB; background-color: #333; color: white; }")
-        input_lay.addWidget(self.drop_area, 1); input_group.setLayout(input_lay); layout.addWidget(input_group, 1)
-
-        # 3. Destination
-        out_group = QGroupBox("3. Destination (Optional)"); out_lay = QHBoxLayout()
-        self.out_input = QLineEdit(); self.out_input.setPlaceholderText("Default: Creates 'Converted' folder next to source files")
-        self.btn_browse_out = QPushButton("Browse..."); self.btn_browse_out.clicked.connect(self.browse_dest)
-        self.btn_clear_out = QPushButton("Reset"); self.btn_clear_out.clicked.connect(self.out_input.clear)
-        out_lay.addWidget(self.out_input); out_lay.addWidget(self.btn_browse_out); out_lay.addWidget(self.btn_clear_out); out_group.setLayout(out_lay); layout.addWidget(out_group)
+                # 2. Input Media
+                input_group = QGroupBox("2. Input Media"); input_lay = QVBoxLayout()
+                self.btn_browse = QPushButton("Select Video Files..."); self.btn_browse.clicked.connect(self.browse_files); input_lay.addWidget(self.btn_browse)
+                self.btn_browse.setToolTip("Add video files to the batch conversion queue.")
+                self.drop_area = QLabel("\n⬇️\n\nDRAG & DROP VIDEO FILES HERE\n\n"); self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.drop_area.setStyleSheet("QLabel { border: 3px dashed #666; border-radius: 10px; background-color: #2b2b2b; color: #aaa; font-weight: bold; } QLabel:hover { border-color: #3498DB; background-color: #333; color: white; }")
+                input_lay.addWidget(self.drop_area, 1); input_group.setLayout(input_lay); layout.addWidget(input_group, 1)
         
-        # 4. Batch Queue
-        queue_group = QGroupBox("4. Batch Queue"); queue_lay = QVBoxLayout()
-        self.list = QListWidget(); self.list.setMaximumHeight(150); self.list.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly); self.list.setIconSize(QSize(96, 54)); self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu); self.list.customContextMenuRequested.connect(self.show_context_menu); queue_lay.addWidget(self.list)
+                # 3. Destination
+                out_group = QGroupBox("3. Destination (Optional)"); out_lay = QHBoxLayout()
+                self.out_input = QLineEdit(); self.out_input.setPlaceholderText("Default: Creates 'Converted' folder next to source files")
+                self.btn_browse_out = QPushButton("Browse..."); self.btn_browse_out.clicked.connect(self.browse_dest)
+                self.btn_clear_out = QPushButton("Reset"); self.btn_clear_out.clicked.connect(self.out_input.clear)
+                out_lay.addWidget(self.out_input); out_lay.addWidget(self.btn_browse_out); out_lay.addWidget(self.btn_clear_out); out_group.setLayout(out_lay); layout.addWidget(out_group)
+                
+                # 4. Batch Queue
+                queue_group = QGroupBox("4. Batch Queue"); queue_lay = QVBoxLayout()
+                self.list = QListWidget(); self.list.setMaximumHeight(150); self.list.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly); self.list.setIconSize(QSize(96, 54)); self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu); self.list.customContextMenuRequested.connect(self.show_context_menu); queue_lay.addWidget(self.list)
+                
+                dash_frame = QFrame(); dash_frame.setObjectName("DashFrame"); dash_layout = QVBoxLayout(); dash_frame.setLayout(dash_layout)
+                dash_row = QHBoxLayout(); self.status_label = QLabel("Waiting..."); self.status_label.setStyleSheet("color: #888;"); self.load_label = QLabel(""); self.load_label.setStyleSheet("color: #E74C3C; font-weight: bold;"); self.load_label.setVisible(False); dash_row.addWidget(self.status_label); dash_row.addStretch(); dash_row.addWidget(self.load_label); dash_layout.addLayout(dash_row)
+                self.pbar = QProgressBar(); self.pbar.setTextVisible(True); dash_layout.addWidget(self.pbar); queue_lay.addWidget(dash_frame)
+                
+                h = QHBoxLayout(); b_clr = QPushButton("Clear Queue"); b_clr.clicked.connect(self.list.clear)
+                self.btn_go = QPushButton("START BATCH"); self.btn_go.setObjectName("StartBtn"); self.btn_go.clicked.connect(self.on_btn_click)
+                self.btn_go.setToolTip("Start the batch conversion process for all files in the queue.")
+                h.addWidget(b_clr); h.addWidget(self.btn_go); queue_lay.addLayout(h); queue_group.setLayout(queue_lay); layout.addWidget(queue_group); layout.addStretch()
+                
+            def update_load_display(self, value):
+                self.load_label.setText(f"🔥 CPU: {value}%")
         
-        dash_frame = QFrame(); dash_frame.setObjectName("DashFrame"); dash_layout = QVBoxLayout(); dash_frame.setLayout(dash_layout)
-        dash_row = QHBoxLayout(); self.status_label = QLabel("Waiting..."); self.status_label.setStyleSheet("color: #888;"); self.load_label = QLabel(""); self.load_label.setStyleSheet("color: #E74C3C; font-weight: bold;"); self.load_label.setVisible(False); dash_row.addWidget(self.status_label); dash_row.addStretch(); dash_row.addWidget(self.load_label); dash_layout.addLayout(dash_row)
-        self.pbar = QProgressBar(); self.pbar.setTextVisible(True); dash_layout.addWidget(self.pbar); queue_lay.addWidget(dash_frame)
+            def browse_files(self):
+                files, _ = QFileDialog.getOpenFileNames(self, "Select Videos", "", "Video Files (*.mp4 *.mov *.mkv *.avi)")
+                if files: [self.list.addItem(f) for f in files]; self.start_thumb_process(files)
+            def browse_dest(self):
+                d = QFileDialog.getExistingDirectory(self, "Pick a Destination")
+                if d: self.out_input.setText(d)
+            def dragEnterEvent(self, e):
+                if e.mimeData().hasUrls(): e.accept()
+            def dropEvent(self, e):
+                new_files = []
+                for u in e.mimeData().urls():
+                    f = u.toLocalFile()
+            def on_btn_click(self):
+                if self.is_processing: 
+                    self.stop() 
+                else: 
+                    self.start()
         
-        h = QHBoxLayout(); b_clr = QPushButton("Clear Queue"); b_clr.clicked.connect(self.list.clear)
-        self.btn_go = QPushButton("START BATCH"); self.btn_go.setObjectName("StartBtn"); self.btn_go.clicked.connect(self.on_btn_click)
-        h.addWidget(b_clr); h.addWidget(self.btn_go); queue_lay.addLayout(h); queue_group.setLayout(queue_lay); layout.addWidget(queue_group); layout.addStretch()
+            def toggle_ui_state(self, running):
+                self.is_processing = running
+                self.load_label.setVisible(running)
+                if running: self.btn_go.setText("STOP BATCH"); self.btn_go.setObjectName("StopBtn")
+                else: self.btn_go.setText("START BATCH"); self.btn_go.setObjectName("StartBtn")
+                self.btn_go.style().unpolish(self.btn_go); self.btn_go.style().polish(self.btn_go)
+            def start(self):
+                files = [self.list.item(i).text() for i in range(self.list.count())]
+                if not files: return QMessageBox.warning(self, "Empty", "Queue is empty.")
+                self.toggle_ui_state(True); dest_folder = self.out_input.text().strip(); use_gpu = self.settings.is_gpu_enabled()
+                self.worker = BatchTranscodeWorker(files, dest_folder, self.settings.get_settings(), mode="convert", use_gpu=use_gpu)
+                self.worker.progress_signal.connect(self.pbar.setValue); self.worker.status_signal.connect(self.status_label.setText); self.worker.log_signal.connect(lambda s: self.status_label.setText(s)); self.worker.finished_signal.connect(self.on_finished); self.worker.start()
+            def start_thumb_process(self, files):
+                worker = ThumbnailWorker(files); worker.thumb_ready.connect(self.update_thumbnail)
+                worker.finished.connect(lambda: self.thumb_workers.remove(worker) if worker in self.thumb_workers else None)
+                worker.start(); self.thumb_workers.append(worker)
+            def update_thumbnail(self, path, image):
+                pixmap = QPixmap.fromImage(image)
+                items = self.list.findItems(path, Qt.MatchFlag.MatchExactly)
+                for item in items: item.setIcon(QIcon(pixmap))
+            def stop(self):
+                if self.worker: self.worker.stop(); self.status_label.setText("Stopping...")
+            def on_finished(self):
+                SystemNotifier.notify("Conversion Complete", "Batch transcode finished.")
+                self.toggle_ui_state(False); self.status_label.setText("Batch Complete!"); dest = self.out_input.text(); msg = f"Files saved to:\n{dest}" if dest else "Files saved to 'Converted' folder next to the source file(s)."; 
+                dlg = JobReportDialog("Conversion Complete", f"<h3>Transcode Successful</h3><p>All files in the queue have been converted.<br>Your media is ready for edit.</p>", self)
+                dlg.exec()
+            def show_context_menu(self, pos):
+                item = self.list.itemAt(pos)
+                if item:
+                    menu = QMenu(self); action = QAction("Inspect Media Info", self); action.triggered.connect(lambda: self.inspect_file(item)); menu.addAction(action); menu.exec(self.list.mapToGlobal(pos))
+            def inspect_file(self, item):
+                path = item.text()
+                if os.path.exists(path):
+                    info = MediaInfoExtractor.get_info(path); dlg = MediaInfoDialog(info, self); dlg.exec()
         
-    def update_load_display(self, value):
-        self.load_label.setText(f"🔥 CPU: {value}%")
-
-    def browse_files(self):
-        files, _ = QFileDialog.getOpenFileNames(self, "Select Videos", "", "Video Files (*.mp4 *.mov *.mkv *.avi)")
-        if files: [self.list.addItem(f) for f in files]; self.start_thumb_process(files)
-    def browse_dest(self): 
-        d = QFileDialog.getExistingDirectory(self, "Pick a Destination")
-        if d: self.out_input.setText(d)
-    def dragEnterEvent(self, e): 
-        if e.mimeData().hasUrls(): e.accept()
-    def dropEvent(self, e):
-        new_files = []
-        for u in e.mimeData().urls():
-            f = u.toLocalFile()
-    def on_btn_click(self):
-        if self.is_processing: 
-            self.stop() 
-        else: 
-            self.start()
-
-    def toggle_ui_state(self, running):
-        self.is_processing = running
-        self.load_label.setVisible(running)
-        if running: self.btn_go.setText("STOP BATCH"); self.btn_go.setObjectName("StopBtn")
-        else: self.btn_go.setText("START BATCH"); self.btn_go.setObjectName("StartBtn")
-        self.btn_go.style().unpolish(self.btn_go); self.btn_go.style().polish(self.btn_go)
-    def start(self):
-        files = [self.list.item(i).text() for i in range(self.list.count())]
-        if not files: return QMessageBox.warning(self, "Empty", "Queue is empty.")
-        self.toggle_ui_state(True); dest_folder = self.out_input.text().strip(); use_gpu = self.settings.is_gpu_enabled()
-        self.worker = BatchTranscodeWorker(files, dest_folder, self.settings.get_settings(), mode="convert", use_gpu=use_gpu)
-        self.worker.progress_signal.connect(self.pbar.setValue); self.worker.status_signal.connect(self.status_label.setText); self.worker.log_signal.connect(lambda s: self.status_label.setText(s)); self.worker.finished_signal.connect(self.on_finished); self.worker.start()
-    def start_thumb_process(self, files):
-        worker = ThumbnailWorker(files); worker.thumb_ready.connect(self.update_thumbnail)
-        worker.finished.connect(lambda: self.thumb_workers.remove(worker) if worker in self.thumb_workers else None)
-        worker.start(); self.thumb_workers.append(worker)
-    def update_thumbnail(self, path, image):
-        pixmap = QPixmap.fromImage(image)
-        items = self.list.findItems(path, Qt.MatchFlag.MatchExactly)
-        for item in items: item.setIcon(QIcon(pixmap))
-    def stop(self):
-        if self.worker: self.worker.stop(); self.status_label.setText("Stopping...")
-    def on_finished(self):
-        SystemNotifier.notify("Conversion Complete", "Batch transcode finished.")
-        self.toggle_ui_state(False); self.status_label.setText("Batch Complete!"); dest = self.out_input.text(); msg = f"Files saved to:\n{dest}" if dest else "Files saved to 'Converted' folder next to the source file(s)."; 
-        dlg = JobReportDialog("Conversion Complete", f"<h3>Transcode Successful</h3><p>All files in the queue have been converted.<br>Your media is ready for edit.</p>", self)
-        dlg.exec()
-    def show_context_menu(self, pos):
-        item = self.list.itemAt(pos)
-        if item:
-            menu = QMenu(self); action = QAction("Inspect Media Info", self); action.triggered.connect(lambda: self.inspect_file(item)); menu.addAction(action); menu.exec(self.list.mapToGlobal(pos))
-    def inspect_file(self, item):
-        path = item.text()
-        if os.path.exists(path):
-            info = MediaInfoExtractor.get_info(path); dlg = MediaInfoDialog(info, self); dlg.exec()
-
-class DeliveryTab(QWidget):
-    def __init__(self):
-        super().__init__(); self.setAcceptDrops(True); self.is_processing = False
-        layout = QVBoxLayout(); layout.setSpacing(15); layout.setContentsMargins(20, 20, 20, 20); self.setLayout(layout)
+        class DeliveryTab(QWidget):
+            def __init__(self):
+                super().__init__(); self.setAcceptDrops(True); self.is_processing = False
+                layout = QVBoxLayout(); layout.setSpacing(15); layout.setContentsMargins(20, 20, 20, 20); self.setLayout(layout)
+                
+                self.settings = TranscodeSettingsWidget("1. Delivery Settings", mode="delivery")
+                self.settings.preset_combo.setCurrentText("H.264 / AVC (Standard)")
+                layout.addWidget(self.settings)
+                
+                # 2. Master File
+                master_group = QGroupBox("2. Master File"); master_lay = QVBoxLayout()
+                self.inp_file = FileDropLineEdit(); self.inp_file.setPlaceholderText("Drag Master File Here or Browse")
+                self.btn_sel_master = QPushButton("Select Master File..."); self.btn_sel_master.clicked.connect(lambda: self.inp_file.setText(QFileDialog.getOpenFileName(self, "Select Master File")[0]))
+                self.btn_sel_master.setToolTip("Select the high-quality master file for final delivery rendering.")
+                self.drop_area = QLabel("\n⬇️\n\nDRAG MASTER FILE HERE\n\n"); self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
+                self.drop_area.setStyleSheet("QLabel { border: 3px dashed #666; border-radius: 10px; background-color: #2b2b2b; color: #aaa; font-weight: bold; } QLabel:hover { border-color: #3498DB; background-color: #333; color: white; }")
+                master_lay.addWidget(self.btn_sel_master); master_lay.addWidget(self.inp_file); master_lay.addWidget(self.drop_area, 1); master_group.setLayout(master_lay); layout.addWidget(master_group, 1)
         
-        self.settings = TranscodeSettingsWidget("1. Delivery Settings", mode="delivery")
-        self.settings.preset_combo.setCurrentText("H.264 / AVC (Standard)")
-        layout.addWidget(self.settings)
-        
-        # 2. Master File
-        master_group = QGroupBox("2. Master File"); master_lay = QVBoxLayout()
-        self.inp_file = FileDropLineEdit(); self.inp_file.setPlaceholderText("Drag Master File Here or Browse")
-        self.btn_sel_master = QPushButton("Select Master File..."); self.btn_sel_master.clicked.connect(lambda: self.inp_file.setText(QFileDialog.getOpenFileName(self, "Select Master File")[0]))
-        self.drop_area = QLabel("\n⬇️\n\nDRAG MASTER FILE HERE\n\n"); self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.drop_area.setStyleSheet("QLabel { border: 3px dashed #666; border-radius: 10px; background-color: #2b2b2b; color: #aaa; font-weight: bold; } QLabel:hover { border-color: #3498DB; background-color: #333; color: white; }")
-        master_lay.addWidget(self.btn_sel_master); master_lay.addWidget(self.inp_file); master_lay.addWidget(self.drop_area, 1); master_group.setLayout(master_lay); layout.addWidget(master_group, 1)
-
-        # 3. Destination
-        dest_group = QGroupBox("3. Destination (Optional)"); dest_lay = QHBoxLayout()
-        self.inp_dest = QLineEdit(); self.inp_dest.setPlaceholderText("Default: Creates 'Final_Render' folder next to master")
-        self.btn_b2 = QPushButton("Browse..."); self.btn_b2.clicked.connect(lambda: self.inp_dest.setText(QFileDialog.getExistingDirectory(self, "Pick a Destination")))
-        dest_lay.addWidget(self.inp_dest); dest_lay.addWidget(self.btn_b2); dest_group.setLayout(dest_lay); layout.addWidget(dest_group)
-        
-        # 4. Render Dashboard
-        dash_frame = QFrame(); dash_frame.setObjectName("DashFrame"); dash_layout = QVBoxLayout(); dash_frame.setLayout(dash_layout)
-        self.status_label = QLabel("Ready to Render"); dash_layout.addWidget(self.status_label)
-        self.pbar = QProgressBar(); self.pbar.setTextVisible(True); dash_layout.addWidget(self.pbar); layout.addWidget(dash_frame)
-        
-        self.btn_go = QPushButton("GENERATE DELIVERY MASTER"); self.btn_go.setObjectName("StartBtn"); self.btn_go.setMinimumHeight(50); self.btn_go.clicked.connect(self.on_btn_click)
-        layout.addWidget(self.btn_go); layout.addStretch()
+                # 3. Destination
+                dest_group = QGroupBox("3. Destination (Optional)"); dest_lay = QHBoxLayout()
+                self.inp_dest = QLineEdit(); self.inp_dest.setPlaceholderText("Default: Creates 'Final_Render' folder next to master")
+                self.btn_b2 = QPushButton("Browse..."); self.btn_b2.clicked.connect(lambda: self.inp_dest.setText(QFileDialog.getExistingDirectory(self, "Pick a Destination")))
+                dest_lay.addWidget(self.inp_dest); dest_lay.addWidget(self.btn_b2); dest_group.setLayout(dest_lay); layout.addWidget(dest_group)
+                
+                # 4. Render Dashboard
+                dash_frame = QFrame(); dash_frame.setObjectName("DashFrame"); dash_layout = QVBoxLayout(); dash_frame.setLayout(dash_layout)
+                self.status_label = QLabel("Ready to Render"); dash_layout.addWidget(self.status_label)
+                self.pbar = QProgressBar(); self.pbar.setTextVisible(True); dash_layout.addWidget(self.pbar); layout.addWidget(dash_frame)
+                
+                self.btn_go = QPushButton("GENERATE DELIVERY MASTER"); self.btn_go.setObjectName("StartBtn"); self.btn_go.setMinimumHeight(50); self.btn_go.clicked.connect(self.on_btn_click)
+                self.btn_go.setToolTip("Start the final render using delivery-optimized presets.")        layout.addWidget(self.btn_go); layout.addStretch()
     def dragEnterEvent(self, e): 
         if e.mimeData().hasUrls(): e.accept()
     def dropEvent(self, e):
@@ -666,7 +680,9 @@ class WatchTab(QWidget):
         # 1. Service Configuration
         conf_group = QGroupBox("1. Service Configuration"); conf_lay = QVBoxLayout()
         stab_layout = QHBoxLayout(); stab_layout.addWidget(QLabel("File Stability Check (Seconds):"))
-        self.spin_stability = QSpinBox(); self.spin_stability.setRange(1, 60); self.spin_stability.setValue(int(self.STABILITY_THRESHOLD)); self.spin_stability.valueChanged.connect(self.update_threshold); stab_layout.addWidget(self.spin_stability); stab_layout.addStretch(); conf_lay.addLayout(stab_layout)
+        self.spin_stability = QSpinBox(); self.spin_stability.setRange(1, 60); self.spin_stability.setValue(int(self.STABILITY_THRESHOLD)); self.spin_stability.valueChanged.connect(self.update_threshold)
+        self.spin_stability.setToolTip("Wait this many seconds for a file to stop changing size before starting transcode (useful for slow network copies).")
+        stab_layout.addWidget(self.spin_stability); stab_layout.addStretch(); conf_lay.addLayout(stab_layout)
         self.settings = TranscodeSettingsWidget(mode="general"); conf_lay.addWidget(self.settings); conf_group.setLayout(conf_lay); layout.addWidget(conf_group)
 
         # 2. Folder Selection
@@ -682,7 +698,9 @@ class WatchTab(QWidget):
         self.status_label = QLabel("Watch Folder: INACTIVE"); self.status_label.setStyleSheet("color: #888;"); dash_layout.addWidget(self.status_label)
         self.pbar = QProgressBar(); self.pbar.setVisible(False); dash_layout.addWidget(self.pbar); layout.addWidget(dash_frame)
 
-        self.btn_toggle = QPushButton("ACTIVATE WATCH FOLDER"); self.btn_toggle.setObjectName("StartBtn"); self.btn_toggle.setMinimumHeight(50); self.btn_toggle.clicked.connect(self.toggle_watch); layout.addWidget(self.btn_toggle)
+        self.btn_toggle = QPushButton("ACTIVATE WATCH FOLDER"); self.btn_toggle.setObjectName("StartBtn"); self.btn_toggle.setMinimumHeight(50); self.btn_toggle.clicked.connect(self.toggle_watch)
+        self.btn_toggle.setToolTip("Enable or disable the automated background watch folder service.")
+        layout.addWidget(self.btn_toggle)
         layout.addStretch()
 
     def update_threshold(self, val):
