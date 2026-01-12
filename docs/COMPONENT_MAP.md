@@ -35,6 +35,7 @@ This document maps the source files to their primary responsibilities and contai
 - `SettingsDialog`: The main application preferences window.
 - `MediaInfoDialog`: Popup showing codec details (using `ffprobe`).
 - `FFmpegConfigDialog`: Settings for managing the FFmpeg binary path.
+- `VideoPreviewDialog`: High-performance video player for media review.
 
 ## `src/modules/utils.py`
 **Role:** Business Logic & Libraries

@@ -62,7 +62,15 @@ For most users, we recommend downloading the standalone installer for your OS.
 
 ## 📝 Change Log
 
-### v4.16.3 (Current Release)
+### v4.16.4 (Current Release)
+* **New Feature:** **Video Preview.** Instant, scrubbable playback popup for source media in the Ingest tab. (Double-click to view).
+* **Performance:** **Zero-Overhead Checksums.** Optimized ingest verification to run concurrently with the copy stream, doubling verification speed.
+* **UX:** **Clear Logs.** Added button to clear the Ingest status logs.
+* **Improvement:** **DJI Support.** Added detection for newer DJI devices (Neo 2, etc).
+* **Fix:** **Smart Transcode.** Resolved issue where 'ProRes' files were not being correctly identified for smart skipping.
+* **Fix:** **Linux Compatibility.** Resolved GLib/GStreamer lifecycle conflicts in the video player.
+
+### v4.16.3
 * **Architecture:** Complete modular refactor of the codebase (`src/modules/`) for improved maintainability and stability.
 * **New Feature:** **Smart Transcode.** Automatically skips re-encoding for source files that are already edit-friendly (DNxHR/ProRes).
 * **Stability:** **Watch Folder Safety.** Implemented a "File Stability Check" to prevent transcoding files that are still being copied.

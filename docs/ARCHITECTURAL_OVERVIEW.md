@@ -64,3 +64,5 @@ The application logic is refactored into specialized modules to improve maintain
     2. Bundled PyInstaller `_MEIPASS`.
     3. `src/bin/` (Local dev).
     4. System `PATH`.
+
+- **QtMultimedia**: Used for the native video preview player. On Linux systems, this typically requires the `gstreamer` backend and the `python3-pyqt6.qtmultimedia` package.
