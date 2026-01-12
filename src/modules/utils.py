@@ -456,7 +456,7 @@ class DeviceRegistry:
         },
         "Insta360": {
             "signatures": ["Insta360"],
-            "roots": ["DCIM/Camera01", "DCIM/FileGroup01", "."],
+            "roots": ["DCIM/Camera01", "DCIM/FileGroup01"],
             "exts": {'.INSV', '.INSP', '.LOG', '.LRV'}
         },
         "Panasonic Lumix": {
@@ -496,6 +496,8 @@ class DeviceRegistry:
 
         def check_structure(base_path, pattern):
             """Checks if a folder structure exists. Supports regex-like patterns."""
+            if not pattern or pattern == ".": return None # Safety Check
+            
             curr = base_path
             parts = pattern.split('/')
             for part in parts:
@@ -527,6 +529,8 @@ class DeviceRegistry:
 
             # A. Structure Check (High Confidence)
             for root_hint in profile['roots']:
+                if not root_hint or root_hint == ".": continue # skip generic roots
+                
                 if "100GOPRO" in root_hint: # Special handling for GoPro
                      dcim = check_structure(mount_point, "DCIM")
                      if dcim:
