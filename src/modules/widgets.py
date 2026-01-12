@@ -427,9 +427,9 @@ class AboutDialog(QDialog):
         layout.addStretch(); btn_box = QHBoxLayout(); ok_btn = QPushButton("Close"); ok_btn.setFixedWidth(100); ok_btn.clicked.connect(self.accept); btn_box.addStretch(); btn_box.addWidget(ok_btn); btn_box.addStretch(); layout.addLayout(btn_box); self.setLayout(layout)
 
 class VideoPreviewDialog(QDialog):
-    def __init__(self, video_path, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Preview: {os.path.basename(video_path)}")
+        self.setWindowTitle("Preview")
         self.resize(900, 600)
         self.layout = QVBoxLayout()
         self.layout.setContentsMargins(0, 0, 0, 0)
@@ -508,14 +508,18 @@ class VideoPreviewDialog(QDialog):
         self.player.durationChanged.connect(self.duration_changed)
         self.player.mediaStatusChanged.connect(self.status_changed)
         self.player.errorOccurred.connect(self.handle_errors)
-        
-        # Delayed Start to fix GLib errors
-        self.video_path = video_path
-        QTimer.singleShot(200, self.start_playback)
 
-    def start_playback(self):
+    def load_video(self, video_path):
         if not HAS_MULTIMEDIA: return
-        self.player.setSource(QUrl.fromLocalFile(self.video_path))
+        self.setWindowTitle(f"Preview: {os.path.basename(video_path)}")
+        self.play_btn.setEnabled(True)
+        self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
+        
+        # CRITICAL FIX: Reset video output to ensure surface is valid on Linux
+        self.player.setVideoOutput(None)
+        self.player.setVideoOutput(self.video_widget)
+        
+        self.player.setSource(QUrl.fromLocalFile(video_path))
         self.player.play()
 
     def set_volume(self, v):
@@ -558,8 +562,5 @@ class VideoPreviewDialog(QDialog):
 
     def closeEvent(self, event):
         if HAS_MULTIMEDIA and self.player:
-            self.player.stop()
-            self.player.setSource(QUrl())
-            self.player.setVideoOutput(None)
-            self.player.setAudioOutput(None)
+            self.player.pause()
         event.accept()
