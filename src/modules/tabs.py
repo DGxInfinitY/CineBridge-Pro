@@ -457,6 +457,15 @@ class ConvertTab(QWidget):
         self.settings = TranscodeSettingsWidget("Batch Conversion Settings", mode="general")
         layout.addWidget(self.settings)
         
+        # Input Files
+        input_group = QGroupBox("Input Files")
+        input_lay = QVBoxLayout()
+        self.btn_browse = QPushButton("Select Video Files...")
+        self.btn_browse.clicked.connect(self.browse_files)
+        input_lay.addWidget(self.btn_browse)
+        input_group.setLayout(input_lay)
+        layout.addWidget(input_group)
+
         # Output Location
         out_group = QGroupBox("Output Location (Optional)")
         out_lay = QHBoxLayout()
@@ -471,13 +480,6 @@ class ConvertTab(QWidget):
         out_lay.addWidget(self.btn_clear_out)
         out_group.setLayout(out_lay)
         layout.addWidget(out_group)
-        
-        # Input Files
-        input_group = QGroupBox("Input Files")
-        input_lay = QVBoxLayout()
-        self.btn_browse = QPushButton("Select Video Files...")
-        self.btn_browse.clicked.connect(self.browse_files)
-        input_lay.addWidget(self.btn_browse)
         self.drop_area = QLabel("\n⬇️\n\nDRAG & DROP VIDEO FILES HERE\n\n")
         self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.drop_area.setStyleSheet("""
