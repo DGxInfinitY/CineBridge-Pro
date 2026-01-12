@@ -56,19 +56,29 @@ class ThumbnailWorker(QThread):
     def __init__(self, file_queue): super().__init__(); self.queue = file_queue; self.is_running = True
     def run(self):
         ffmpeg = DependencyManager.get_ffmpeg_path()
-        if not ffmpeg: return
+        if not ffmpeg: 
+            error_log("ThumbnailWorker: FFmpeg binary not found. Thumbnails disabled."); return
+        
         for path in self.queue:
             if not self.is_running: break
+            if not os.path.exists(path): continue
             try:
                 # Seek 0.5s to avoid black frame at start
                 cmd = [ffmpeg, '-y', '-ss', '00:00:00.5', '-i', path, '-vframes', '1', '-vf', 'scale=160:-1', '-f', 'image2pipe', '-']
                 startupinfo = None
                 if platform.system() == 'Windows': startupinfo = subprocess.STARTUPINFO(); startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
-                res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, startupinfo=startupinfo, env=EnvUtils.get_clean_env())
-                if res.stdout:
+                
+                res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, startupinfo=startupinfo, env=EnvUtils.get_clean_env(), timeout=10)
+                
+                if res.returncode == 0 and res.stdout:
                     img = QImage(); img.loadFromData(res.stdout)
                     if not img.isNull(): self.thumb_ready.emit(path, img)
-            except: pass
+                elif res.stderr:
+                    debug_log(f"FFmpeg Thumb Error [{os.path.basename(path)}]: {res.stderr.decode(errors='ignore')}")
+            except subprocess.TimeoutExpired:
+                debug_log(f"FFmpeg Thumb Timeout: {path}")
+            except Exception as e:
+                debug_log(f"ThumbnailWorker Error: {e}")
     def stop(self): self.is_running = False
 
 class IngestScanner(QThread):
@@ -106,6 +116,12 @@ class AsyncTranscoder(QThread):
         self.progress_signal.emit(100) # Flash 100% for feedback
     def set_producer_finished(self): self.producer_finished = True
     def run(self):
+        ffmpeg_bin = DependencyManager.get_ffmpeg_path()
+        if not ffmpeg_bin:
+            self.log_signal.emit("❌ Error: FFmpeg binary not found. Transcoding aborted.")
+            error_log("AsyncTranscoder: FFmpeg not found.")
+            return
+
         while self.is_running:
             if not self.queue:
                 if self.producer_finished: self.all_finished_signal.emit(); break
@@ -114,7 +130,13 @@ class AsyncTranscoder(QThread):
             display_total = self.total_expected_jobs if self.total_expected_jobs > 0 else (self.completed_jobs + len(self.queue) + 1)
             base_status = f"Transcoding {self.completed_jobs + 1}/{display_total}: {job['name']}"
             self.status_signal.emit(base_status); self.log_signal.emit(f"🎬 Transcoding Started: {job['name']}")
-            cmd = TranscodeEngine.build_command(job['in'], job['out'], self.settings, self.use_gpu); duration = TranscodeEngine.get_duration(job['in'])
+            cmd = TranscodeEngine.build_command(job['in'], job['out'], self.settings, self.use_gpu)
+            
+            if not cmd:
+                self.log_signal.emit(f"❌ Error: Could not build command for {job['name']}")
+                self.completed_jobs += 1; continue
+
+            duration = TranscodeEngine.get_duration(job['in'])
             try:
                 startupinfo = None; 
                 if platform.system() == 'Windows': startupinfo = subprocess.STARTUPINFO(); startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
@@ -122,7 +144,10 @@ class AsyncTranscoder(QThread):
                 
                 error_lines = []
                 while True:
-                    if not self.is_running: process.kill(); break
+                    if not self.is_running: 
+                        process.kill()
+                        process.wait() # Ensure process is reaped
+                        break
                     line = process.stderr.readline()
                     if not line and process.poll() is not None: break
                     if line:

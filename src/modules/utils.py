@@ -97,8 +97,12 @@ class DependencyManager:
         
         return shutil.which(binary_name)
 
+    _hw_cache = None
+
     @staticmethod
     def detect_hw_accel():
+        if DependencyManager._hw_cache is not None: return DependencyManager._hw_cache
+        
         ffmpeg = DependencyManager.get_ffmpeg_path()
         if not ffmpeg: return None
         try:
@@ -106,15 +110,20 @@ class DependencyManager:
             output = res.stdout + res.stderr
             enc_res = subprocess.run([ffmpeg, '-encoders'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=EnvUtils.get_clean_env())
             enc_out = enc_res.stdout
+            
+            result = None
             if "cuda" in output and "h264_nvenc" in enc_out: 
                 debug_log("HW: Detected NVIDIA CUDA/NVENC")
-                return "cuda"
-            if "qsv" in output and "h264_qsv" in enc_out: 
+                result = "cuda"
+            elif "qsv" in output and "h264_qsv" in enc_out: 
                 debug_log("HW: Detected Intel QuickSync")
-                return "qsv"
-            if "vaapi" in output: 
+                result = "qsv"
+            elif "vaapi" in output and "h264_vaapi" in enc_out: 
                 debug_log("HW: Detected Linux VAAPI")
-                return "vaapi"
+                result = "vaapi"
+            
+            DependencyManager._hw_cache = result
+            return result
         except Exception as e:
             debug_log(f"HW Detection Error: {e}")
         return None
@@ -420,20 +429,31 @@ class PresetManager:
 # =============================================================================
 class SystemNotifier:
     @staticmethod
-    def notify(title, message):
-        """Triggers a cross-platform system notification and sound."""
-        QApplication.beep()
+    def notify(title, message, icon="dialog-information"):
+        """Triggers a cross-platform system notification. 
+        Icon types: 'dialog-information', 'dialog-error', 'dialog-warning'
+        """
         system = platform.system()
         try:
             if system == "Linux":
-                subprocess.Popen(['notify-send', '-a', 'CineBridge Pro', title, message])
+                # Use notify-send with specific hints/icons
+                cmd = ['notify-send', '-a', 'CineBridge Pro', '-i', icon, title, message]
+                if icon == "dialog-error": cmd.extend(['-u', 'critical'])
+                subprocess.Popen(cmd)
+            
             elif system == "Darwin":
+                # MacOS Notification
                 script = f'display notification "{message}" with title "{title}"'
+                if icon == "dialog-error": script += ' sound name "Basso"'
+                else: script += ' sound name "Glass"'
                 subprocess.run(["osascript", "-e", script])
+            
             elif system == "Windows":
+                # Windows Toast (Simplified)
                 ps_script = f"""
                 [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null;
-                $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent([Windows.UI.Notifications.ToastTemplateType]::ToastText02);
+                $template_type = [Windows.UI.Notifications.ToastTemplateType]::ToastText02;
+                $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent($template_type);
                 $xml = $template.GetXml();
                 $text = $template.GetElementsByTagName("text");
                 $text[0].AppendChild($template.CreateTextNode("{title}")) > $null;
@@ -442,6 +462,12 @@ class SystemNotifier:
                 [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("CineBridge Pro").Show($toast);
                 """
                 subprocess.Popen(["powershell", "-Command", ps_script], creationflags=subprocess.CREATE_NO_WINDOW)
+            
+            # Use specific beep logic instead of default QApplication.beep()
+            # which can be mapped to the 'Error' sound on many Linux distros.
+            if icon == "dialog-error":
+                QApplication.beep() # Keep error sound for errors
+            # Success/Info usually don't need a beep if the notification is visible
         except Exception as e:
             debug_log(f"Notification failed: {e}")
 
