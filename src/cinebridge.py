@@ -68,8 +68,8 @@ class CineBridgeApp(QMainWindow):
         
         # Global System Monitor
         self.sys_monitor = SystemMonitor()
-        self.sys_monitor.cpu_signal.connect(self.tab_ingest.update_load_display)
-        self.sys_monitor.cpu_signal.connect(self.tab_convert.update_load_display)
+        self.sys_monitor.stats_signal.connect(self.tab_ingest.update_load_display)
+        self.sys_monitor.stats_signal.connect(self.tab_convert.update_load_display)
         self.sys_monitor.start()
 
         # Startup Logic

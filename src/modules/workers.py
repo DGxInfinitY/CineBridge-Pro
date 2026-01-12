@@ -425,10 +425,31 @@ class BatchTranscodeWorker(QThread):
     def stop(self): self.is_running = False
 
 class SystemMonitor(QThread):
-    cpu_signal = pyqtSignal(int)
+    stats_signal = pyqtSignal(dict)
     def run(self):
         while True:
+            stats = {'cpu_load': 0, 'cpu_temp': 0, 'gpu_load': 0, 'gpu_temp': 0, 'has_gpu': False}
             if PSUTIL_AVAILABLE:
-                try: self.cpu_signal.emit(int(psutil.cpu_percent(interval=1)))
-                except: self.cpu_signal.emit(0)
-            else: self.cpu_signal.emit(0); time.sleep(1)
+                try: 
+                    stats['cpu_load'] = int(psutil.cpu_percent(interval=None))
+                    # Best effort CPU Temp (Linux/Mac)
+                    if hasattr(psutil, "sensors_temperatures"):
+                        temps = psutil.sensors_temperatures()
+                        if 'coretemp' in temps: stats['cpu_temp'] = int(temps['coretemp'][0].current)
+                        elif 'cpu_thermal' in temps: stats['cpu_temp'] = int(temps['cpu_thermal'][0].current)
+                except: pass
+            
+            # NVIDIA GPU Stats (via nvidia-smi)
+            try:
+                # Only check if nvidia-smi exists to avoid overhead
+                res = subprocess.run(['nvidia-smi', '--query-gpu=utilization.gpu,temperature.gpu', '--format=csv,noheader,nounits'], capture_output=True, text=True, timeout=1)
+                if res.returncode == 0:
+                    parts = res.stdout.strip().split(',')
+                    if len(parts) >= 2:
+                        stats['gpu_load'] = int(parts[0].strip())
+                        stats['gpu_temp'] = int(parts[1].strip())
+                        stats['has_gpu'] = True
+            except: pass
+
+            self.stats_signal.emit(stats)
+            time.sleep(2)

@@ -149,7 +149,15 @@ class IngestTab(QWidget):
         self.storage_bar = QProgressBar(); self.storage_bar.setFormat("Destination Storage: %v%"); self.storage_bar.setStyleSheet("QProgressBar::chunk { background-color: #3498DB; }"); self.storage_bar.setVisible(False); dash_layout.addWidget(self.storage_bar)
         self.progress_bar = QProgressBar(); self.progress_bar.setTextVisible(True); dash_layout.addWidget(self.progress_bar)
         self.transcode_status_label = QLabel(""); self.transcode_status_label.setStyleSheet("color: #E67E22; font-weight: bold;"); self.transcode_status_label.setVisible(False); dash_layout.addWidget(self.transcode_status_label)
-        self.load_label = QLabel("🔥 CPU Load: 0%"); self.load_label.setAlignment(Qt.AlignmentFlag.AlignCenter); self.load_label.setStyleSheet("color: #E74C3C; font-weight: bold; font-size: 11px;"); self.load_label.setVisible(False); dash_layout.addWidget(self.load_label); self.layout.addWidget(dash_frame)
+        
+        # System Stats Row
+        self.stats_row = QWidget(); self.stats_row.setVisible(False); sr_lay = QHBoxLayout(self.stats_row); sr_lay.setContentsMargins(0,0,0,0); sr_lay.setSpacing(10)
+        self.cpu_load_lbl = QLabel("CPU: 0%"); self.cpu_load_lbl.setStyleSheet("color: #E74C3C; font-weight: bold; font-size: 11px;")
+        self.cpu_temp_lbl = QLabel(""); self.cpu_temp_lbl.setStyleSheet("color: #E74C3C; font-size: 11px;")
+        self.gpu_load_lbl = QLabel(""); self.gpu_load_lbl.setStyleSheet("color: #3498DB; font-weight: bold; font-size: 11px;")
+        self.gpu_temp_lbl = QLabel(""); self.gpu_temp_lbl.setStyleSheet("color: #3498DB; font-size: 11px;")
+        sr_lay.addStretch(); sr_lay.addWidget(self.cpu_load_lbl); sr_lay.addWidget(self.cpu_temp_lbl); sr_lay.addWidget(self.gpu_load_lbl); sr_lay.addWidget(self.gpu_temp_lbl); sr_lay.addStretch()
+        dash_layout.addWidget(self.stats_row); self.layout.addWidget(dash_frame)
         btn_layout = QHBoxLayout()
         self.import_btn = QPushButton("SCAN SOURCE"); self.import_btn.setObjectName("StartBtn"); self.import_btn.clicked.connect(self.on_import_click)
         self.import_btn.setToolTip("Click to scan the source media or start the transfer process.")
@@ -168,8 +176,19 @@ class IngestTab(QWidget):
         self.update_transfer_button_text()
     def open_transcode_config(self):
         dlg = TranscodeConfigDialog(self.transcode_widget, self); dlg.exec()
-    def update_load_display(self, value): self.load_label.setText(f"🔥 CPU Load: {value}%")
-    def set_transcode_active(self, active): self.load_label.setVisible(active); self.transcode_status_label.setVisible(active)
+    def update_load_display(self, stats):
+        self.cpu_load_lbl.setText(f"CPU: {stats['cpu_load']}%")
+        self.cpu_temp_lbl.setText(f"({stats['cpu_temp']}°C)" if stats['cpu_temp'] > 0 else "")
+        
+        # GPU Stats - Only show if detected and HW Accel might be in use
+        if stats['has_gpu']:
+            self.gpu_load_lbl.setText(f"GPU: {stats['gpu_load']}%")
+            self.gpu_temp_lbl.setText(f"({stats['gpu_temp']}°C)" if stats['gpu_temp'] > 0 else "")
+            self.gpu_load_lbl.setVisible(True); self.gpu_temp_lbl.setVisible(True)
+        else:
+            self.gpu_load_lbl.setVisible(False); self.gpu_temp_lbl.setVisible(False)
+
+    def set_transcode_active(self, active): self.stats_row.setVisible(active); self.transcode_status_label.setVisible(active)
     def browse_source(self):
         d = QFileDialog.getExistingDirectory(self, "Source", self.source_input.text()); 
         if d: self.source_input.setText(d)
@@ -544,42 +563,40 @@ class ConvertTab(QWidget):
                 queue_group = QGroupBox("4. Batch Queue"); queue_lay = QVBoxLayout()
                 self.list = QListWidget(); self.list.setMaximumHeight(150); self.list.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly); self.list.setIconSize(QSize(96, 54)); self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu); self.list.customContextMenuRequested.connect(self.show_context_menu); queue_lay.addWidget(self.list)
                 
-                dash_frame = QFrame(); dash_frame.setObjectName("DashFrame"); dash_layout = QVBoxLayout(); dash_frame.setLayout(dash_layout)
-                dash_row = QHBoxLayout(); self.status_label = QLabel("Waiting..."); self.status_label.setStyleSheet("color: #888;"); self.load_label = QLabel(""); self.load_label.setStyleSheet("color: #E74C3C; font-weight: bold;"); self.load_label.setVisible(False); dash_row.addWidget(self.status_label); dash_row.addStretch(); dash_row.addWidget(self.load_label); dash_layout.addLayout(dash_row)
-                self.pbar = QProgressBar(); self.pbar.setTextVisible(True); dash_layout.addWidget(self.pbar); queue_lay.addWidget(dash_frame)
+                        dash_frame = QFrame(); dash_frame.setObjectName("DashFrame"); dash_layout = QVBoxLayout(); dash_frame.setLayout(dash_layout)
+                        dash_row = QHBoxLayout(); self.status_label = QLabel("Waiting..."); self.status_label.setStyleSheet("color: #888;"); dash_row.addWidget(self.status_label); dash_row.addStretch(); dash_layout.addLayout(dash_row)
+                        
+                        # System Stats Row
+                        self.stats_row = QWidget(); self.stats_row.setVisible(False); sr_lay = QHBoxLayout(self.stats_row); sr_lay.setContentsMargins(0,0,0,0); sr_lay.setSpacing(10)
+                        self.cpu_load_lbl = QLabel("CPU: 0%"); self.cpu_load_lbl.setStyleSheet("color: #E74C3C; font-weight: bold; font-size: 11px;")
+                        self.cpu_temp_lbl = QLabel(""); self.cpu_temp_lbl.setStyleSheet("color: #E74C3C; font-size: 11px;")
+                        self.gpu_load_lbl = QLabel(""); self.gpu_load_lbl.setStyleSheet("color: #3498DB; font-weight: bold; font-size: 11px;")
+                        self.gpu_temp_lbl = QLabel(""); self.gpu_temp_lbl.setStyleSheet("color: #3498DB; font-size: 11px;")
+                        sr_lay.addStretch(); sr_lay.addWidget(self.cpu_load_lbl); sr_lay.addWidget(self.cpu_temp_lbl); sr_lay.addWidget(self.gpu_load_lbl); sr_lay.addWidget(self.gpu_temp_lbl); sr_lay.addStretch()
+                        dash_layout.addWidget(self.stats_row)
                 
+                        self.pbar = QProgressBar(); self.pbar.setTextVisible(True); dash_layout.addWidget(self.pbar); queue_lay.addWidget(dash_frame)                
                 h = QHBoxLayout(); b_clr = QPushButton("Clear Queue"); b_clr.clicked.connect(self.list.clear)
                 self.btn_go = QPushButton("START BATCH"); self.btn_go.setObjectName("StartBtn"); self.btn_go.clicked.connect(self.on_btn_click)
                 self.btn_go.setToolTip("Start the batch conversion process for all files in the queue.")
                 h.addWidget(b_clr); h.addWidget(self.btn_go); queue_lay.addLayout(h); queue_group.setLayout(queue_lay); layout.addWidget(queue_group); layout.addStretch()
                 
-            def update_load_display(self, value):
-                self.load_label.setText(f"🔥 CPU: {value}%")
-        
-            def browse_files(self):
-                files, _ = QFileDialog.getOpenFileNames(self, "Select Videos", "", "Video Files (*.mp4 *.mov *.mkv *.avi)")
-                if files: [self.list.addItem(f) for f in files]; self.start_thumb_process(files)
-            def browse_dest(self):
-                d = QFileDialog.getExistingDirectory(self, "Pick a Destination")
-                if d: self.out_input.setText(d)
-            def dragEnterEvent(self, e):
-                if e.mimeData().hasUrls(): e.accept()
-            def dropEvent(self, e):
-                new_files = []
-                for u in e.mimeData().urls():
-                    f = u.toLocalFile()
-            def on_btn_click(self):
-                if self.is_processing: 
-                    self.stop() 
-                else: 
-                    self.start()
-        
-            def toggle_ui_state(self, running):
-                self.is_processing = running
-                self.load_label.setVisible(running)
-                if running: self.btn_go.setText("STOP BATCH"); self.btn_go.setObjectName("StopBtn")
-                else: self.btn_go.setText("START BATCH"); self.btn_go.setObjectName("StartBtn")
-                self.btn_go.style().unpolish(self.btn_go); self.btn_go.style().polish(self.btn_go)
+    def update_load_display(self, stats):
+        self.cpu_load_lbl.setText(f"CPU: {stats['cpu_load']}%")
+        self.cpu_temp_lbl.setText(f"({stats['cpu_temp']}°C)" if stats['cpu_temp'] > 0 else "")
+        if stats['has_gpu']:
+            self.gpu_load_lbl.setText(f"GPU: {stats['gpu_load']}%")
+            self.gpu_temp_lbl.setText(f"({stats['gpu_temp']}°C)" if stats['gpu_temp'] > 0 else "")
+            self.gpu_load_lbl.setVisible(True); self.gpu_temp_lbl.setVisible(True)
+        else:
+            self.gpu_load_lbl.setVisible(False); self.gpu_temp_lbl.setVisible(False)
+
+    def browse_files(self):
+# ...
+    def toggle_ui_state(self, running):
+        self.is_processing = running
+        self.stats_row.setVisible(running)
+        if running: self.btn_go.setText("STOP BATCH"); self.btn_go.setObjectName("StopBtn")
             def start(self):
                 files = [self.list.item(i).text() for i in range(self.list.count())]
                 if not files: return QMessageBox.warning(self, "Empty", "Queue is empty.")
