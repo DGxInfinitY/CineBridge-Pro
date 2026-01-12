@@ -99,6 +99,11 @@ class AsyncTranscoder(QThread):
         super().__init__(); self.settings = settings; self.use_gpu = use_gpu; self.queue = deque(); self.is_running = True; self.is_idle = True; self.total_expected_jobs = 0; self.completed_jobs = 0; self.producer_finished = False
     def set_total_jobs(self, count): self.total_expected_jobs = count
     def add_job(self, input_path, output_path, filename): self.queue.append({'in': input_path, 'out': output_path, 'name': filename})
+    def report_skipped(self, filename):
+        self.completed_jobs += 1
+        display_total = self.total_expected_jobs if self.total_expected_jobs > 0 else (self.completed_jobs + len(self.queue))
+        self.status_signal.emit(f"Skipped {self.completed_jobs}/{display_total}: {filename}")
+        self.progress_signal.emit(100) # Flash 100% for feedback
     def set_producer_finished(self): self.producer_finished = True
     def run(self):
         while self.is_running:

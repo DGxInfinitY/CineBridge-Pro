@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, 
     QFileDialog, QProgressBar, QTextEdit, QMessageBox, QCheckBox, QGroupBox, 
     QComboBox, QTabWidget, QFrame, QSplitter, QTreeWidget, QTreeWidgetItem, 
-    QGridLayout, QAbstractItemView, QListWidget, QMenu, QFormLayout
+    QGridLayout, QAbstractItemView, QListWidget, QMenu, QFormLayout, QSpinBox
 )
 from PyQt6.QtGui import QAction, QIcon, QPixmap
 from PyQt6.QtCore import Qt, QTimer, QSize
@@ -300,10 +300,7 @@ class IngestTab(QWidget):
             settings = self.transcode_widget.get_settings()
             if TranscodeEngine.is_edit_friendly(dest_path, settings.get('v_codec')):
                 self.append_copy_log(f"⏩ Smart Skip: {filename} is already {settings.get('v_codec')}.")
-                # We need to inform the transcoder that a job was skipped so the count matches?
-                # Actually, the transcoder just runs until queue is empty. 
-                # But the UI progress "Transcoding X/Total" might look off if Total was set high.
-                # Ideally we'd decrement the total in the worker, but for now skipping is fine.
+                self.transcode_worker.report_skipped(filename)
                 return
 
             base_dir = os.path.dirname(dest_path); tc_dir = os.path.join(base_dir, "Edit_Ready"); os.makedirs(tc_dir, exist_ok=True); name_only = os.path.splitext(filename)[0]; transcode_dest = os.path.join(tc_dir, f"{name_only}_EDIT.mov"); self.transcode_worker.add_job(dest_path, transcode_dest, filename)
@@ -544,10 +541,24 @@ class WatchTab(QWidget):
         self.monitored_files = {} 
         self.STABILITY_THRESHOLD = 3.0 # Seconds size must remain constant
         
+        # Stability Controls
+        stab_layout = QHBoxLayout()
+        stab_layout.addWidget(QLabel("File Stability Check (Seconds):"))
+        self.spin_stability = QSpinBox()
+        self.spin_stability.setRange(1, 60)
+        self.spin_stability.setValue(int(self.STABILITY_THRESHOLD))
+        self.spin_stability.valueChanged.connect(self.update_threshold)
+        stab_layout.addWidget(self.spin_stability)
+        stab_layout.addStretch()
+        layout.addLayout(stab_layout)
+        
         self.settings = TranscodeSettingsWidget("Watch Folder Transcode Settings", mode="general")
 # ... (existing UI setup) ...
         self.btn_toggle = QPushButton("ACTIVATE WATCH FOLDER"); self.btn_toggle.setObjectName("StartBtn"); self.btn_toggle.setMinimumHeight(50); self.btn_toggle.clicked.connect(self.toggle_watch); layout.addWidget(self.btn_toggle)
         layout.addStretch()
+
+    def update_threshold(self, val):
+        self.STABILITY_THRESHOLD = float(val)
 
     def browse_watch(self):
         d = QFileDialog.getExistingDirectory(self, "Select Folder to Watch")

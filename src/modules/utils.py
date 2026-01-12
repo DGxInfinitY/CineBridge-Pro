@@ -209,6 +209,9 @@ class TranscodeEngine:
     @staticmethod
     def is_edit_friendly(input_path, target_codec_family):
         """Checks if the file is already in the target codec family (dnxhd/prores)."""
+        # Normalize target family (e.g. 'prores_ks' -> 'prores')
+        if 'prores' in target_codec_family: target_codec_family = 'prores'
+        
         # Quick extension check first (optimization)
         ext = os.path.splitext(input_path)[1].lower()
         if target_codec_family == 'prores' and ext != '.mov': return False
