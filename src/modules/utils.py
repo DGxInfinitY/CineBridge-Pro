@@ -449,11 +449,31 @@ class SystemNotifier:
                     if icon != "dialog-information": QApplication.beep()
             
             elif system == "Darwin":
-# ...
+                # MacOS Notification
+                script = f'display notification "{message}" with title "{title}"'
+                if icon == "dialog-error": script += ' sound name "Basso"'
+                else: script += ' sound name "Glass"'
+                subprocess.run(["osascript", "-e", script])
+            
+            elif system == "Windows":
+                # Windows Toast (Simplified)
+                ps_script = f"""
+                [Windows.UI.Notifications.ToastNotificationManager, Windows.UI.Notifications, ContentType = WindowsRuntime] > $null;
+                $template_type = [Windows.UI.Notifications.ToastTemplateType]::ToastText02;
+                $template = [Windows.UI.Notifications.ToastNotificationManager]::GetTemplateContent($template_type);
+                $xml = $template.GetXml();
+                $text = $template.GetElementsByTagName("text");
+                $text[0].AppendChild($template.CreateTextNode("{title}")) > $null;
+                $text[1].AppendChild($template.CreateTextNode("{message}")) > $null;
+                $toast = [Windows.UI.Notifications.ToastNotification]::new($template);
+                [Windows.UI.Notifications.ToastNotificationManager]::CreateToastNotifier("CineBridge Pro").Show($toast);
+                """
+                subprocess.Popen(["powershell", "-Command", ps_script], creationflags=subprocess.CREATE_NO_WINDOW)
+            
             # Fallback beep for non-Linux if no specific sound played
             if system != "Linux":
                 if icon == "dialog-error": QApplication.beep()
-                elif icon == "dialog-information": QApplication.beep() # Re-add info beep
+                elif icon == "dialog-information": QApplication.beep()
         except Exception as e:
             debug_log(f"Notification failed: {e}")
 
