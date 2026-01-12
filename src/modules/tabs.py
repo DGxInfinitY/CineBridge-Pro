@@ -595,7 +595,13 @@ class ConvertTab(QWidget):
             self.gpu_load_lbl.setVisible(False); self.gpu_temp_lbl.setVisible(False)
 
     def browse_files(self):
-# ...
+        files, _ = QFileDialog.getOpenFileNames(self, "Select Videos", "", "Video Files (*.mp4 *.mov *.mkv *.avi)")
+        if files: [self.list.addItem(f) for f in files]; self.start_thumb_process(files)
+
+    def browse_dest(self): 
+        d = QFileDialog.getExistingDirectory(self, "Pick a Destination")
+        if d: self.out_input.setText(d)
+
     def toggle_ui_state(self, running):
         self.is_processing = running
         self.stats_row.setVisible(running)
@@ -638,63 +644,68 @@ class ConvertTab(QWidget):
         path = item.text()
         if os.path.exists(path):
             info = MediaInfoExtractor.get_info(path); dlg = MediaInfoDialog(info, self); dlg.exec()
-                    info = MediaInfoExtractor.get_info(path); dlg = MediaInfoDialog(info, self); dlg.exec()
+
+class DeliveryTab(QWidget):
+    def __init__(self):
+        super().__init__(); self.setAcceptDrops(True); self.is_processing = False
+        layout = QVBoxLayout(); layout.setSpacing(15); layout.setContentsMargins(20, 20, 20, 20); self.setLayout(layout)
         
-        class DeliveryTab(QWidget):
-            def __init__(self):
-                super().__init__(); self.setAcceptDrops(True); self.is_processing = False
-                layout = QVBoxLayout(); layout.setSpacing(15); layout.setContentsMargins(20, 20, 20, 20); self.setLayout(layout)
-                
-                self.settings = TranscodeSettingsWidget("1. Delivery Settings", mode="delivery")
-                self.settings.preset_combo.setCurrentText("H.264 / AVC (Standard)")
-                layout.addWidget(self.settings)
-                
-                # 2. Master File
-                master_group = QGroupBox("2. Master File"); master_lay = QVBoxLayout()
-                self.inp_file = FileDropLineEdit(); self.inp_file.setPlaceholderText("Drag Master File Here or Browse")
-                self.btn_sel_master = QPushButton("Select Master File..."); self.btn_sel_master.clicked.connect(lambda: self.inp_file.setText(QFileDialog.getOpenFileName(self, "Select Master File")[0]))
-                self.btn_sel_master.setToolTip("Select the high-quality master file for final delivery rendering.")
-                self.drop_area = QLabel("\n⬇️\n\nDRAG MASTER FILE HERE\n\n"); self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
-                self.drop_area.setStyleSheet("QLabel { border: 3px dashed #666; border-radius: 10px; background-color: #2b2b2b; color: #aaa; font-weight: bold; } QLabel:hover { border-color: #3498DB; background-color: #333; color: white; }")
-                master_lay.addWidget(self.btn_sel_master); master_lay.addWidget(self.inp_file); master_lay.addWidget(self.drop_area, 1); master_group.setLayout(master_lay); layout.addWidget(master_group, 1)
+        self.settings = TranscodeSettingsWidget("1. Delivery Settings", mode="delivery")
+        self.settings.preset_combo.setCurrentText("H.264 / AVC (Standard)")
+        layout.addWidget(self.settings)
         
-                # 3. Destination
-                dest_group = QGroupBox("3. Destination (Optional)"); dest_lay = QHBoxLayout()
-                self.inp_dest = QLineEdit(); self.inp_dest.setPlaceholderText("Default: Creates 'Final_Render' folder next to master")
-                self.btn_b2 = QPushButton("Browse..."); self.btn_b2.clicked.connect(lambda: self.inp_dest.setText(QFileDialog.getExistingDirectory(self, "Pick a Destination")))
-                dest_lay.addWidget(self.inp_dest); dest_lay.addWidget(self.btn_b2); dest_group.setLayout(dest_lay); layout.addWidget(dest_group)
-                
-                # 4. Render Dashboard
-                dash_frame = QFrame(); dash_frame.setObjectName("DashFrame"); dash_layout = QVBoxLayout(); dash_frame.setLayout(dash_layout)
-                self.status_label = QLabel("Ready to Render"); dash_layout.addWidget(self.status_label)
-                self.pbar = QProgressBar(); self.pbar.setTextVisible(True); dash_layout.addWidget(self.pbar); layout.addWidget(dash_frame)
-                
-                self.btn_go = QPushButton("GENERATE DELIVERY MASTER"); self.btn_go.setObjectName("StartBtn"); self.btn_go.setMinimumHeight(50); self.btn_go.clicked.connect(self.on_btn_click)
-                self.btn_go.setToolTip("Start the final render using delivery-optimized presets.")        layout.addWidget(self.btn_go); layout.addStretch()
+        # 2. Master File
+        master_group = QGroupBox("2. Master File"); master_lay = QVBoxLayout()
+        self.inp_file = FileDropLineEdit(); self.inp_file.setPlaceholderText("Drag Master File Here or Browse")
+        self.btn_sel_master = QPushButton("Select Master File..."); self.btn_sel_master.clicked.connect(lambda: self.inp_file.setText(QFileDialog.getOpenFileName(self, "Select Master File")[0]))
+        self.btn_sel_master.setToolTip("Select the high-quality master file for final delivery rendering.")
+        self.drop_area = QLabel("\n⬇️\n\nDRAG MASTER FILE HERE\n\n"); self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.drop_area.setStyleSheet("QLabel { border: 3px dashed #666; border-radius: 10px; background-color: #2b2b2b; color: #aaa; font-weight: bold; } QLabel:hover { border-color: #3498DB; background-color: #333; color: white; }")
+        master_lay.addWidget(self.btn_sel_master); master_lay.addWidget(self.inp_file); master_lay.addWidget(self.drop_area, 1); master_group.setLayout(master_lay); layout.addWidget(master_group, 1)
+
+        # 3. Destination
+        dest_group = QGroupBox("3. Destination (Optional)"); dest_lay = QHBoxLayout()
+        self.inp_dest = QLineEdit(); self.inp_dest.setPlaceholderText("Default: Creates 'Final_Render' folder next to master")
+        self.btn_b2 = QPushButton("Browse..."); self.btn_b2.clicked.connect(lambda: self.inp_dest.setText(QFileDialog.getExistingDirectory(self, "Pick a Destination")))
+        dest_lay.addWidget(self.inp_dest); dest_lay.addWidget(self.btn_b2); dest_group.setLayout(dest_lay); layout.addWidget(dest_group)
+        
+        # 4. Render Dashboard
+        dash_frame = QFrame(); dash_frame.setObjectName("DashFrame"); dash_layout = QVBoxLayout(); dash_frame.setLayout(dash_layout)
+        self.status_label = QLabel("Ready to Render"); dash_layout.addWidget(self.status_label)
+        self.pbar = QProgressBar(); self.pbar.setTextVisible(True); dash_layout.addWidget(self.pbar); layout.addWidget(dash_frame)
+        
+        self.btn_go = QPushButton("GENERATE DELIVERY MASTER"); self.btn_go.setObjectName("StartBtn"); self.btn_go.setMinimumHeight(50); self.btn_go.clicked.connect(self.on_btn_click)
+        self.btn_go.setToolTip("Start the final render using delivery-optimized presets.")
+        layout.addWidget(self.btn_go); layout.addStretch()
+
     def dragEnterEvent(self, e): 
         if e.mimeData().hasUrls(): e.accept()
+
     def dropEvent(self, e):
         urls = e.mimeData().urls() 
         if urls:
             fpath = urls[0].toLocalFile()
             if fpath.lower().endswith(('.mp4','.mov','.mkv','.avi')): self.inp_file.setText(fpath)
+
     def on_btn_click(self):
-        if self.is_processing: 
-            self.stop() 
-        else: 
-            self.start()
+        if self.is_processing: self.stop() 
+        else: self.start()
+
     def toggle_ui_state(self, running):
         self.is_processing = running
         if running: self.btn_go.setText("STOP RENDER"); self.btn_go.setObjectName("StopBtn")
         else: self.btn_go.setText("RENDER"); self.btn_go.setObjectName("StartBtn")
         self.btn_go.style().unpolish(self.btn_go); self.btn_go.style().polish(self.btn_go)
+
     def start(self):
         if not self.inp_file.text(): return QMessageBox.warning(self, "Missing Info", "Please select a master file.")
         self.toggle_ui_state(True); use_gpu = self.settings.is_gpu_enabled(); dest_folder = self.inp_dest.text().strip()
         self.worker = BatchTranscodeWorker([self.inp_file.text()], dest_folder, self.settings.get_settings(), mode="delivery", use_gpu=use_gpu)
         self.worker.progress_signal.connect(self.pbar.setValue); self.worker.status_signal.connect(self.status_label.setText); self.worker.finished_signal.connect(self.on_finished); self.worker.start()
+
     def stop(self):
         if self.worker: self.worker.stop(); self.status_label.setText("Stopping...")
+
     def on_finished(self):
         SystemNotifier.notify("Render Complete", "Delivery render finished.")
         self.toggle_ui_state(False); self.status_label.setText("Delivery Render Complete!"); dest = self.inp_dest.text(); 
