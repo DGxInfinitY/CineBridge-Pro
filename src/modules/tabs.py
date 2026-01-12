@@ -2,7 +2,7 @@ import os
 import signal
 from datetime import datetime
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, 
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, 
     QFileDialog, QProgressBar, QTextEdit, QMessageBox, QCheckBox, QGroupBox, 
     QComboBox, QTabWidget, QFrame, QSplitter, QTreeWidget, QTreeWidgetItem, 
     QGridLayout, QAbstractItemView, QListWidget, QMenu, QFormLayout
@@ -168,19 +168,23 @@ class IngestTab(QWidget):
         self.refresh_tree_view()
 
     def refresh_tree_view(self):
-        self.tree.setUpdatesEnabled(False) 
         try:
             self.tree.clear(); total_files = 0
             
             if not self.last_scan_results:
-                p = QTreeWidgetItem(self.tree); p.setText(0, "Scan source to review media selection."); p.setFlags(p.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+                p = QTreeWidgetItem(self.tree); p.setText(0, "Scan Complete: No media found on device."); p.setFlags(p.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
                 self.review_group.setVisible(True)
                 return
             
             sorted_dates = sorted(self.last_scan_results.keys(), reverse=True); video_exts = DeviceRegistry.VIDEO_EXTS
-            for date in sorted_dates:
+            
+            for i, date in enumerate(sorted_dates):
+                # Keep UI responsive during large list generation
+                if i % 5 == 0: QApplication.processEvents()
+                
                 all_files = self.last_scan_results[date]
                 files = [f for f in all_files if os.path.splitext(f)[1].upper() in video_exts] if self.check_videos_only.isChecked() else all_files
+                
                 if not files: continue
                 total_files += len(files)
                 date_item = QTreeWidgetItem(self.tree); date_item.setText(0, f"{date} ({len(files)} files)"); date_item.setFlags(date_item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsAutoTristate); date_item.setCheckState(0, Qt.CheckState.Checked)
@@ -188,7 +192,10 @@ class IngestTab(QWidget):
                     f_item = QTreeWidgetItem(date_item); f_item.setText(0, os.path.basename(f)); f_item.setData(0, Qt.ItemDataRole.UserRole, f); f_item.setFlags(f_item.flags() | Qt.ItemFlag.ItemIsUserCheckable); f_item.setCheckState(0, Qt.CheckState.Checked)
             
             if total_files == 0:
-                p = QTreeWidgetItem(self.tree); p.setText(0, "No matching media found for current filters."); p.setFlags(p.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+                p = QTreeWidgetItem(self.tree)
+                msg = "No video files found." if self.check_videos_only.isChecked() else "No matching media found."
+                p.setText(0, msg)
+                p.setFlags(p.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
             
             self.tree.expandAll()
             self.ingest_mode = "transfer"
@@ -202,7 +209,6 @@ class IngestTab(QWidget):
         finally:
             self.review_group.setVisible(True)
             self.import_btn.setEnabled(True)
-            self.tree.setUpdatesEnabled(True)
 
     def update_transfer_button_text(self):
         if not hasattr(self, 'import_btn'): return
