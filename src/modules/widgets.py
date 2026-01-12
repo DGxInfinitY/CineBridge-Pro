@@ -145,8 +145,10 @@ class TranscodeSettingsWidget(QGroupBox):
         if PresetManager.delete_preset(name): self.init_presets()
 
     def apply_preset(self):
-        text = self.preset_combo.currentText(); is_custom_entry = (text == "Custom")
-        self.advanced_frame.setEnabled(is_custom_entry or text.startswith("⭐ "))
+        text = self.preset_combo.currentText(); is_custom_entry = (text == "Custom"); is_user_preset = text.startswith("⭐ ")
+        self.advanced_frame.setEnabled(is_custom_entry or is_user_preset)
+        self.btn_del_preset.setEnabled(is_user_preset)
+        self.btn_export_preset.setEnabled(is_user_preset or is_custom_entry)
         
         data = self.preset_combo.currentData()
         if data and isinstance(data, dict):
