@@ -445,89 +445,37 @@ class IngestTab(QWidget):
 class ConvertTab(QWidget):
     def __init__(self):
         super().__init__()
-        self.setAcceptDrops(True)
-        self.is_processing = False
-        self.thumb_workers = []
+        self.setAcceptDrops(True); self.is_processing = False; self.thumb_workers = []
+        layout = QVBoxLayout(); layout.setSpacing(15); layout.setContentsMargins(20, 20, 20, 20); self.setLayout(layout)
         
-        layout = QVBoxLayout()
-        layout.setSpacing(15)
-        layout.setContentsMargins(20, 20, 20, 20)
-        self.setLayout(layout)
-        
-        self.settings = TranscodeSettingsWidget("Batch Conversion Settings", mode="general")
+        self.settings = TranscodeSettingsWidget("1. Conversion Settings", mode="general")
         layout.addWidget(self.settings)
         
-        # Input Files
-        input_group = QGroupBox("Input Files")
-        input_lay = QVBoxLayout()
-        self.btn_browse = QPushButton("Select Video Files...")
-        self.btn_browse.clicked.connect(self.browse_files)
-        input_lay.addWidget(self.btn_browse)
-        input_group.setLayout(input_lay)
-        layout.addWidget(input_group)
+        # 2. Input Media
+        input_group = QGroupBox("2. Input Media"); input_lay = QVBoxLayout()
+        self.btn_browse = QPushButton("Select Video Files..."); self.btn_browse.clicked.connect(self.browse_files); input_lay.addWidget(self.btn_browse)
+        self.drop_area = QLabel("\n⬇️\n\nDRAG & DROP VIDEO FILES HERE\n\n"); self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.drop_area.setStyleSheet("QLabel { border: 3px dashed #666; border-radius: 10px; background-color: #2b2b2b; color: #aaa; font-weight: bold; } QLabel:hover { border-color: #3498DB; background-color: #333; color: white; }")
+        input_lay.addWidget(self.drop_area, 1); input_group.setLayout(input_lay); layout.addWidget(input_group, 1)
 
-        # Output Location
-        out_group = QGroupBox("Output Location (Optional)")
-        out_lay = QHBoxLayout()
-        self.out_input = QLineEdit()
-        self.out_input.setPlaceholderText("Default: Creates 'Converted' folder next to source files")
-        self.btn_browse_out = QPushButton("Browse...")
-        self.btn_browse_out.clicked.connect(self.browse_dest)
-        self.btn_clear_out = QPushButton("Reset")
-        self.btn_clear_out.clicked.connect(self.out_input.clear)
-        out_lay.addWidget(self.out_input)
-        out_lay.addWidget(self.btn_browse_out)
-        out_lay.addWidget(self.btn_clear_out)
-        out_group.setLayout(out_lay)
-        layout.addWidget(out_group)
-        self.drop_area = QLabel("\n⬇️\n\nDRAG & DROP VIDEO FILES HERE\n\n")
-        self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.drop_area.setStyleSheet("""
-            QLabel { border: 3px dashed #666; border-radius: 10px; background-color: #2b2b2b; color: #aaa; font-weight: bold; }
-            QLabel:hover { border-color: #3498DB; background-color: #333; color: white; }
-        """)
-        input_lay.addWidget(self.drop_area, 1)
-        input_group.setLayout(input_lay)
-        layout.addWidget(input_group, 1)
+        # 3. Destination
+        out_group = QGroupBox("3. Destination (Optional)"); out_lay = QHBoxLayout()
+        self.out_input = QLineEdit(); self.out_input.setPlaceholderText("Default: Creates 'Converted' folder next to source files")
+        self.btn_browse_out = QPushButton("Browse..."); self.btn_browse_out.clicked.connect(self.browse_dest)
+        self.btn_clear_out = QPushButton("Reset"); self.btn_clear_out.clicked.connect(self.out_input.clear)
+        out_lay.addWidget(self.out_input); out_lay.addWidget(self.btn_browse_out); out_lay.addWidget(self.btn_clear_out); out_group.setLayout(out_lay); layout.addWidget(out_group)
         
-        # Job Queue
-        queue_group = QGroupBox("Job Queue")
-        queue_lay = QVBoxLayout()
-        self.list = QListWidget()
-        self.list.setMaximumHeight(150) # Increased height for thumbnails
-        self.list.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly)
-        self.list.setIconSize(QSize(96, 54))
-        self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu)
-        self.list.customContextMenuRequested.connect(self.show_context_menu)
-        queue_lay.addWidget(self.list)
+        # 4. Batch Queue
+        queue_group = QGroupBox("4. Batch Queue"); queue_lay = QVBoxLayout()
+        self.list = QListWidget(); self.list.setMaximumHeight(150); self.list.setDragDropMode(QAbstractItemView.DragDropMode.DropOnly); self.list.setIconSize(QSize(96, 54)); self.list.setContextMenuPolicy(Qt.ContextMenuPolicy.CustomContextMenu); self.list.customContextMenuRequested.connect(self.show_context_menu); queue_lay.addWidget(self.list)
         
-        dash_row = QHBoxLayout()
-        self.status_label = QLabel("Waiting...")
-        self.status_label.setStyleSheet("color: #888;")
-        self.load_label = QLabel("")
-        self.load_label.setStyleSheet("color: #E74C3C; font-weight: bold;")
-        self.load_label.setVisible(False)
-        dash_row.addWidget(self.status_label)
-        dash_row.addStretch()
-        dash_row.addWidget(self.load_label)
-        queue_lay.addLayout(dash_row)
+        dash_frame = QFrame(); dash_frame.setObjectName("DashFrame"); dash_layout = QVBoxLayout(); dash_frame.setLayout(dash_layout)
+        dash_row = QHBoxLayout(); self.status_label = QLabel("Waiting..."); self.status_label.setStyleSheet("color: #888;"); self.load_label = QLabel(""); self.load_label.setStyleSheet("color: #E74C3C; font-weight: bold;"); self.load_label.setVisible(False); dash_row.addWidget(self.status_label); dash_row.addStretch(); dash_row.addWidget(self.load_label); dash_layout.addLayout(dash_row)
+        self.pbar = QProgressBar(); self.pbar.setTextVisible(True); dash_layout.addWidget(self.pbar); queue_lay.addWidget(dash_frame)
         
-        self.pbar = QProgressBar()
-        self.pbar.setTextVisible(True)
-        queue_lay.addWidget(self.pbar)
-        
-        h = QHBoxLayout()
-        b_clr = QPushButton("Clear Queue")
-        b_clr.clicked.connect(self.list.clear)
-        self.btn_go = QPushButton("START BATCH")
-        self.btn_go.setObjectName("StartBtn")
-        self.btn_go.clicked.connect(self.on_btn_click)
-        h.addWidget(b_clr)
-        h.addWidget(self.btn_go)
-        queue_lay.addLayout(h)
-        queue_group.setLayout(queue_lay)
-        layout.addWidget(queue_group)
-        layout.addStretch()
+        h = QHBoxLayout(); b_clr = QPushButton("Clear Queue"); b_clr.clicked.connect(self.list.clear)
+        self.btn_go = QPushButton("START BATCH"); self.btn_go.setObjectName("StartBtn"); self.btn_go.clicked.connect(self.on_btn_click)
+        h.addWidget(b_clr); h.addWidget(self.btn_go); queue_lay.addLayout(h); queue_group.setLayout(queue_lay); layout.addWidget(queue_group); layout.addStretch()
         
     def update_load_display(self, value):
         self.load_label.setText(f"🔥 CPU: {value}%")
@@ -586,20 +534,34 @@ class ConvertTab(QWidget):
 
 class DeliveryTab(QWidget):
     def __init__(self):
-        super().__init__(); self.setAcceptDrops(True); layout = QVBoxLayout(); layout.setSpacing(15); layout.setContentsMargins(20, 20, 20, 20); self.setLayout(layout); self.is_processing = False
-        self.settings = TranscodeSettingsWidget("Delivery Settings", mode="delivery"); self.settings.preset_combo.setCurrentText("H.264 / AVC (Standard)"); layout.addWidget(self.settings)
-        form_group = QGroupBox("Input/Output"); fl = QFormLayout() 
+        super().__init__(); self.setAcceptDrops(True); self.is_processing = False
+        layout = QVBoxLayout(); layout.setSpacing(15); layout.setContentsMargins(20, 20, 20, 20); self.setLayout(layout)
+        
+        self.settings = TranscodeSettingsWidget("1. Delivery Settings", mode="delivery")
+        self.settings.preset_combo.setCurrentText("H.264 / AVC (Standard)")
+        layout.addWidget(self.settings)
+        
+        # 2. Master File
+        master_group = QGroupBox("2. Master File"); master_lay = QVBoxLayout()
         self.inp_file = FileDropLineEdit(); self.inp_file.setPlaceholderText("Drag Master File Here or Browse")
-        b1 = QPushButton("Select Master"); b1.clicked.connect(lambda: self.inp_file.setText(QFileDialog.getOpenFileName(self, "Select Master File")[0]))
-        self.inp_dest = QLineEdit(); self.inp_dest.setPlaceholderText("Default: Creates 'Final_Render' folder next to master file")
-        b2 = QPushButton("Select Output Folder"); b2.clicked.connect(lambda: self.inp_dest.setText(QFileDialog.getExistingDirectory(self, "Pick a Destination")))
-        r1 = QHBoxLayout(); r1.addWidget(self.inp_file); r1.addWidget(b1); r2 = QHBoxLayout(); r2.addWidget(self.inp_dest); r2.addWidget(b2)
-        fl.addRow("Master File:", r1); fl.addRow("Output Location:", r2); form_group.setLayout(fl); layout.addWidget(form_group)
-        self.drop_area = QLabel("\n⬇️\n\nDRAG MASTER FILE HERE\n\n"); self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter); self.drop_area.setStyleSheet("QLabel { border: 3px dashed #666; border-radius: 10px; background-color: #2b2b2b; color: #aaa; font-weight: bold; } QLabel:hover { border-color: #3498DB; background-color: #333; color: white; }"); layout.addWidget(self.drop_area, 1); layout.addStretch()
-        dash_frame = QFrame(); dash_frame.setObjectName("DashFrame"); dl = QVBoxLayout(dash_frame)
-        self.status = QLabel("Ready to Render"); dl.addWidget(self.status); self.pbar = QProgressBar(); self.pbar.setTextVisible(True); dl.addWidget(self.pbar); layout.addWidget(dash_frame)
-        self.btn_go = QPushButton("RENDER"); self.btn_go.setObjectName("StartBtn"); self.btn_go.setMinimumHeight(50); self.btn_go.clicked.connect(self.on_btn_click); layout.addWidget(self.btn_go)
-        layout.addStretch()
+        self.btn_sel_master = QPushButton("Select Master File..."); self.btn_sel_master.clicked.connect(lambda: self.inp_file.setText(QFileDialog.getOpenFileName(self, "Select Master File")[0]))
+        self.drop_area = QLabel("\n⬇️\n\nDRAG MASTER FILE HERE\n\n"); self.drop_area.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.drop_area.setStyleSheet("QLabel { border: 3px dashed #666; border-radius: 10px; background-color: #2b2b2b; color: #aaa; font-weight: bold; } QLabel:hover { border-color: #3498DB; background-color: #333; color: white; }")
+        master_lay.addWidget(self.btn_sel_master); master_lay.addWidget(self.inp_file); master_lay.addWidget(self.drop_area, 1); master_group.setLayout(master_lay); layout.addWidget(master_group, 1)
+
+        # 3. Destination
+        dest_group = QGroupBox("3. Destination (Optional)"); dest_lay = QHBoxLayout()
+        self.inp_dest = QLineEdit(); self.inp_dest.setPlaceholderText("Default: Creates 'Final_Render' folder next to master")
+        self.btn_b2 = QPushButton("Browse..."); self.btn_b2.clicked.connect(lambda: self.inp_dest.setText(QFileDialog.getExistingDirectory(self, "Pick a Destination")))
+        dest_lay.addWidget(self.inp_dest); dest_lay.addWidget(self.btn_b2); dest_group.setLayout(dest_lay); layout.addWidget(dest_group)
+        
+        # 4. Render Dashboard
+        dash_frame = QFrame(); dash_frame.setObjectName("DashFrame"); dash_layout = QVBoxLayout(); dash_frame.setLayout(dash_layout)
+        self.status = QLabel("Ready to Render"); dash_layout.addWidget(self.status)
+        self.pbar = QProgressBar(); self.pbar.setTextVisible(True); dash_layout.addWidget(self.pbar); layout.addWidget(dash_frame)
+        
+        self.btn_go = QPushButton("GENERATE DELIVERY MASTER"); self.btn_go.setObjectName("StartBtn"); self.btn_go.setMinimumHeight(50); self.btn_go.clicked.connect(self.on_btn_click)
+        layout.addWidget(self.btn_go); layout.addStretch()
     def dragEnterEvent(self, e): 
         if e.mimeData().hasUrls(): e.accept()
     def dropEvent(self, e):
@@ -632,24 +594,27 @@ class WatchTab(QWidget):
     def __init__(self):
         super().__init__(); layout = QVBoxLayout(); layout.setSpacing(15); layout.setContentsMargins(20, 20, 20, 20); self.setLayout(layout)
         self.is_active = False; self.processed_files = set(); self.timer = QTimer(); self.timer.timeout.connect(self.check_folder)
+        self.monitored_files = {}; self.STABILITY_THRESHOLD = 3.0
         
-        # Stability Monitoring: {path: {'size': int, 'first_seen': float, 'last_check': float}}
-        self.monitored_files = {} 
-        self.STABILITY_THRESHOLD = 3.0 # Seconds size must remain constant
-        
-        # Stability Controls
-        stab_layout = QHBoxLayout()
-        stab_layout.addWidget(QLabel("File Stability Check (Seconds):"))
-        self.spin_stability = QSpinBox()
-        self.spin_stability.setRange(1, 60)
-        self.spin_stability.setValue(int(self.STABILITY_THRESHOLD))
-        self.spin_stability.valueChanged.connect(self.update_threshold)
-        stab_layout.addWidget(self.spin_stability)
-        stab_layout.addStretch()
-        layout.addLayout(stab_layout)
-        
-        self.settings = TranscodeSettingsWidget("Watch Folder Transcode Settings", mode="general")
-# ... (existing UI setup) ...
+        # 1. Service Configuration
+        conf_group = QGroupBox("1. Service Configuration"); conf_lay = QVBoxLayout()
+        stab_layout = QHBoxLayout(); stab_layout.addWidget(QLabel("File Stability Check (Seconds):"))
+        self.spin_stability = QSpinBox(); self.spin_stability.setRange(1, 60); self.spin_stability.setValue(int(self.STABILITY_THRESHOLD)); self.spin_stability.valueChanged.connect(self.update_threshold); stab_layout.addWidget(self.spin_stability); stab_layout.addStretch(); conf_lay.addLayout(stab_layout)
+        self.settings = TranscodeSettingsWidget(mode="general"); conf_lay.addWidget(self.settings); conf_group.setLayout(conf_lay); layout.addWidget(conf_group)
+
+        # 2. Folder Selection
+        fold_group = QGroupBox("2. Folder Selection"); fold_lay = QFormLayout()
+        self.inp_watch = QLineEdit(); self.btn_watch = QPushButton("Browse..."); self.btn_watch.clicked.connect(self.browse_watch)
+        w_row = QHBoxLayout(); w_row.addWidget(self.inp_watch); w_row.addWidget(self.btn_watch)
+        self.inp_dest = QLineEdit(); self.btn_dest = QPushButton("Browse..."); self.btn_dest.clicked.connect(self.browse_dest)
+        d_row = QHBoxLayout(); d_row.addWidget(self.inp_dest); d_row.addWidget(self.btn_dest)
+        fold_lay.addRow("Watch Folder:", w_row); fold_lay.addRow("Destination:", d_row); fold_group.setLayout(fold_lay); layout.addWidget(fold_group)
+
+        # 3. Service Dashboard
+        dash_frame = QFrame(); dash_frame.setObjectName("DashFrame"); dash_layout = QVBoxLayout(); dash_frame.setLayout(dash_layout)
+        self.status_label = QLabel("Watch Folder: INACTIVE"); self.status_label.setStyleSheet("color: #888;"); dash_layout.addWidget(self.status_label)
+        self.pbar = QProgressBar(); self.pbar.setVisible(False); dash_layout.addWidget(self.pbar); layout.addWidget(dash_frame)
+
         self.btn_toggle = QPushButton("ACTIVATE WATCH FOLDER"); self.btn_toggle.setObjectName("StartBtn"); self.btn_toggle.setMinimumHeight(50); self.btn_toggle.clicked.connect(self.toggle_watch); layout.addWidget(self.btn_toggle)
         layout.addStretch()
 
