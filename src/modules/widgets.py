@@ -211,18 +211,28 @@ class TranscodeSettingsWidget(QGroupBox):
 
 class JobReportDialog(QDialog):
     def __init__(self, title, report_text, parent=None):
-        super().__init__(parent); self.setWindowTitle(title); self.setMinimumWidth(500); self.resize(600, 400); layout = QVBoxLayout()
+        super().__init__(parent); self.setWindowTitle(title); self.setMinimumWidth(500); self.resize(600, 450); layout = QVBoxLayout()
+        layout.setContentsMargins(20, 20, 20, 20); layout.setSpacing(15)
         
         # Theme Polish
         is_dark = self.palette().color(QPalette.ColorRole.Window).lightness() < 128
-        bg_color = "#2b2b2b" if is_dark else "#ffffff"
-        text_color = "#e0e0e0" if is_dark else "#333333"
+        bg_color = "#1e1e1e" if is_dark else "#f5f5f5"
+        text_color = "#2ECC71" if is_dark else "#27AE60" # Success Green
         
+        container = QFrame(); container.setObjectName("DashFrame")
+        if not is_dark: container.setStyleSheet("background-color: #eee; border: 1px solid #ccc; border-radius: 8px;")
+        
+        c_lay = QVBoxLayout(container)
         self.text_edit = QTextEdit(); self.text_edit.setReadOnly(True)
-        self.text_edit.setStyleSheet(f"background-color: {bg_color}; color: {text_color}; border: 1px solid #555;")
+        self.text_edit.setStyleSheet(f"background-color: {bg_color}; color: {text_color}; border: 1px solid #444; border-radius: 4px;")
         
-        self.text_edit.setHtml(f"<div style='font-family: Consolas, monospace; font-size: 13px; padding: 10px; color: {text_color};'>{report_text}</div>")
-        layout.addWidget(self.text_edit); ok_btn = QPushButton("OK"); ok_btn.clicked.connect(self.accept); layout.addWidget(ok_btn); self.setLayout(layout)
+        # Use more standard font and padding
+        self.text_edit.setHtml(f"<div style='font-family: Segoe UI, sans-serif; font-size: 14px; padding: 15px;'>{report_text}</div>")
+        c_lay.addWidget(self.text_edit)
+        layout.addWidget(container)
+        
+        ok_btn = QPushButton("DISMISS"); ok_btn.setMinimumHeight(40); ok_btn.clicked.connect(self.accept)
+        layout.addWidget(ok_btn); self.setLayout(layout)
 
 class FFmpegConfigDialog(QDialog):
     def __init__(self, parent=None):
