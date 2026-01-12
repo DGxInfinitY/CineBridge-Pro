@@ -368,6 +368,20 @@ class SettingsDialog(QDialog):
         self.chk_burn_feat.toggled.connect(parent.update_feature_visibility)
         feat_lay.addWidget(self.chk_burn_feat)
         feat_lay.addWidget(QLabel("<small><i>Adds filename, timecode, and watermark overlays to transcoded media.</i></small>"))
+
+        # Multi-Dest Toggle
+        self.chk_multi_dest = QCheckBox("Enable Multi-Destination Ingest")
+        self.chk_multi_dest.setChecked(parent.settings.value("feature_multi_dest", False, type=bool))
+        self.chk_multi_dest.toggled.connect(parent.update_feature_visibility)
+        feat_lay.addWidget(self.chk_multi_dest)
+        feat_lay.addWidget(QLabel("<small><i>Allows offloading media to up to 3 drives simultaneously.</i></small>"))
+
+        # Visual PDF Toggle
+        self.chk_visual_report = QCheckBox("Enable Visual PDF Reports")
+        self.chk_visual_report.setChecked(parent.settings.value("feature_visual_report", False, type=bool))
+        self.chk_visual_report.toggled.connect(parent.update_feature_visibility)
+        feat_lay.addWidget(self.chk_visual_report)
+        feat_lay.addWidget(QLabel("<small><i>Includes video thumbnails in generated transfer reports.</i></small>"))
         
         layout.addWidget(feat_group)
 

@@ -148,6 +148,24 @@ class CineBridgeApp(QMainWindow):
             if hasattr(tab, 'transcode_widget'): tab.transcode_widget.overlay_group.setVisible(show_burn)
             elif hasattr(tab, 'settings'): tab.settings.overlay_group.setVisible(show_burn)
 
+        # Multi-Dest Logic
+        show_multi = self.settings.value("feature_multi_dest", False, type=bool)
+        if hasattr(self, 'sender') and self.sender() and hasattr(self.sender(), 'text'):
+            if "Multi-Destination" in self.sender().text():
+                show_multi = self.sender().isChecked()
+                self.settings.setValue("feature_multi_dest", show_multi)
+        
+        # Visual Report Logic
+        show_visual = self.settings.value("feature_visual_report", False, type=bool)
+        if hasattr(self, 'sender') and self.sender() and hasattr(self.sender(), 'text'):
+            if "Visual PDF" in self.sender().text():
+                show_visual = self.sender().isChecked()
+                self.settings.setValue("feature_visual_report", show_visual)
+        
+        # Notify IngestTab to refresh its UI layout
+        if hasattr(self, 'tab_ingest'):
+            self.tab_ingest.update_pro_features_ui(show_multi, show_visual)
+
     def reset_to_defaults(self):
         reply = QMessageBox.question(self, "Confirm Reset", "Are you sure you want to reset all settings to default? This cannot be undone.", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
         if reply == QMessageBox.StandardButton.Yes:

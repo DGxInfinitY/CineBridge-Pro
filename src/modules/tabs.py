@@ -7,8 +7,8 @@ from PyQt6.QtWidgets import (
     QComboBox, QTabWidget, QFrame, QSplitter, QTreeWidget, QTreeWidgetItem, 
     QGridLayout, QAbstractItemView, QListWidget, QMenu, QFormLayout, QSpinBox
 )
-from PyQt6.QtGui import QAction, QIcon, QPixmap
-from PyQt6.QtCore import Qt, QTimer, QSize
+from PyQt6.QtGui import QAction, QIcon, QPixmap, QImage
+from PyQt6.QtCore import Qt, QTimer, QSize, QBuffer, QByteArray, QIODevice
 
 from .config import DEBUG_MODE, GUI_LOG_QUEUE, debug_log, info_log, error_log
 from .utils import DeviceRegistry, ReportGenerator, MHLGenerator, SystemNotifier, MediaInfoExtractor, TranscodeEngine
@@ -48,11 +48,27 @@ class IngestTab(QWidget):
         source_inner.addWidget(self.source_tabs); source_group.setLayout(source_inner)
 
         # 2. Dest Group
-        dest_group = QGroupBox("2. Destination"); dest_inner = QVBoxLayout()
+        dest_group = QGroupBox("2. Destination"); self.dest_inner = QVBoxLayout()
         self.project_name_input = QLineEdit(); self.project_name_input.setPlaceholderText("Project Name")
         self.dest_input = QLineEdit(); self.browse_dest_btn = QPushButton("Browse"); self.browse_dest_btn.clicked.connect(self.browse_dest)
-        dest_inner.addWidget(QLabel("Project Name:")); dest_inner.addWidget(self.project_name_input); dest_inner.addWidget(QLabel("Location:")); dest_inner.addWidget(self.dest_input); dest_inner.addWidget(self.browse_dest_btn); dest_inner.addStretch()
-        dest_group.setLayout(dest_inner)
+        
+        self.dest_inner.addWidget(QLabel("Project Name:")); self.dest_inner.addWidget(self.project_name_input); 
+        self.dest_lbl_1 = QLabel("Main Location:"); self.dest_inner.addWidget(self.dest_lbl_1); 
+        self.dest_inner.addWidget(self.dest_input); self.dest_inner.addWidget(self.browse_dest_btn)
+        
+        # Pro Destinations (Multi-Dest)
+        self.dest_2_wrap = QWidget(); d2_lay = QVBoxLayout(); d2_lay.setContentsMargins(0,0,0,0); self.dest_2_wrap.setLayout(d2_lay)
+        self.dest_input_2 = QLineEdit(); self.btn_b2 = QPushButton("Browse (Dest 2)"); self.btn_b2.clicked.connect(lambda: self.browse_dest_field(self.dest_input_2))
+        d2_lay.addWidget(QLabel("Destination 2:")); d2_lay.addWidget(self.dest_input_2); d2_lay.addWidget(self.btn_b2)
+        self.dest_inner.addWidget(self.dest_2_wrap); self.dest_2_wrap.setVisible(False)
+
+        self.dest_3_wrap = QWidget(); d3_lay = QVBoxLayout(); d3_lay.setContentsMargins(0,0,0,0); self.dest_3_wrap.setLayout(d3_lay)
+        self.dest_input_3 = QLineEdit(); self.btn_b3 = QPushButton("Browse (Dest 3)"); self.btn_b3.clicked.connect(lambda: self.browse_dest_field(self.dest_input_3))
+        d3_lay.addWidget(QLabel("Destination 3:")); d3_lay.addWidget(self.dest_input_3); d3_lay.addWidget(self.btn_b3)
+        self.dest_inner.addWidget(self.dest_3_wrap); self.dest_3_wrap.setVisible(False)
+
+        self.dest_inner.addStretch()
+        dest_group.setLayout(self.dest_inner)
 
         # 3. Settings Group
         settings_group = QGroupBox("3. Processing Settings"); settings_layout = QVBoxLayout()
@@ -131,6 +147,14 @@ class IngestTab(QWidget):
     def browse_dest(self):
         d = QFileDialog.getExistingDirectory(self, "Pick a Destination", self.dest_input.text()); 
         if d: self.dest_input.setText(d)
+    def browse_dest_field(self, field):
+        d = QFileDialog.getExistingDirectory(self, "Pick a Destination", field.text()); 
+        if d: field.setText(d)
+    def update_pro_features_ui(self, show_multi, show_visual):
+        self.dest_lbl_1.setText("Main Location:" if show_multi else "Location:")
+        self.dest_2_wrap.setVisible(show_multi)
+        self.dest_3_wrap.setVisible(show_multi)
+        self.check_report.setText("Gen Visual Report" if show_visual else "Gen Report")
     def append_copy_log(self, text): self.copy_log.append(text); sb = self.copy_log.verticalScrollBar(); sb.setValue(sb.maximum())
     def append_transcode_log(self, text): self.transcode_log.append(text); sb = self.transcode_log.verticalScrollBar(); sb.setValue(sb.maximum())
     def run_auto_scan(self): self.auto_info_label.setText("Scanning..."); self.result_card.setVisible(False); self.select_device_box.setVisible(False); self.scan_btn.setEnabled(False); self.scan_watchdog.start(30000); self.scan_worker = ScanWorker(); self.scan_worker.finished_signal.connect(self.on_scan_finished); self.scan_worker.start()
@@ -292,18 +316,23 @@ class IngestTab(QWidget):
                          selected_files.append(f_item.data(0, Qt.ItemDataRole.UserRole))
              if not selected_files: return QMessageBox.warning(self, "Error", "No files selected.")
 
-        src = self.current_detected_path if self.source_tabs.currentIndex() == 0 else self.source_input.text(); dest = self.dest_input.text()
-        if not src or not dest: return QMessageBox.warning(self, "Error", "Set Source/Dest")
+        src = self.current_detected_path if self.source_tabs.currentIndex() == 0 else self.source_input.text()
+        dest_list = [self.dest_input.text()]
+        if self.dest_input_2.text().strip(): dest_list.append(self.dest_input_2.text().strip())
+        if self.dest_input_3.text().strip(): dest_list.append(self.dest_input_3.text().strip())
+        
+        if not src or not dest_list[0]: return QMessageBox.warning(self, "Error", "Set Source/Main Dest")
+        
         self.save_tab_settings(); self.import_btn.setEnabled(False); self.cancel_btn.setEnabled(True); self.status_label.setText("INITIALIZING..."); self.copy_log.clear(); self.transcode_log.clear()
         if DEBUG_MODE and GUI_LOG_QUEUE:
             for msg in GUI_LOG_QUEUE: self.append_copy_log(msg)
             GUI_LOG_QUEUE.clear()
-        self.storage_bar.setVisible(False) # Reset storage bar visibility
+        self.storage_bar.setVisible(False) 
         tc_enabled = self.check_transcode.isChecked(); tc_settings = self.transcode_widget.get_settings(); use_gpu = self.transcode_widget.is_gpu_enabled()
         if tc_enabled:
             self.transcode_worker = AsyncTranscoder(tc_settings, use_gpu); self.transcode_worker.log_signal.connect(self.append_transcode_log); self.transcode_worker.status_signal.connect(self.transcode_status_label.setText); self.transcode_worker.metrics_signal.connect(self.transcode_status_label.setText); self.transcode_worker.all_finished_signal.connect(self.on_all_transcodes_finished); self.transcode_worker.start(); self.set_transcode_active(True)
         else: self.transcode_status_label.setVisible(False)
-        self.copy_worker = CopyWorker(src, dest, self.project_name_input.text(), self.check_date.isChecked(), self.check_dupe.isChecked(), self.check_videos_only.isChecked(), self.device_combo.currentText(), self.check_verify.isChecked(), file_list=selected_files)
+        self.copy_worker = CopyWorker(src, dest_list, self.project_name_input.text(), self.check_date.isChecked(), self.check_dupe.isChecked(), self.check_videos_only.isChecked(), self.device_combo.currentText(), self.check_verify.isChecked(), file_list=selected_files)
         self.copy_worker.log_signal.connect(self.append_copy_log); self.copy_worker.progress_signal.connect(self.progress_bar.setValue); self.copy_worker.status_signal.connect(self.status_label.setText); self.copy_worker.speed_signal.connect(self.speed_label.setText); self.copy_worker.finished_signal.connect(self.on_copy_finished)
         self.copy_worker.storage_check_signal.connect(self.update_storage_display_bar)
         if tc_enabled: self.copy_worker.transcode_count_signal.connect(self.transcode_worker.set_total_jobs); self.copy_worker.file_ready_signal.connect(self.queue_for_transcode)
@@ -336,33 +365,51 @@ class IngestTab(QWidget):
             SystemNotifier.notify("Ingest Complete", "All files copied successfully.")
             # Generate Report if checked
             if self.check_report.isChecked() and self.copy_worker:
-                report_name = f"Transfer_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-                report_path = os.path.join(self.dest_input.text(), report_name)
-                try:
-                    ReportGenerator.generate_pdf(report_path, self.copy_worker.transfer_data, self.project_name_input.text() or "Unnamed")
-                    self.append_copy_log(f"📝 Report: {report_path}")
-                except Exception as e:
-                    error_log(f"Report: Failed to generate PDF: {e}")
+                self.finalize_report()
             
             # Generate MHL if verification was active
             if self.check_verify.isChecked() and self.copy_worker:
                 try:
                     mhl_path = MHLGenerator.generate(self.dest_input.text(), self.copy_worker.transfer_data, self.project_name_input.text() or "CineBridge")
-                    self.append_copy_log(f"🛡️ MHL: {os.path.basename(mhl_path)}")
+                    self.append_copy_log(f"🛡️ MHL: {mhl_path}")
                 except Exception as e:
                     error_log(f"MHL: Failed to generate: {e}")
-        else: 
-            SystemNotifier.notify("Ingest Failed", "Operation failed or cancelled.")
+
+        self.status_label.setText(msg); self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False)
+        if not self.transcode_worker or self.transcode_worker.is_idle: self.set_transcode_active(False)
+
+    def finalize_report(self):
+        project = self.project_name_input.text() or "Unnamed"
+        report_name = f"Transfer_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
+        report_path = os.path.join(self.dest_input.text(), report_name)
+        is_visual = self.app.settings.value("feature_visual_report", False, type=bool)
         
-        if not self.check_transcode.isChecked():
-            self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False); self.status_label.setText(msg); 
-            if success: dlg = JobReportDialog("Ingest Complete", f"<h3>Ingest Successful</h3><p>{msg}</p>", self); dlg.exec()
-            elif "Insufficient Storage" in msg: QMessageBox.critical(self, "Error", msg)
-        else: 
-            self.status_label.setText("Copy Complete. Waiting for Transcodes..."); 
-            if self.transcode_worker: 
-                self.transcode_worker.set_producer_finished()
-                if not self.transcode_worker.queue and self.transcode_worker.is_idle: self.transcode_worker.all_finished_signal.emit()
+        if is_visual:
+            self.status_label.setText("GENERATING THUMBNAILS...")
+            video_files = [f['path'] for f in self.copy_worker.transfer_data if f['name'].upper().endswith(tuple(DeviceRegistry.VIDEO_EXTS))]
+            if video_files:
+                self.report_thumbs = {}
+                self.report_thumb_worker = ThumbnailWorker(video_files)
+                self.report_thumb_worker.thumb_ready.connect(self.on_report_thumb_ready)
+                self.report_thumb_worker.finished.connect(lambda: self.generate_final_pdf(report_path, project))
+                self.report_thumb_worker.start()
+                return 
+        self.generate_final_pdf(report_path, project)
+
+    def on_report_thumb_ready(self, path, image):
+        ba = QByteArray(); buffer = QBuffer(ba); buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        image.save(buffer, "PNG")
+        self.report_thumbs[os.path.basename(path)] = ba.toBase64().data().decode()
+
+    def generate_final_pdf(self, path, project):
+        try:
+            thumbs = getattr(self, 'report_thumbs', None)
+            ReportGenerator.generate_pdf(path, self.copy_worker.transfer_data, project, thumbs)
+            self.append_copy_log(f"📝 Report: {path}")
+            if hasattr(self, 'report_thumbs'): del self.report_thumbs
+            self.status_label.setText("✅ Ingest & Report Complete!")
+        except Exception as e: error_log(f"Report: Failed to generate PDF: {e}")
+
     def on_all_transcodes_finished(self):
         SystemNotifier.notify("Job Complete", "Ingest and Transcoding finished."); self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False); self.set_transcode_active(False); self.transcode_status_label.setText("All Transcodes Complete!"); dlg = JobReportDialog("Job Complete", "<h3>Job Complete</h3><p>All ingest and transcode operations finished successfully.</p>", self); dlg.exec()
     def save_tab_settings(self):

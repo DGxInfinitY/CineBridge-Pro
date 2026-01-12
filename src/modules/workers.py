@@ -152,8 +152,8 @@ class CopyWorker(QThread):
     # New Signal for Storage Check
     storage_check_signal = pyqtSignal(int, int, bool) # needed, free, is_enough
     
-    def __init__(self, source, dest, project_name, sort_by_date, skip_dupes, videos_only, camera_override, verify_copy, file_list=None):
-        super().__init__(); self.source = source; self.dest = dest; self.project_name = project_name.strip(); self.sort_by_date = sort_by_date; self.skip_dupes = skip_dupes; self.videos_only = videos_only; self.camera_override = camera_override; self.verify_copy = verify_copy; self.file_list = file_list; self.is_running = True
+    def __init__(self, source, dest_list, project_name, sort_by_date, skip_dupes, videos_only, camera_override, verify_copy, file_list=None):
+        super().__init__(); self.source = source; self.dest_list = [d.strip() for d in dest_list if d.strip()]; self.project_name = project_name.strip(); self.sort_by_date = sort_by_date; self.skip_dupes = skip_dupes; self.videos_only = videos_only; self.camera_override = camera_override; self.verify_copy = verify_copy; self.file_list = file_list; self.is_running = True
         self.main_video_exts = DeviceRegistry.VIDEO_EXTS
         self.transfer_data = [] # List of dicts for report
     
@@ -193,8 +193,18 @@ class CopyWorker(QThread):
         detected_cam = self.camera_override; 
         if detected_cam == "auto": detected_cam = "Generic_Device"
         self.log_signal.emit(f"System: Analyzing source...")
-        final_dest = self.dest
-        if self.project_name: final_dest = os.path.join(self.dest, self.project_name)
+        
+        # Calculate all final destinations
+        active_dests = []
+        for d in self.dest_list:
+            final = d
+            if self.project_name: final = os.path.join(d, self.project_name)
+            active_dests.append(final)
+
+        if not active_dests:
+            self.finished_signal.emit(False, "No destinations set.")
+            return
+
         valid_exts = tuple(DeviceRegistry.get_all_valid_exts())
         found_files = []
         
@@ -222,17 +232,15 @@ class CopyWorker(QThread):
         total_bytes = sum(os.path.getsize(f) for f in files_to_process)
         bytes_processed = 0
         
-        # --- PRE-FLIGHT STORAGE CHECK ---
-        free_bytes = self.get_free_space(final_dest)
-        
-        # Check if we have enough space (adding 50MB buffer)
-        is_enough = free_bytes > (total_bytes + 50*1024*1024)
-        self.storage_check_signal.emit(total_bytes, free_bytes, is_enough)
+        # --- PRE-FLIGHT STORAGE CHECK (Check all drives) ---
+        min_free = min(self.get_free_space(d) for d in active_dests)
+        is_enough = min_free > (total_bytes + 100*1024*1024) # 100MB buffer
+        self.storage_check_signal.emit(total_bytes, min_free, is_enough)
         
         if not is_enough:
              needed_gb = total_bytes / (1024**3)
-             free_gb = free_bytes / (1024**3)
-             err_msg = f"❌ Insufficient Storage! Needed: {needed_gb:.2f} GB, Available: {free_gb:.2f} GB"
+             free_gb = min_free / (1024**3)
+             err_msg = f"❌ Insufficient Storage! Needed: {needed_gb:.2f} GB, Smallest Free: {free_gb:.2f} GB"
              self.log_signal.emit(err_msg)
              self.finished_signal.emit(False, err_msg)
              return
@@ -249,32 +257,28 @@ class CopyWorker(QThread):
             if not self.is_running: break
             filename = os.path.basename(src_path)
             file_size = os.path.getsize(src_path)
-            target_dir = final_dest
-            if self.sort_by_date: target_dir = os.path.join(target_dir, self.get_media_date(src_path))
-            if detected_cam != "Generic_Device": target_dir = os.path.join(target_dir, detected_cam)
-            target_dir = os.path.join(target_dir, self.get_mmt_category(filename))
-            os.makedirs(target_dir, exist_ok=True)
-            dest_path = os.path.join(target_dir, filename)
-
-            if self.skip_dupes and os.path.exists(dest_path):
-                if os.path.getsize(dest_path) == file_size:
-                    self.log_signal.emit(f"Skipping (Dupe): {filename}")
-                    bytes_processed += file_size
-                    self.progress_signal.emit(int((bytes_processed / total_bytes) * 100))
-                    continue
             
+            # Prepare paths for all destinations
+            dest_paths = []
+            for base_dest in active_dests:
+                target_dir = base_dest
+                if self.sort_by_date: target_dir = os.path.join(target_dir, self.get_media_date(src_path))
+                if detected_cam != "Generic_Device": target_dir = os.path.join(target_dir, detected_cam)
+                target_dir = os.path.join(target_dir, self.get_mmt_category(filename))
+                os.makedirs(target_dir, exist_ok=True)
+                dest_paths.append(os.path.join(target_dir, filename))
+
             self.status_signal.emit(f"Copying {idx + 1}/{total_files}: {filename}")
             try:
                 # COPY PHASE
                 if HAS_XXHASH: 
-                    copy_hash = xxhash.xxh64()
-                    algo_name = "xxHash64"
+                    copy_hash = xxhash.xxh64(); algo_name = "xxHash64"
                 else: 
-                    copy_hash = hashlib.md5()
-                    algo_name = "MD5"
+                    copy_hash = hashlib.md5(); algo_name = "MD5"
 
                 with open(src_path, 'rb') as fsrc:
-                    with open(dest_path, 'wb') as fdst:
+                    target_handles = [open(d, 'wb') for d in dest_paths]
+                    try:
                         copied_this_file = 0; chunk_size = 1024 * 1024 * 4
                         while True:
                             if not self.is_running: break
@@ -283,7 +287,8 @@ class CopyWorker(QThread):
                             
                             if self.verify_copy: copy_hash.update(buf)
                             
-                            fdst.write(buf)
+                            for h in target_handles: h.write(buf)
+                            
                             len_buf = len(buf); copied_this_file += len_buf; bytes_since_last_time += len_buf
                             current_time = time.time()
                             if current_time - last_time >= 0.5:
@@ -291,38 +296,50 @@ class CopyWorker(QThread):
                                 self.speed_signal.emit(f"{speed_mbps:.1f} MB/s")
                                 last_time = current_time; bytes_since_last_time = 0
                             if total_bytes > 0: self.progress_signal.emit(int(((bytes_processed + copied_this_file) / total_bytes) * 100))
-                shutil.copystat(src_path, dest_path)
+                    finally:
+                        for h in target_handles: h.close()
+
+                for d in dest_paths: shutil.copystat(src_path, d)
                 
                 # VERIFICATION PHASE
                 current_hash = "N/A"
                 if self.verify_copy and self.is_running:
                     self.status_signal.emit(f"Verifying {idx + 1}/{total_files}: {filename}")
-                    
-                    # Zero-overhead source hash
                     src_hash = copy_hash.hexdigest()
-                    dest_hash, _ = self.calculate_hash(dest_path)
                     
-                    if src_hash and dest_hash and src_hash == dest_hash:
+                    # Verify ALL destinations
+                    all_verified = True
+                    for d in dest_paths:
+                        dest_hash, _ = self.calculate_hash(d)
+                        if src_hash != dest_hash:
+                            all_verified = False
+                            self.log_signal.emit(f"❌ VERIFY FAILED on: {d}")
+                    
+                    if all_verified:
                         self.log_signal.emit(f"✅ Verified ({algo_name}): {filename}")
                         current_hash = src_hash
                     else:
-                        self.log_signal.emit(f"❌ VERIFICATION FAILED: {filename}")
                         current_hash = "FAILED"
                 else:
-                    self.log_signal.emit(f"✔️ Copied: {filename}")
+                    self.log_signal.emit(f"✔️ Copied: {filename} (to {len(dest_paths)} drives)")
 
                 # Store for report
                 self.transfer_data.append({
                     'name': filename,
+                    'path': dest_paths[0], # Primary path for thumb extraction
                     'size': file_size,
                     'hash': current_hash,
                     'status': "OK" if current_hash != "FAILED" else "VERIFY FAILED"
                 })
 
                 if filename.upper().endswith(('.MP4', '.MOV', '.MKV', '.AVI')):
-                    self.file_ready_signal.emit(src_path, dest_path, filename)
+                    # Signal ready using MAIN destination (first one) for transcoding
+                    self.file_ready_signal.emit(src_path, dest_paths[0], filename)
             except Exception as e: self.log_signal.emit(f"❌ Error {filename}: {e}")
             bytes_processed += file_size
+
+        if not self.is_running: self.finished_signal.emit(False, "🚫 Operation Aborted")
+        else: self.finished_signal.emit(True, "✅ Ingest Complete!")
 
         if not self.is_running: self.finished_signal.emit(False, "🚫 Operation Aborted")
         else: self.finished_signal.emit(True, "✅ Ingest Complete!")

@@ -280,8 +280,9 @@ class MediaInfoExtractor:
 
 class ReportGenerator:
     @staticmethod
-    def generate_pdf(dest_path, file_data_list, project_name="Unnamed Project"):
+    def generate_pdf(dest_path, file_data_list, project_name="Unnamed Project", thumbnails=None):
         """Generates a professional DIT transfer report in PDF format."""
+        is_visual = thumbnails is not None
         html = f"""
         <html>
         <head>
@@ -290,9 +291,10 @@ class ReportGenerator:
                 h1 {{ color: #2980B9; border-bottom: 2px solid #2980B9; padding-bottom: 10px; }}
                 .header-info {{ margin-bottom: 20px; font-size: 14px; }}
                 table {{ width: 100%; border-collapse: collapse; }}
-                th, td {{ border: 1px solid #eee; padding: 8px; text-align: left; font-size: 11px; }}
+                th, td {{ border: 1px solid #eee; padding: 8px; text-align: left; font-size: 11px; vertical-align: middle; }}
                 th {{ background-color: #f8f9fa; color: #2980B9; font-weight: bold; }}
                 tr:nth-child(even) {{ background-color: #fafafa; }}
+                .thumb {{ width: 120px; height: 68px; background-color: #000; display: block; }}
                 .footer {{ margin-top: 40px; font-size: 10px; color: #aaa; text-align: center; border-top: 1px solid #eee; padding-top: 10px; }}
             </style>
         </head>
@@ -306,6 +308,7 @@ class ReportGenerator:
             <table>
                 <thead>
                     <tr>
+                        {"<th>Preview</th>" if is_visual else ""}
                         <th>Filename</th>
                         <th>Size (MB)</th>
                         <th>Checksum (Hash)</th>
@@ -317,7 +320,13 @@ class ReportGenerator:
         total_bytes = 0
         for f in file_data_list:
             size_mb = f.get('size', 0) / (1024*1024); total_bytes += f.get('size', 0)
-            html += f"<tr><td>{f['name']}</td><td>{size_mb:.2f}</td><td><code>{f.get('hash', 'N/A')}</code></td><td>✅ OK</td></tr>"
+            thumb_html = ""
+            if is_visual:
+                b64 = thumbnails.get(f['name'], "")
+                if b64: thumb_html = f'<td><img src="data:image/png;base64,{b64}" class="thumb"></td>'
+                else: thumb_html = '<td><div class="thumb" style="background:#333;"></div></td>'
+            
+            html += f"<tr>{thumb_html}<td>{f['name']}</td><td>{size_mb:.2f}</td><td><code>{f.get('hash', 'N/A')}</code></td><td>✅ OK</td></tr>"
         
         html += f"""
                 </tbody>
