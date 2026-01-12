@@ -85,17 +85,29 @@ class IngestTab(QWidget):
         self.check_date = QCheckBox("Sort Date"); rules_grid.addWidget(self.check_date, 0, 0)
         self.check_dupe = QCheckBox("Skip Dupes"); rules_grid.addWidget(self.check_dupe, 0, 1)
         self.check_videos_only = QCheckBox("Video Only"); self.check_videos_only.toggled.connect(self.refresh_tree_view); rules_grid.addWidget(self.check_videos_only, 0, 2)
+        
         self.check_verify = QCheckBox("Verify Copy"); self.check_verify.setStyleSheet("color: #27AE60; font-weight: bold;"); rules_grid.addWidget(self.check_verify, 1, 0)
         self.check_verify.setToolTip("Performs hash verification (xxHash/MD5) after copy.")
+        
         self.check_report = QCheckBox("Gen Report"); self.check_report.setToolTip("Generate professional PDF DIT Report on completion.")
         rules_grid.addWidget(self.check_report, 1, 1)
+        
+        self.check_mhl = QCheckBox("Gen MHL"); self.check_mhl.setToolTip("Generate ASC-MHL compliant checksum list.")
+        rules_grid.addWidget(self.check_mhl, 1, 2)
+
         self.check_transcode = QCheckBox("Enable Transcode"); self.check_transcode.setStyleSheet("color: #E67E22; font-weight: bold;"); self.check_transcode.toggled.connect(self.toggle_transcode_ui)
-        # Fix: Align left to prevent background stretching
-        rules_grid.addWidget(self.check_transcode, 1, 2, 1, 1, Qt.AlignmentFlag.AlignLeft)
+        rules_grid.addWidget(self.check_transcode, 2, 0, 1, 1, Qt.AlignmentFlag.AlignLeft)
         settings_layout.addLayout(rules_grid)
         
-        self.btn_config_trans = QPushButton("Configure Transcode..."); self.btn_config_trans.setVisible(False); self.btn_config_trans.clicked.connect(self.open_transcode_config); settings_layout.addWidget(self.btn_config_trans)
+        # Pro Config Buttons
+        config_btns = QHBoxLayout()
+        self.btn_config_trans = QPushButton("Configure Transcode..."); self.btn_config_trans.setVisible(False); self.btn_config_trans.clicked.connect(self.open_transcode_config)
+        self.btn_config_reports = QPushButton("Reports Settings..."); self.btn_config_reports.setVisible(False); self.btn_config_reports.clicked.connect(self.open_report_config)
+        config_btns.addWidget(self.btn_config_trans); config_btns.addWidget(self.btn_config_reports)
+        settings_layout.addLayout(config_btns)
+        
         self.transcode_widget = TranscodeSettingsWidget(mode="general")
+        self.report_custom_path = "" # State for custom destination
         settings_layout.addStretch()
         settings_group.setLayout(settings_layout)
         
@@ -160,7 +172,23 @@ class IngestTab(QWidget):
         self.dest_lbl_1.setText("Main Location:" if show_multi else "Location:")
         self.dest_2_wrap.setVisible(show_multi)
         self.dest_3_wrap.setVisible(show_multi)
+        
+        # New Report/MHL Visibility Logic
+        show_pdf = self.app.settings.value("feature_pdf_report", True, type=bool)
+        show_mhl = self.app.settings.value("feature_mhl", False, type=bool)
+        dest_mode = self.app.settings.value("report_dest_mode", "project")
+        
+        self.check_report.setVisible(show_pdf)
         self.check_report.setText("Gen Visual Report" if show_visual else "Gen Report")
+        self.check_mhl.setVisible(show_mhl)
+        
+        # Only show Report Settings button if PDF/MHL is on AND mode is 'custom'
+        self.btn_config_reports.setVisible((show_pdf or show_mhl) and dest_mode == "custom")
+
+    def open_report_config(self):
+        d = QFileDialog.getExistingDirectory(self, "Select Custom Report Destination", self.report_custom_path or self.dest_input.text())
+        if d: self.report_custom_path = d
+
     def append_copy_log(self, text): self.copy_log.append(text); sb = self.copy_log.verticalScrollBar(); sb.setValue(sb.maximum())
     def append_transcode_log(self, text): self.transcode_log.append(text); sb = self.transcode_log.verticalScrollBar(); sb.setValue(sb.maximum())
     def run_auto_scan(self): self.auto_info_label.setText("Scanning..."); self.result_card.setVisible(False); self.select_device_box.setVisible(False); self.scan_btn.setEnabled(False); self.scan_watchdog.start(30000); self.scan_worker = ScanWorker(); self.scan_worker.finished_signal.connect(self.on_scan_finished); self.scan_worker.start()
@@ -387,14 +415,25 @@ class IngestTab(QWidget):
     def on_copy_finished(self, success, msg):
         self.speed_label.setText(""); 
         if success: 
-            # Generate Report if checked
-            if self.check_report.isChecked() and self.copy_worker:
-                self.finalize_report()
+            # 1. Determine Deliverables Destination
+            dest_mode = self.app.settings.value("report_dest_mode", "project")
+            if dest_mode == "fixed":
+                deliverables_path = self.app.settings.value("report_fixed_path", self.dest_input.text())
+            elif dest_mode == "custom" and self.report_custom_path:
+                deliverables_path = self.report_custom_path
+            else: # 'project'
+                deliverables_path = self.dest_input.text()
             
-            # Generate MHL if verification was active
-            if self.check_verify.isChecked() and self.copy_worker:
+            os.makedirs(deliverables_path, exist_ok=True)
+
+            # 2. Generate Report if checked
+            if self.check_report.isVisible() and self.check_report.isChecked() and self.copy_worker:
+                self.finalize_report(deliverables_path)
+            
+            # 3. Generate MHL if checked
+            if self.check_mhl.isVisible() and self.check_mhl.isChecked() and self.copy_worker:
                 try:
-                    mhl_path = MHLGenerator.generate(self.dest_input.text(), self.copy_worker.transfer_data, self.project_name_input.text() or "CineBridge")
+                    mhl_path = MHLGenerator.generate(deliverables_path, self.copy_worker.transfer_data, self.project_name_input.text() or "CineBridge")
                     self.append_copy_log(f"🛡️ MHL: {mhl_path}")
                 except Exception as e:
                     error_log(f"MHL: Failed to generate: {e}")
@@ -417,10 +456,10 @@ class IngestTab(QWidget):
             self.import_btn.setText("COMPLETE"); self.import_btn.setStyleSheet("background-color: #27AE60; color: white;")
             self.set_transcode_active(False)
 
-    def finalize_report(self):
+    def finalize_report(self, deliverables_path):
         project = self.project_name_input.text() or "Unnamed"
         report_name = f"Transfer_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf"
-        report_path = os.path.join(self.dest_input.text(), report_name)
+        report_path = os.path.join(deliverables_path, report_name)
         is_visual = self.app.settings.value("feature_visual_report", False, type=bool)
         
         if is_visual:
@@ -441,11 +480,11 @@ class IngestTab(QWidget):
         image.save(buffer, "PNG")
         self.report_thumbs[os.path.basename(path)] = ba.toBase64().data().decode()
 
-    def generate_final_pdf(self, path, project):
+    def generate_final_pdf(self, report_path, project):
         try:
             thumbs = getattr(self, 'report_thumbs', None)
-            ReportGenerator.generate_pdf(path, self.copy_worker.transfer_data, project, thumbs)
-            self.append_copy_log(f"📝 Report: {path}")
+            ReportGenerator.generate_pdf(report_path, self.copy_worker.transfer_data, project, thumbs)
+            self.append_copy_log(f"📝 Report: {report_path}")
             if hasattr(self, 'report_thumbs'): del self.report_thumbs
             self.status_label.setText("✅ Ingest & Report Complete!")
         except Exception as e: error_log(f"Report: Failed to generate PDF: {e}")
@@ -460,10 +499,10 @@ class IngestTab(QWidget):
         dlg = JobReportDialog("Job Complete", f"<h3>Job Successful</h3><p>All ingest{v_msg} and transcode operations finished successfully.<br>Your media is ready for edit.</p>", self)
         dlg.exec()
     def save_tab_settings(self):
-        s = self.app.settings; s.setValue("last_source", self.source_input.text()); s.setValue("last_dest", self.dest_input.text()); s.setValue("sort_date", self.check_date.isChecked()); s.setValue("skip_dupe", self.check_dupe.isChecked()); s.setValue("videos_only", self.check_videos_only.isChecked()); s.setValue("transcode_dnx", self.check_transcode.isChecked()); s.setValue("verify_copy", self.check_verify.isChecked()); s.setValue("gen_report", self.check_report.isChecked())
+        s = self.app.settings; s.setValue("last_source", self.source_input.text()); s.setValue("last_dest", self.dest_input.text()); s.setValue("sort_date", self.check_date.isChecked()); s.setValue("skip_dupe", self.check_dupe.isChecked()); s.setValue("videos_only", self.check_videos_only.isChecked()); s.setValue("transcode_dnx", self.check_transcode.isChecked()); s.setValue("verify_copy", self.check_verify.isChecked()); s.setValue("gen_report", self.check_report.isChecked()); s.setValue("gen_mhl", self.check_mhl.isChecked())
         s.setValue("show_copy_log", self.copy_log.isVisible()); s.setValue("show_trans_log", self.transcode_log.isVisible())
     def load_tab_settings(self):
-        s = self.app.settings; self.source_input.setText(s.value("last_source", "")); self.dest_input.setText(s.value("last_dest", "")); self.check_date.setChecked(s.value("sort_date", True, type=bool)); self.check_dupe.setChecked(s.value("skip_dupe", True, type=bool)); self.check_videos_only.setChecked(s.value("videos_only", False, type=bool)); self.check_transcode.setChecked(s.value("transcode_dnx", False, type=bool)); self.check_verify.setChecked(s.value("verify_copy", False, type=bool)); self.check_report.setChecked(s.value("gen_report", True, type=bool))
+        s = self.app.settings; self.source_input.setText(s.value("last_source", "")); self.dest_input.setText(s.value("last_dest", "")); self.check_date.setChecked(s.value("sort_date", True, type=bool)); self.check_dupe.setChecked(s.value("skip_dupe", True, type=bool)); self.check_videos_only.setChecked(s.value("videos_only", False, type=bool)); self.check_transcode.setChecked(s.value("transcode_dnx", False, type=bool)); self.check_verify.setChecked(s.value("verify_copy", False, type=bool)); self.check_report.setChecked(s.value("gen_report", True, type=bool)); self.check_mhl.setChecked(s.value("gen_mhl", False, type=bool))
         show_copy = s.value("show_copy_log", True, type=bool); show_trans = s.value("show_trans_log", False, type=bool); self.toggle_logs(show_copy, show_trans); self.toggle_transcode_ui(self.check_transcode.isChecked())
 
 class ConvertTab(QWidget):

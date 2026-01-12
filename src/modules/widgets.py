@@ -341,6 +341,87 @@ class MediaInfoDialog(QDialog):
         layout.addStretch()
         close_btn = QPushButton("Close"); close_btn.clicked.connect(self.accept); layout.addWidget(close_btn)
 
+class AdvancedFeaturesDialog(QDialog):
+    def __init__(self, parent):
+        super().__init__(parent); self.setWindowTitle("Advanced Feature Configuration"); self.setMinimumWidth(550); self.parent_app = parent; layout = QVBoxLayout()
+        self.settings = parent.settings
+        
+        feat_group = QGroupBox("Pro / Workflow Features"); feat_lay = QVBoxLayout(); feat_group.setLayout(feat_lay)
+        
+        # Watch Folder
+        self.chk_watch = QCheckBox("Enable Watch Folder Service")
+        self.chk_watch.setChecked(self.settings.value("feature_watch_folder", False, type=bool))
+        feat_lay.addWidget(self.chk_watch)
+        
+        # Burn-in
+        self.chk_burn = QCheckBox("Enable Burn-in Tools (Dailies)")
+        self.chk_burn.setChecked(self.settings.value("feature_burn_in", False, type=bool))
+        feat_lay.addWidget(self.chk_burn)
+
+        # Multi-Dest
+        self.chk_multi = QCheckBox("Enable Multi-Destination Ingest")
+        self.chk_multi.setChecked(self.settings.value("feature_multi_dest", False, type=bool))
+        feat_lay.addWidget(self.chk_multi)
+
+        # MHL
+        self.chk_mhl = QCheckBox("Enable MHL Generation (Media Hash List)")
+        self.chk_mhl.setChecked(self.settings.value("feature_mhl", False, type=bool))
+        feat_lay.addWidget(self.chk_mhl)
+
+        # PDF Reports
+        self.chk_pdf = QCheckBox("Enable PDF Transfer Reports")
+        self.chk_pdf.setChecked(self.settings.value("feature_pdf_report", True, type=bool))
+        feat_lay.addWidget(self.chk_pdf)
+
+        # Visual PDF
+        self.chk_visual = QCheckBox("Use Visual PDF Reports (Thumbnails)")
+        self.chk_visual.setChecked(self.settings.value("feature_visual_report", False, type=bool))
+        feat_lay.addWidget(self.chk_visual)
+        
+        layout.addWidget(feat_group)
+
+        dest_group = QGroupBox("Report & MHL Destination"); dest_lay = QVBoxLayout(); dest_group.setLayout(dest_lay)
+        self.combo_dest = QComboBox()
+        self.combo_dest.addItem("Follow Project Folder (Default)", "project")
+        self.combo_dest.addItem("Fixed Global Destination", "fixed")
+        self.combo_dest.addItem("Ask / Change Per Job", "custom")
+        mode = self.settings.value("report_dest_mode", "project")
+        idx = self.combo_dest.findData(mode)
+        if idx >= 0: self.combo_dest.setCurrentIndex(idx)
+        dest_lay.addWidget(QLabel("Destination Strategy:"))
+        dest_lay.addWidget(self.combo_dest)
+
+        fixed_lay = QHBoxLayout(); self.inp_fixed = QLineEdit(); self.inp_fixed.setText(self.settings.value("report_fixed_path", ""))
+        self.btn_fixed = QPushButton("Browse..."); self.btn_fixed.clicked.connect(self.browse_fixed)
+        fixed_lay.addWidget(self.inp_fixed); fixed_lay.addWidget(self.btn_fixed)
+        self.fixed_wrap = QWidget(); self.fixed_wrap.setLayout(fixed_lay)
+        dest_lay.addWidget(self.fixed_wrap)
+        
+        self.combo_dest.currentIndexChanged.connect(lambda: self.fixed_wrap.setVisible(self.combo_dest.currentData() == "fixed"))
+        self.fixed_wrap.setVisible(mode == "fixed")
+        
+        layout.addWidget(dest_group)
+
+        btns = QHBoxLayout(); btn_save = QPushButton("SAVE & APPLY"); btn_save.clicked.connect(self.save_settings); btn_cancel = QPushButton("Cancel"); btn_cancel.clicked.connect(self.reject)
+        btns.addStretch(); btns.addWidget(btn_cancel); btns.addWidget(btn_save); layout.addLayout(btns); self.setLayout(layout)
+
+    def browse_fixed(self):
+        d = QFileDialog.getExistingDirectory(self, "Select Global Report Folder", self.inp_fixed.text())
+        if d: self.inp_fixed.setText(d)
+
+    def save_settings(self):
+        self.settings.setValue("feature_watch_folder", self.chk_watch.isChecked())
+        self.settings.setValue("feature_burn_in", self.chk_burn.isChecked())
+        self.settings.setValue("feature_multi_dest", self.chk_multi.isChecked())
+        self.settings.setValue("feature_mhl", self.chk_mhl.isChecked())
+        self.settings.setValue("feature_pdf_report", self.chk_pdf.isChecked())
+        self.settings.setValue("feature_visual_report", self.chk_visual.isChecked())
+        self.settings.setValue("report_dest_mode", self.combo_dest.currentData())
+        self.settings.setValue("report_fixed_path", self.inp_fixed.text())
+        self.settings.sync()
+        self.parent_app.update_feature_visibility()
+        self.accept()
+
 class SettingsDialog(QDialog):
     def __init__(self, parent):
         super().__init__(parent); self.parent_app = parent; self.setWindowTitle("CineBridge Settings"); self.setMinimumWidth(500); layout = QVBoxLayout()
@@ -357,37 +438,11 @@ class SettingsDialog(QDialog):
         self.chk_copy.toggled.connect(self.apply_view_options); self.chk_trans.toggled.connect(self.apply_view_options)
         view_lay.addWidget(self.chk_copy); view_lay.addWidget(self.chk_trans); view_group.setLayout(view_lay); layout.addWidget(view_group)
 
-        feat_group = QGroupBox("Experimental / Pro Features"); feat_lay = QVBoxLayout(); feat_group.setLayout(feat_lay)
-        
-        # Watch Folder Toggle
-        self.chk_watch_feat = QCheckBox("Enable Watch Folder Service")
-        self.chk_watch_feat.setChecked(parent.settings.value("feature_watch_folder", False, type=bool))
-        self.chk_watch_feat.toggled.connect(parent.update_feature_visibility)
-        feat_lay.addWidget(self.chk_watch_feat)
-        feat_lay.addWidget(QLabel("<small><i>Automates proxy generation for any files dropped into a specific folder.</i></small>"))
-        
-        # Burn-in Toggle
-        self.chk_burn_feat = QCheckBox("Enable Burn-in Tools")
-        self.chk_burn_feat.setChecked(parent.settings.value("feature_burn_in", False, type=bool))
-        self.chk_burn_feat.toggled.connect(parent.update_feature_visibility)
-        feat_lay.addWidget(self.chk_burn_feat)
-        feat_lay.addWidget(QLabel("<small><i>Adds filename, timecode, and watermark overlays to transcoded media.</i></small>"))
-
-        # Multi-Dest Toggle
-        self.chk_multi_dest = QCheckBox("Enable Multi-Destination Ingest")
-        self.chk_multi_dest.setChecked(parent.settings.value("feature_multi_dest", False, type=bool))
-        self.chk_multi_dest.toggled.connect(parent.update_feature_visibility)
-        feat_lay.addWidget(self.chk_multi_dest)
-        feat_lay.addWidget(QLabel("<small><i>Allows offloading media to up to 3 drives simultaneously.</i></small>"))
-
-        # Visual PDF Toggle
-        self.chk_visual_report = QCheckBox("Enable Visual PDF Reports")
-        self.chk_visual_report.setChecked(parent.settings.value("feature_visual_report", False, type=bool))
-        self.chk_visual_report.toggled.connect(parent.update_feature_visibility)
-        feat_lay.addWidget(self.chk_visual_report)
-        feat_lay.addWidget(QLabel("<small><i>Includes video thumbnails in generated transfer reports.</i></small>"))
-        
-        layout.addWidget(feat_group)
+        # Advanced Features Button
+        adv_btn = QPushButton("⚙️ CONFIGURE ADVANCED FEATURES"); adv_btn.setMinimumHeight(45)
+        adv_btn.setStyleSheet("font-weight: bold; color: #3498DB;")
+        adv_btn.clicked.connect(self.open_advanced)
+        layout.addWidget(adv_btn)
 
         sys_group = QGroupBox("System"); sys_lay = QVBoxLayout()
         self.btn_ffmpeg = QPushButton("FFmpeg Settings"); self.btn_ffmpeg.clicked.connect(self.show_ffmpeg_info); sys_lay.addWidget(self.btn_ffmpeg)
@@ -397,6 +452,7 @@ class SettingsDialog(QDialog):
         sys_group.setLayout(sys_lay); layout.addWidget(sys_group)
         self.btn_about = QPushButton("About CineBridge Pro"); self.btn_about.clicked.connect(parent.show_about); layout.addWidget(self.btn_about)
         layout.addStretch(); close_btn = QPushButton("Close"); close_btn.clicked.connect(self.accept); layout.addWidget(close_btn); self.setLayout(layout)
+    def open_advanced(self): dlg = AdvancedFeaturesDialog(self.parent_app); dlg.exec()
     def apply_view_options(self):
         self.parent_app.tab_ingest.toggle_logs(self.chk_copy.isChecked(), self.chk_trans.isChecked())
         self.parent_app.settings.setValue("show_copy_log", self.chk_copy.isChecked())
