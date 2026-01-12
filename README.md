@@ -62,7 +62,15 @@ For most users, we recommend downloading the standalone installer for your OS.
 
 ## 📝 Change Log
 
-### v4.16.1 (Current Release)
+### v4.16.3 (Current Release)
+* **Architecture:** Complete modular refactor of the codebase (`src/modules/`) for improved maintainability and stability.
+* **New Feature:** **Smart Transcode.** Automatically skips re-encoding for source files that are already edit-friendly (DNxHR/ProRes).
+* **Stability:** **Watch Folder Safety.** Implemented a "File Stability Check" to prevent transcoding files that are still being copied.
+* **Improvement:** **Device Detection.** Fixed false positives where generic USB drives were identified as Blackmagic or Insta360 cameras.
+* **UI/UX:** Enhanced dark mode support for Job Reports and improved responsiveness during large media scans.
+* **Dev:** Added automated unit test suite.
+
+### v4.16.1
 * **UI/UX:** Added "Experimental / Pro Features" section in Settings to toggle the visibility of **Watch Folder** and **Burn-in Tools**.
 * **Improvement:** Optimized system resources by consolidating background monitors into a single global instance.
 * **Stability:** Hardened application shutdown logic to prevent hangs during heavy background processing.
