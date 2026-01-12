@@ -427,9 +427,9 @@ class AboutDialog(QDialog):
         layout.addStretch(); btn_box = QHBoxLayout(); ok_btn = QPushButton("Close"); ok_btn.setFixedWidth(100); ok_btn.clicked.connect(self.accept); btn_box.addStretch(); btn_box.addWidget(ok_btn); btn_box.addStretch(); layout.addLayout(btn_box); self.setLayout(layout)
 
 class VideoPreviewDialog(QDialog):
-    def __init__(self, video_path, parent=None):
+    def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle(f"Preview: {os.path.basename(video_path)}")
+        self.setWindowTitle("Preview")
         self.resize(900, 600)
         self.layout = QVBoxLayout()
         self.layout.setContentsMargins(0, 0, 0, 0)
@@ -437,14 +437,14 @@ class VideoPreviewDialog(QDialog):
         self.setLayout(self.layout)
         
         if not HAS_MULTIMEDIA:
-            self.layout.addWidget(QLabel("Video Preview not available.\nMissing 'PyQt6.QtMultimedia' module.\n\nPlease install: python3-pyqt6.qtmultimedia (Linux) or PyQt6 (Pip).", alignment=Qt.AlignmentFlag.AlignCenter))
+            self.layout.addWidget(QLabel("Video Preview not available.\nMissing 'PyQt6.QtMultimedia' module.", alignment=Qt.AlignmentFlag.AlignCenter))
             return
 
         # Player Setup
         self.player = QMediaPlayer()
         self.audio = QAudioOutput()
         self.player.setAudioOutput(self.audio)
-        self.audio.setVolume(1.0) # Default 100%
+        self.audio.setVolume(1.0)
         
         self.video_widget = QVideoWidget()
         self.video_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
@@ -461,7 +461,7 @@ class VideoPreviewDialog(QDialog):
         
         # Play/Pause
         self.play_btn = QToolButton()
-        self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
+        self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
         self.play_btn.clicked.connect(self.toggle_play)
         ctrl_layout.addWidget(self.play_btn)
         
@@ -496,7 +496,7 @@ class VideoPreviewDialog(QDialog):
         
         # Fullscreen
         self.fs_btn = QToolButton()
-        self.fs_btn.setText("⛶") # Simple Unicode icon
+        self.fs_btn.setText("⛶") 
         self.fs_btn.setToolTip("Toggle Fullscreen")
         self.fs_btn.clicked.connect(self.toggle_fullscreen)
         ctrl_layout.addWidget(self.fs_btn)
@@ -508,8 +508,12 @@ class VideoPreviewDialog(QDialog):
         self.player.durationChanged.connect(self.duration_changed)
         self.player.mediaStatusChanged.connect(self.status_changed)
         self.player.errorOccurred.connect(self.handle_errors)
-        
-        # Start
+
+    def load_video(self, video_path):
+        if not HAS_MULTIMEDIA: return
+        self.setWindowTitle(f"Preview: {os.path.basename(video_path)}")
+        self.play_btn.setEnabled(True)
+        self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
         self.player.setSource(QUrl.fromLocalFile(video_path))
         self.player.play()
 
@@ -522,17 +526,13 @@ class VideoPreviewDialog(QDialog):
             self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
 
     def toggle_fullscreen(self):
-        if self.isFullScreen():
-            self.showNormal()
-        else:
-            self.showFullScreen()
+        if self.isFullScreen(): self.showNormal()
+        else: self.showFullScreen()
 
-    def set_position(self, position):
-        self.player.setPosition(position)
+    def set_position(self, position): self.player.setPosition(position)
 
     def position_changed(self, position):
-        if not self.slider.isSliderDown():
-            self.slider.setValue(position)
+        if not self.slider.isSliderDown(): self.slider.setValue(position)
         self.update_time_label(position, self.player.duration())
 
     def duration_changed(self, duration):
@@ -540,10 +540,7 @@ class VideoPreviewDialog(QDialog):
         self.update_time_label(self.player.position(), duration)
 
     def update_time_label(self, current_ms, total_ms):
-        def fmt(ms):
-            s = (ms // 1000) % 60
-            m = (ms // 1000) // 60
-            return f"{m:02}:{s:02}"
+        def fmt(ms): return f"{(ms//1000)//60:02}:{(ms//1000)%60:02}"
         self.lbl_curr.setText(fmt(current_ms))
         self.lbl_total.setText(fmt(total_ms))
         
@@ -557,9 +554,5 @@ class VideoPreviewDialog(QDialog):
 
     def closeEvent(self, event):
         if HAS_MULTIMEDIA:
-            self.player.stop()
-            self.player.setSource(QUrl()) # Detach source
-            self.player.setVideoOutput(None) # Detach widget
-            # Explicitly delete logic handled by Qt parenting, 
-            # but unlinking might help GLib reference counting.
+            self.player.pause() # Just pause, keep pipeline alive for reuse
         event.accept()

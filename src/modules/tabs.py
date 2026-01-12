@@ -25,7 +25,7 @@ class IngestTab(QWidget):
     def __init__(self, parent_app):
         super().__init__(); self.app = parent_app; self.layout = QVBoxLayout(); self.layout.setSpacing(10); self.layout.setContentsMargins(20, 20, 20, 20); self.setLayout(self.layout)
         self.copy_worker = None; self.transcode_worker = None; self.scan_worker = None; self.found_devices = []; self.current_detected_path = None
-        self.ingest_mode = "scan"; self.last_scan_results = None
+        self.ingest_mode = "scan"; self.last_scan_results = None; self.preview_dlg = None
         self.setup_ui(); self.load_tab_settings()
         self.scan_watchdog = QTimer(); self.scan_watchdog.setSingleShot(True); self.scan_watchdog.timeout.connect(self.on_scan_timeout); QTimer.singleShot(500, self.run_auto_scan)
     def setup_ui(self):
@@ -189,8 +189,13 @@ class IngestTab(QWidget):
             ext = os.path.splitext(path)[1].upper()
             if ext in DeviceRegistry.VIDEO_EXTS:
                 try:
-                    dlg = VideoPreviewDialog(path, self)
-                    dlg.exec()
+                    if not self.preview_dlg:
+                         self.preview_dlg = VideoPreviewDialog(self)
+                    
+                    self.preview_dlg.load_video(path)
+                    self.preview_dlg.show()
+                    self.preview_dlg.raise_()
+                    self.preview_dlg.activateWindow()
                 except Exception as e:
                     error_log(f"Preview Error: {e}")
 
