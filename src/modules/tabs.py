@@ -91,6 +91,7 @@ class IngestTab(QWidget):
         
         self.btn_config_trans = QPushButton("Configure Transcode..."); self.btn_config_trans.setVisible(False); self.btn_config_trans.clicked.connect(self.open_transcode_config); settings_layout.addWidget(self.btn_config_trans)
         self.transcode_widget = TranscodeSettingsWidget(mode="general")
+        settings_layout.addStretch()
         settings_group.setLayout(settings_layout)
         
         # 4. Review Group
