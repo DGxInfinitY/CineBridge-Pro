@@ -427,31 +427,31 @@ class AboutDialog(QDialog):
         layout.addStretch(); btn_box = QHBoxLayout(); ok_btn = QPushButton("Close"); ok_btn.setFixedWidth(100); ok_btn.clicked.connect(self.accept); btn_box.addStretch(); btn_box.addWidget(ok_btn); btn_box.addStretch(); layout.addLayout(btn_box); self.setLayout(layout)
 
 class VideoPreviewDialog(QDialog):
-    def __init__(self, parent=None):
+    def __init__(self, video_path, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("Preview")
+        self.setWindowTitle(f"Preview: {os.path.basename(video_path)}")
         self.resize(900, 600)
         self.layout = QVBoxLayout()
         self.layout.setContentsMargins(0, 0, 0, 0)
         self.layout.setSpacing(0)
         self.setLayout(self.layout)
         
-        self.player = None
-        self.video_widget = None
-        self.audio = None
-        
         if not HAS_MULTIMEDIA:
             self.layout.addWidget(QLabel("Video Preview not available.\nMissing 'PyQt6.QtMultimedia' module.", alignment=Qt.AlignmentFlag.AlignCenter))
             return
 
-        # Video Container (Persistent placeholder)
-        self.video_container = QFrame()
-        self.video_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.video_layout = QVBoxLayout(self.video_container)
-        self.video_layout.setContentsMargins(0,0,0,0)
-        self.layout.addWidget(self.video_container)
+        # Player Setup
+        self.player = QMediaPlayer()
+        self.audio = QAudioOutput()
+        self.player.setAudioOutput(self.audio)
+        self.audio.setVolume(1.0)
         
-        # Controls Container (Persistent)
+        self.video_widget = QVideoWidget()
+        self.video_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        self.player.setVideoOutput(self.video_widget)
+        self.layout.addWidget(self.video_widget)
+        
+        # Controls Container
         ctrl_frame = QFrame()
         ctrl_frame.setStyleSheet("background-color: #222; border-top: 1px solid #444;")
         ctrl_frame.setFixedHeight(50)
@@ -461,7 +461,7 @@ class VideoPreviewDialog(QDialog):
         
         # Play/Pause
         self.play_btn = QToolButton()
-        self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
+        self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
         self.play_btn.clicked.connect(self.toggle_play)
         ctrl_layout.addWidget(self.play_btn)
         
@@ -503,51 +503,13 @@ class VideoPreviewDialog(QDialog):
         
         self.layout.addWidget(ctrl_frame)
 
-    def init_player(self):
-        """Creates a fresh player/widget instance."""
-        if self.player: return
-        
-        self.player = QMediaPlayer()
-        self.audio = QAudioOutput()
-        self.player.setAudioOutput(self.audio)
-        self.audio.setVolume(self.vol_slider.value() / 100)
-        
-        self.video_widget = QVideoWidget()
-        self.video_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.player.setVideoOutput(self.video_widget)
-        self.video_layout.addWidget(self.video_widget)
-        
+        # Connections
         self.player.positionChanged.connect(self.position_changed)
         self.player.durationChanged.connect(self.duration_changed)
         self.player.mediaStatusChanged.connect(self.status_changed)
         self.player.errorOccurred.connect(self.handle_errors)
-
-    def cleanup_player(self):
-        """Destroys the player to free resources."""
-        if self.player:
-            self.player.stop()
-            self.player.setSource(QUrl())
-            self.player.setVideoOutput(None)
-            self.player.setAudioOutput(None)
-            self.player.deleteLater()
-            self.player = None
-        if self.audio:
-            self.audio.deleteLater()
-            self.audio = None
-        if self.video_widget:
-            self.video_layout.removeWidget(self.video_widget)
-            self.video_widget.deleteLater()
-            self.video_widget = None
-
-    def load_video(self, video_path):
-        if not HAS_MULTIMEDIA: return
-        self.cleanup_player() # Clear old state
-        self.init_player()    # Create fresh state
         
-        self.setWindowTitle(f"Preview: {os.path.basename(video_path)}")
-        self.play_btn.setEnabled(True)
-        self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
-        
+        # Start
         self.player.setSource(QUrl.fromLocalFile(video_path))
         self.player.play()
 
@@ -555,7 +517,6 @@ class VideoPreviewDialog(QDialog):
         if self.audio: self.audio.setVolume(v / 100)
 
     def toggle_play(self):
-        if not self.player: return
         if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState:
             self.player.pause()
             self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
@@ -567,16 +528,15 @@ class VideoPreviewDialog(QDialog):
         if self.isFullScreen(): self.showNormal()
         else: self.showFullScreen()
 
-    def set_position(self, position): 
-        if self.player: self.player.setPosition(position)
+    def set_position(self, position): self.player.setPosition(position)
 
     def position_changed(self, position):
         if not self.slider.isSliderDown(): self.slider.setValue(position)
-        if self.player: self.update_time_label(position, self.player.duration())
+        self.update_time_label(position, self.player.duration())
 
     def duration_changed(self, duration):
         self.slider.setRange(0, duration)
-        if self.player: self.update_time_label(self.player.position(), duration)
+        self.update_time_label(self.player.position(), duration)
 
     def update_time_label(self, current_ms, total_ms):
         def fmt(ms): return f"{(ms//1000)//60:02}:{(ms//1000)%60:02}"
@@ -592,5 +552,9 @@ class VideoPreviewDialog(QDialog):
         self.lbl_curr.setText("Error")
 
     def closeEvent(self, event):
-        self.cleanup_player()
+        if HAS_MULTIMEDIA and self.player:
+            self.player.stop()
+            self.player.setSource(QUrl())
+            self.player.setVideoOutput(None)
+            self.player.setAudioOutput(None)
         event.accept()
