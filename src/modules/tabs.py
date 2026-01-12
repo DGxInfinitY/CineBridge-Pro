@@ -176,6 +176,7 @@ class IngestTab(QWidget):
             self.ingest_mode = "scan"
             self.last_scan_results = None
             self.update_transfer_button_text()
+            self.import_btn.setText("SCAN SOURCE"); self.import_btn.setStyleSheet("")
             # Clear tree placeholder or previous results
             self.tree.clear()
             p = QTreeWidgetItem(self.tree); p.setText(0, "Select a source and click 'SCAN SOURCE' to view media."); p.setFlags(p.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
@@ -336,6 +337,7 @@ class IngestTab(QWidget):
         if not src or not dest_list[0]: return QMessageBox.warning(self, "Error", "Set Source/Main Dest")
         
         self.save_tab_settings(); self.import_btn.setEnabled(False); self.cancel_btn.setEnabled(True); self.status_label.setText("INITIALIZING..."); self.copy_log.clear(); self.transcode_log.clear()
+        self.import_btn.setText("INGESTING..."); self.import_btn.setStyleSheet("") # Reset to default style
         if DEBUG_MODE and GUI_LOG_QUEUE:
             for msg in GUI_LOG_QUEUE: self.append_copy_log(msg)
             GUI_LOG_QUEUE.clear()
@@ -398,8 +400,16 @@ class IngestTab(QWidget):
                 except Exception as e:
                     error_log(f"MHL: Failed to generate: {e}")
 
-        self.status_label.setText(msg); self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False)
-        if not self.transcode_worker or self.transcode_worker.is_idle: self.set_transcode_active(False)
+        self.status_label.setText(msg)
+        
+        # If transcode is active, don't enable button yet
+        if self.check_transcode.isChecked() and self.transcode_worker:
+            self.transcode_worker.set_producer_finished()
+            self.import_btn.setText("TRANSCODING...")
+        else:
+            self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False)
+            self.import_btn.setText("COMPLETE"); self.import_btn.setStyleSheet("background-color: #27AE60; color: white;")
+            self.set_transcode_active(False)
 
     def finalize_report(self):
         project = self.project_name_input.text() or "Unnamed"
@@ -434,7 +444,12 @@ class IngestTab(QWidget):
         except Exception as e: error_log(f"Report: Failed to generate PDF: {e}")
 
     def on_all_transcodes_finished(self):
-        SystemNotifier.notify("Job Complete", "Ingest and Transcoding finished."); self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False); self.set_transcode_active(False); self.transcode_status_label.setText("All Transcodes Complete!"); dlg = JobReportDialog("Job Complete", "<h3>Job Complete</h3><p>All ingest and transcode operations finished successfully.</p>", self); dlg.exec()
+        SystemNotifier.notify("Job Complete", "Ingest and Transcoding finished.")
+        self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False)
+        self.import_btn.setText("COMPLETE"); self.import_btn.setStyleSheet("background-color: #27AE60; color: white;")
+        self.set_transcode_active(False); self.transcode_status_label.setText("All Transcodes Complete!")
+        dlg = JobReportDialog("Job Complete", "<h3>Job Complete</h3><p>All ingest and transcode operations finished successfully.</p>", self)
+        dlg.exec()
     def save_tab_settings(self):
         s = self.app.settings; s.setValue("last_source", self.source_input.text()); s.setValue("last_dest", self.dest_input.text()); s.setValue("sort_date", self.check_date.isChecked()); s.setValue("skip_dupe", self.check_dupe.isChecked()); s.setValue("videos_only", self.check_videos_only.isChecked()); s.setValue("transcode_dnx", self.check_transcode.isChecked()); s.setValue("verify_copy", self.check_verify.isChecked()); s.setValue("gen_report", self.check_report.isChecked())
         s.setValue("show_copy_log", self.copy_log.isVisible()); s.setValue("show_trans_log", self.transcode_log.isVisible())
