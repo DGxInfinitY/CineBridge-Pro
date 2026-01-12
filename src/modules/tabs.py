@@ -408,8 +408,9 @@ class IngestTab(QWidget):
         else:
             # ONLY NOTIFY HERE IF NO TRANSCODE IS PENDING
             if success:
-                SystemNotifier.notify("Ingest Complete", "All files offloaded and verified.")
-                dlg = JobReportDialog("Ingest Complete", "<h3>Ingest Successful</h3><p>All selected media has been offloaded and verified.</p>", self)
+                v_msg = " and verified" if self.check_verify.isChecked() else ""
+                SystemNotifier.notify("Ingest Complete", f"All files offloaded{v_msg}.")
+                dlg = JobReportDialog("Ingest Complete", f"<h3>Ingest Successful</h3><p>All selected media has been offloaded{v_msg}.</p>", self)
                 dlg.exec()
 
             self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False)
@@ -454,7 +455,9 @@ class IngestTab(QWidget):
         self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False)
         self.import_btn.setText("COMPLETE"); self.import_btn.setStyleSheet("background-color: #27AE60; color: white;")
         self.set_transcode_active(False); self.transcode_status_label.setText("All Transcodes Complete!")
-        dlg = JobReportDialog("Job Complete", "<h3>Job Successful</h3><p>All ingest and transcode operations finished successfully.<br>Your media is ready for edit.</p>", self)
+        
+        v_msg = " and verified" if self.check_verify.isChecked() else ""
+        dlg = JobReportDialog("Job Complete", f"<h3>Job Successful</h3><p>All ingest{v_msg} and transcode operations finished successfully.<br>Your media is ready for edit.</p>", self)
         dlg.exec()
     def save_tab_settings(self):
         s = self.app.settings; s.setValue("last_source", self.source_input.text()); s.setValue("last_dest", self.dest_input.text()); s.setValue("sort_date", self.check_date.isChecked()); s.setValue("skip_dupe", self.check_dupe.isChecked()); s.setValue("videos_only", self.check_videos_only.isChecked()); s.setValue("transcode_dnx", self.check_transcode.isChecked()); s.setValue("verify_copy", self.check_verify.isChecked()); s.setValue("gen_report", self.check_report.isChecked())
