@@ -543,73 +543,130 @@ class DeviceRegistry:
     @staticmethod
     def identify(mount_point, usb_hints=set()):
         debug_log(f"Registry: Identifying {mount_point} | USB Hints: {usb_hints}")
+        
+        # 1. Quick Check: Is it empty/inaccessible?
         root_items = DeviceRegistry.safe_list_dir(mount_point)
         if not root_items: 
             debug_log(f"Registry: {mount_point} is inaccessible or empty.")
             return "Generic Storage", mount_point, None
 
-        def find_path(base, sub_path):
-            curr = base; parts = sub_path.split('/')
+        # 2. Scoring System
+        # We calculate a confidence score for each profile.
+        # - Structure Match (Exact Folder): +100 points
+        # - Root Signature (Filename in root): +10 points (Only if high confidence)
+        # - USB Hint Match: +5 points (Tie-breaker only, never sole determinant)
+        
+        best_match = None
+        best_score = 0
+        best_root = mount_point
+        best_exts = None
+
+        def check_structure(base_path, pattern):
+            """Checks if a folder structure exists. Supports regex-like patterns."""
+            # Simplify: We just split by '/' and walk. 
+            # If a segment is '*', we accept any folder.
+            # If it's like '1xxGOPRO', we use regex.
+            curr = base_path
+            parts = pattern.split('/')
             for part in parts:
-                if part == ".": continue
-                found = False
-                items = DeviceRegistry.safe_list_dir(curr)
-                for item_path in items:
-                    item_name = os.path.basename(item_path)
-                    if item_name.lower() == part.lower():
-                        curr = item_path; found = True; break
-                if not found: return None
+                if not part or part == ".": continue
+                
+                found_next = None
+                try:
+                    items = [os.path.basename(p) for p in DeviceRegistry.safe_list_dir(curr)]
+                    for item in items:
+                        if part == "*": 
+                            found_next = os.path.join(curr, item); break
+                        
+                        # Handle GoPro '100GOPRO' style patterns if we had them, 
+                        # but currently profiles use static paths. 
+                        # Let's add basic wildcard/regex support if needed, 
+                        # but for now exact match (case-insensitive) is key.
+                        if item.lower() == part.lower():
+                            found_next = os.path.join(curr, item); break
+                        
+                        # Special Case: GoPro '100GOPRO', '101GOPRO'
+                        if "GOPRO" in part and re.match(r"\d{3}GOPRO", item.upper()):
+                            found_next = os.path.join(curr, item); break
+                            
+                except: pass
+                
+                if found_next: curr = found_next
+                else: return None
             return curr
 
-        # 1. Structure Match (Reliable)
         for name, profile in DeviceRegistry.PROFILES.items():
+            score = 0
+            detected_root = None
+
+            # A. Structure Check (High Confidence)
             for root_hint in profile['roots']:
-                found_root = find_path(mount_point, root_hint)
-                if found_root:
-                    if root_hint == "." or root_hint == "":
-                        has_sig = False
-                        try:
-                            items = DeviceRegistry.safe_list_dir(found_root)
-                            for item_path in items:
-                                item_name = os.path.basename(item_path)
-                                if any(s.lower() in item_name.lower() for s in profile['signatures']):
-                                    has_sig = True; break
-                                if any(item_name.upper().endswith(e) for e in profile['exts']):
-                                    has_sig = True; break
-                        except: pass
-                        if not has_sig: continue
-
-                    debug_log(f"Registry: Matched {name} structure at {found_root}")
-                    return name, found_root, profile['exts']
-
-        # 2. Signature / Hint Match (Fallback)
-        for name, profile in DeviceRegistry.PROFILES.items():
-            hit = False
+                # Allow for simple dynamic matching if needed
+                if "100GOPRO" in root_hint: # Special handling for GoPro
+                     # Try finding DCIM first
+                     dcim = check_structure(mount_point, "DCIM")
+                     if dcim:
+                         # Look for ANY 1xxGOPRO folder
+                         try:
+                             for sub in DeviceRegistry.safe_list_dir(dcim):
+                                 if re.match(r"\d{3}GOPRO", os.path.basename(sub).upper()):
+                                     detected_root = sub; score += 100; break
+                         except: pass
+                else:
+                    found_path = check_structure(mount_point, root_hint)
+                    if found_path:
+                        detected_root = found_path
+                        score += 100
+                        break # Found a valid root for this profile
+            
+            # B. Signature Check (Medium Confidence) - ONLY if no structure found yet
+            # Be careful: 'GOPRO' in filename on a generic stick causes issues.
+            # We restrict this to specific metadata files if possible, or lower score.
+            if score < 100:
+                for sig in profile['signatures']:
+                    # Strict Check: Signature must be in the ROOT filenames
+                    # AND we ignore common words unless they are very specific.
+                    for item in root_items:
+                        base = os.path.basename(item)
+                        if sig.lower() in base.lower():
+                            # Boost score but don't guarantee match without structure
+                            debug_log(f"Registry: '{name}' signature '{sig}' found in file '{base}'")
+                            score += 20
+            
+            # C. USB Hint Check (Low Confidence / Tie-Breaker)
+            # We only add points, we don't automatically select based on this.
             for sig in profile['signatures']:
-                if any(sig.lower() in os.path.basename(item).lower() for item in root_items): 
-                    debug_log(f"Registry: Signature '{sig}' matched in filenames.")
-                    hit = True
-                if any(sig.lower() in h.lower() for h in usb_hints): 
-                    debug_log(f"Registry: Signature '{sig}' matched in USB hints.")
-                    hit = True
-                if hit: return name, mount_point, profile['exts']
-        
+                for hint in usb_hints:
+                    if sig.lower() in hint.lower():
+                        score += 5
+
+            if score > best_score:
+                best_score = score
+                best_match = name
+                best_root = detected_root if detected_root else mount_point
+                best_exts = profile['exts']
+
+        # threshold for acceptance
+        if best_score >= 20:
+             debug_log(f"Registry: Identified {best_match} (Score: {best_score})")
+             return best_match, best_root, best_exts
+
         # 3. Android/Generic Fallback
         search_root = mount_point
-        internal = find_path(mount_point, "Internal shared storage")
-        if not internal: internal = find_path(mount_point, "Internal Storage")
+        internal = check_structure(mount_point, "Internal shared storage")
+        if not internal: internal = check_structure(mount_point, "Internal Storage")
         if internal: 
             debug_log(f"Registry: Found Android storage layer: {internal}")
             search_root = internal
 
-        dcim = find_path(search_root, "DCIM")
+        dcim = check_structure(search_root, "DCIM")
         if dcim:
-             cam = find_path(dcim, "Camera")
+             cam = check_structure(dcim, "Camera")
              if cam: 
                  debug_log("Registry: Identified Android Phone via DCIM/Camera")
                  return "Android/Phone", cam, {'.MP4', '.JPG', '.JPEG', '.DNG', '.HEIC'}
              
-        debug_log(f"Registry: No specific profile match for {mount_point}. Falling back to Generic.")
+        debug_log(f"Registry: No specific profile match for {mount_point} (Best Score: {best_score}). Falling back to Generic.")
         return "Generic Storage", mount_point, None
 
 class DriveDetector:
