@@ -168,29 +168,41 @@ class IngestTab(QWidget):
         self.refresh_tree_view()
 
     def refresh_tree_view(self):
-        self.tree.setUpdatesEnabled(False) # Optimization: Disable updates
-        self.tree.clear(); total_files = 0
-        if not self.last_scan_results:
-            p = QTreeWidgetItem(self.tree); p.setText(0, "Scan source to review media selection."); p.setFlags(p.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+        self.tree.setUpdatesEnabled(False) 
+        try:
+            self.tree.clear(); total_files = 0
+            
+            if not self.last_scan_results:
+                p = QTreeWidgetItem(self.tree); p.setText(0, "Scan source to review media selection."); p.setFlags(p.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+                self.review_group.setVisible(True)
+                return
+            
+            sorted_dates = sorted(self.last_scan_results.keys(), reverse=True); video_exts = DeviceRegistry.VIDEO_EXTS
+            for date in sorted_dates:
+                all_files = self.last_scan_results[date]
+                files = [f for f in all_files if os.path.splitext(f)[1].upper() in video_exts] if self.check_videos_only.isChecked() else all_files
+                if not files: continue
+                total_files += len(files)
+                date_item = QTreeWidgetItem(self.tree); date_item.setText(0, f"{date} ({len(files)} files)"); date_item.setFlags(date_item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsAutoTristate); date_item.setCheckState(0, Qt.CheckState.Checked)
+                for f in files:
+                    f_item = QTreeWidgetItem(date_item); f_item.setText(0, os.path.basename(f)); f_item.setData(0, Qt.ItemDataRole.UserRole, f); f_item.setFlags(f_item.flags() | Qt.ItemFlag.ItemIsUserCheckable); f_item.setCheckState(0, Qt.CheckState.Checked)
+            
+            if total_files == 0:
+                p = QTreeWidgetItem(self.tree); p.setText(0, "No matching media found for current filters."); p.setFlags(p.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+            
+            self.tree.expandAll()
+            self.ingest_mode = "transfer"
+            self.status_label.setText(f"FOUND {total_files} FILES. SELECT MEDIA TO TRANSFER.")
+            self.update_transfer_button_text()
+            
+        except Exception as e:
+            error_log(f"UI Error in refresh_tree_view: {e}")
+            self.status_label.setText("ERROR DISPLAYING FILES")
+            
+        finally:
+            self.review_group.setVisible(True)
+            self.import_btn.setEnabled(True)
             self.tree.setUpdatesEnabled(True)
-            return
-        
-        sorted_dates = sorted(self.last_scan_results.keys(), reverse=True); video_exts = DeviceRegistry.VIDEO_EXTS
-        for date in sorted_dates:
-            all_files = self.last_scan_results[date]
-            files = [f for f in all_files if os.path.splitext(f)[1].upper() in video_exts] if self.check_videos_only.isChecked() else all_files
-            if not files: continue
-            total_files += len(files)
-            date_item = QTreeWidgetItem(self.tree); date_item.setText(0, f"{date} ({len(files)} files)"); date_item.setFlags(date_item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsAutoTristate); date_item.setCheckState(0, Qt.CheckState.Checked)
-            for f in files:
-                f_item = QTreeWidgetItem(date_item); f_item.setText(0, os.path.basename(f)); f_item.setData(0, Qt.ItemDataRole.UserRole, f); f_item.setFlags(f_item.flags() | Qt.ItemFlag.ItemIsUserCheckable); f_item.setCheckState(0, Qt.CheckState.Checked)
-        
-        if total_files == 0:
-            p = QTreeWidgetItem(self.tree); p.setText(0, "No matching media found for current filters."); p.setFlags(p.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
-        self.tree.expandAll(); self.review_group.setVisible(True); self.import_btn.setEnabled(True); self.ingest_mode = "transfer"
-        self.status_label.setText(f"FOUND {total_files} FILES. SELECT MEDIA TO TRANSFER.")
-        self.update_transfer_button_text()
-        self.tree.setUpdatesEnabled(True) # Re-enable updates
 
     def update_transfer_button_text(self):
         if not hasattr(self, 'import_btn'): return
