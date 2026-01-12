@@ -36,14 +36,11 @@ The application logic is refactored into specialized modules to improve maintain
     - Reusable UI components.
     - `TranscodeSettingsWidget`: The complex form for selecting codecs/presets.
     - `SettingsDialog`: The global preferences window.
-    - `JobReportDialog`: Popup for displaying logs/reports.
+    - `AdvancedFeaturesDialog`: A sub-dialog for enabling Pro features like Multi-Dest and Visual Reports.
+    - `JobReportDialog`: A simplified, standardized completion popup.
 
 5.  **`utils.py`**: 
-    - Static helper classes and libraries.
-    - `DeviceRegistry`: Logic for identifying camera card structures (Sony vs Blackmagic vs Generic).
-    - `TranscodeEngine`: Wrapper around `ffmpeg` command generation.
-    - `ReportGenerator` & `MHLGenerator`: Create PDF and XML deliverables.
-
+# ...
 ## Data Flow
 
 1.  **Ingest Flow**:
@@ -51,14 +48,10 @@ The application logic is refactored into specialized modules to improve maintain
     - `ScanWorker` finds files.
     - `CopyWorker` copies files -> Emits `file_ready_signal`.
     - If Transcode is enabled, `IngestTab` catches `file_ready_signal` -> Adds job to `AsyncTranscoder` queue.
+    - On completion, `ReportGenerator` creates PDF/MHL deliverables based on the user's selected **Destination Strategy** (Project, Global, or Custom).
 
 2.  **Transcode Flow**:
-    - `AsyncTranscoder` pops job from queue.
-    - Calls `TranscodeEngine.build_command()` to get `ffmpeg` arguments.
-    - Executes `ffmpeg` as a subprocess.
-    - Parses `stderr` for progress updates -> Emits signals to UI.
-
-## External Dependencies
+# ...
 - **FFmpeg**: The core engine for all media processing. The app looks for it in:
     1. Custom path (Settings).
     2. Bundled PyInstaller `_MEIPASS`.
@@ -66,3 +59,5 @@ The application logic is refactored into specialized modules to improve maintain
     4. System `PATH`.
 
 - **QtMultimedia**: Used for the native video preview player. On Linux systems, this typically requires the `gstreamer` backend and the `python3-pyqt6.qtmultimedia` package.
+
+- **canberra-gtk-play**: (Linux) Used for playing standardized system notification sounds.

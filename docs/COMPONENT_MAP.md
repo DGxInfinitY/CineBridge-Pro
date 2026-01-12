@@ -33,6 +33,7 @@ This document maps the source files to their primary responsibilities and contai
 - `TranscodeSettingsWidget`: The "Settings" panel inside Convert/Ingest tabs.
 - `FileDropLineEdit`: A text input that accepts file drags.
 - `SettingsDialog`: The main application preferences window.
+- `AdvancedFeaturesDialog`: Configuration for Pro features (Multi-Dest, Reports, MHL).
 - `MediaInfoDialog`: Popup showing codec details (using `ffprobe`).
 - `FFmpegConfigDialog`: Settings for managing the FFmpeg binary path.
 - `VideoPreviewDialog`: High-performance video player for media review.

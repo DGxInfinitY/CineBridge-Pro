@@ -22,8 +22,10 @@ While DaVinci Resolve is a world-class NLE on Linux, the **Free Version** lacks 
 ## 🚀 Key Features
 
 ### 📥 Professional Ingest
-* **Device Registry:** Intelligent, high-reliability auto-detection for Sony (Alpha/FX), Blackmagic (BRAW), Canon (CRM), DJI, GoPro, Insta360, and Android devices.
+* **Device Registry:** Intelligent, high-reliability auto-detection for Sony (Alpha/FX), Blackmagic (BRAW), Canon (CRM), DJI (Neo 2), GoPro, Insta360, and Android devices.
 * **Scan & Select:** A powerful preview phase allowing you to scan your media and select exactly which shoot days or specific clips to transfer.
+* **Video Preview:** Double-click any file in the Ingest list to instantly preview it in an integrated, high-performance player.
+* **Multi-Destination (Pro):** Simultaneously offload media to up to 3 destinations (e.g., RAID, Shuttle, and Cloud) in a single high-speed pass.
 * **Smart Filtering:** Automatically excludes system files and only targets media extensions relevant to your specific camera profile.
 * **Standardized Organization:** Automatically sorts files by Date -> Camera -> Category (Video/Photo/Audio/Misc).
 
@@ -31,14 +33,14 @@ While DaVinci Resolve is a world-class NLE on Linux, the **Free Version** lacks 
 * **Edit-Ready Workflows:** Single-click conversion to Linux-friendly codecs (**DNxHR HQ/LB** and **ProRes 422/Proxy**).
 * **Visual Overlays (Burn-in):** Professional "Dailies" tools to burn Filenames, Timecodes, and custom Watermarks into your proxies.
 * **3D LUT Support:** Apply `.cube` LUTs during transcoding to see your creative intent immediately.
-* **Audio Drift Correction:** Specialized logic to sync variable-frame-rate audio (common in phone footage) and normalize to 48kHz.
-* **Hardware Acceleration:** Native support for NVIDIA (NVENC), Intel (QSV), VAAPI, and MacOS VideoToolbox.
+* **Hardware Acceleration:** Native support for NVIDIA (NVENC), Intel (QSV), and AMD/Linux (VAAPI) across all platforms.
+* **System Dashboard:** Live monitoring of CPU/GPU load and temperature directly within the transcode interface.
 
 ### 🛡️ Data Integrity & Reporting
+* **Zero-Overhead Checksums:** High-speed verification that runs concurrently with the copy stream, eliminating the need for a second read pass.
+* **Visual Transfer Reports:** Automatically generates professional PDF reports with embedded video thumbnails for every clip.
 * **MHL Support:** Generates ASC-MHL compliant XML checksum lists to ensure bit-for-bit accuracy throughout the pipeline.
-* **DIT Transfer Reports:** Automatically generates professional PDF reports with project metadata and transfer summaries.
-* **Checksum Verification:** Built-in verification using **xxHash64** (fastest) or MD5.
-* **Pre-Flight Check:** Prevents transfers if the destination drive lacks sufficient space.
+* **Flexible Storage:** Choose to save reports in the project folder, a fixed global archive, or a custom location per job.
 
 ---
 
@@ -57,10 +59,20 @@ For most users, we recommend downloading the standalone installer for your OS.
 ### 📋 Prerequisites
 * **Python 3.10+**
 * **FFmpeg** (Included in Windows/Mac releases; Linux users should install via `apt install ffmpeg`)
+* **QtMultimedia** (Linux users: `sudo apt install python3-pyqt6.qtmultimedia`)
 
 ---
 
 ## 📝 Change Log
+
+### v4.16.5 (In Development)
+* **UI/UX:** Unified "1-2-3" numbered workflow across all tabs for a professional, consistent experience.
+* **Feature:** **Multi-Destination Ingest.** Offload to up to 3 drives simultaneously with a single read pass.
+* **Feature:** **Visual PDF Reports.** Reworked reporting engine to embed frame-accurate thumbnails into PDF hand-offs.
+* **System:** Expanded **Hardware Monitoring** to track CPU/GPU Load and Temperature for NVIDIA, AMD, and Intel.
+* **UX:** Re-organized settings with a new **Advanced Features Dialog** to keep the main interface clean.
+* **Refinement:** Intelligent **Camera Profile** selection with auto-sync from detection logic.
+* **Refinement:** Reworked **System Notifications** with platform-native sounds and icons.
 
 ### v4.16.4 (Current Release)
 * **New Feature:** **Video Preview.** Instant, scrubbable playback popup for source media in the Ingest tab. (Double-click to view).
