@@ -239,6 +239,7 @@ class TranscodeEngine:
             elif hw_method == "qsv" and v_codec == 'libx264': cmd.extend(['-c:v', 'h264_qsv', '-preset', 'fast'])
             elif hw_method == "qsv" and v_codec == 'libx265': cmd.extend(['-c:v', 'hevc_qsv', '-preset', 'fast'])
             elif hw_method == "vaapi" and v_codec == 'libx264': cmd.extend(['-c:v', 'h264_vaapi']) 
+            elif hw_method == "vaapi" and v_codec == 'libx265': cmd.extend(['-c:v', 'hevc_vaapi'])
             else:
                 cmd.extend(['-c:v', v_codec, '-preset', 'fast', '-crf', '18'])
                 if v_codec == 'libx264': cmd.extend(['-pix_fmt', 'yuv420p'])
@@ -1345,7 +1346,7 @@ class FFmpegConfigDialog(QDialog):
             if accels: report += f"APIs: {', '.join(accels)}<br>"
         except: pass
         
-        target_encoders = ["h264_nvenc", "hevc_nvenc", "h264_qsv", "h264_vaapi", "h264_videotoolbox"]
+        target_encoders = ["h264_nvenc", "hevc_nvenc", "h264_qsv", "hevc_qsv", "h264_vaapi", "hevc_vaapi", "h264_videotoolbox", "hevc_videotoolbox"]
         found_encs = []
         try:
             res = subprocess.run([path, '-encoders'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=EnvUtils.get_clean_env())
@@ -1999,7 +2000,7 @@ class AboutDialog(QDialog):
             pixmap = QPixmap(logo_path); logo_label.setPixmap(pixmap.scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
         layout.addWidget(logo_label)
         title = QLabel("CineBridge Pro"); title.setStyleSheet("font-size: 22px; font-weight: bold; color: #3498DB;"); title.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(title)
-        version = QLabel("v4.16.1 (Dev)"); version.setStyleSheet("font-size: 14px; color: #888;"); version.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(version)
+        version = QLabel("v4.16.2 (Dev)"); version.setStyleSheet("font-size: 14px; color: #888;"); version.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(version)
 # ...
         self.tab_ingest = IngestTab(self); self.tab_convert = ConvertTab(); self.tab_delivery = DeliveryTab(); self.tab_watch = WatchTab()
         self.tabs.addTab(self.tab_ingest, "📥 INGEST"); self.tabs.addTab(self.tab_convert, "🛠️ CONVERT"); self.tabs.addTab(self.tab_delivery, "🚀 DELIVERY"); self.tabs.addTab(self.tab_watch, "Watch Folder")
