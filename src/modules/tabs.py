@@ -182,7 +182,8 @@ class IngestTab(QWidget):
         
         # GPU Stats - Only show if detected and HW Accel might be in use
         if stats['has_gpu']:
-            self.gpu_load_lbl.setText(f"GPU: {stats['gpu_load']}%")
+            vendor = stats.get('gpu_vendor', 'GPU')
+            self.gpu_load_lbl.setText(f"{vendor}: {stats['gpu_load']}%")
             self.gpu_temp_lbl.setText(f"({stats['gpu_temp']}°C)" if stats['gpu_temp'] > 0 else "")
             self.gpu_load_lbl.setVisible(True); self.gpu_temp_lbl.setVisible(True)
         else:
@@ -585,7 +586,8 @@ class ConvertTab(QWidget):
         self.cpu_load_lbl.setText(f"CPU: {stats['cpu_load']}%")
         self.cpu_temp_lbl.setText(f"({stats['cpu_temp']}°C)" if stats['cpu_temp'] > 0 else "")
         if stats['has_gpu']:
-            self.gpu_load_lbl.setText(f"GPU: {stats['gpu_load']}%")
+            vendor = stats.get('gpu_vendor', 'GPU')
+            self.gpu_load_lbl.setText(f"{vendor}: {stats['gpu_load']}%")
             self.gpu_temp_lbl.setText(f"({stats['gpu_temp']}°C)" if stats['gpu_temp'] > 0 else "")
             self.gpu_load_lbl.setVisible(True); self.gpu_temp_lbl.setVisible(True)
         else:

@@ -1,5 +1,6 @@
 import os
 import time
+import glob
 import shutil
 import platform
 import subprocess
@@ -428,28 +429,53 @@ class SystemMonitor(QThread):
     stats_signal = pyqtSignal(dict)
     def run(self):
         while True:
-            stats = {'cpu_load': 0, 'cpu_temp': 0, 'gpu_load': 0, 'gpu_temp': 0, 'has_gpu': False}
+            stats = {'cpu_load': 0, 'cpu_temp': 0, 'gpu_load': 0, 'gpu_temp': 0, 'has_gpu': False, 'gpu_vendor': ''}
             if PSUTIL_AVAILABLE:
                 try: 
                     stats['cpu_load'] = int(psutil.cpu_percent(interval=None))
-                    # Best effort CPU Temp (Linux/Mac)
                     if hasattr(psutil, "sensors_temperatures"):
                         temps = psutil.sensors_temperatures()
                         if 'coretemp' in temps: stats['cpu_temp'] = int(temps['coretemp'][0].current)
                         elif 'cpu_thermal' in temps: stats['cpu_temp'] = int(temps['cpu_thermal'][0].current)
                 except: pass
             
-            # NVIDIA GPU Stats (via nvidia-smi)
+            # 1. Probe NVIDIA (Cross-platform)
             try:
-                # Only check if nvidia-smi exists to avoid overhead
                 res = subprocess.run(['nvidia-smi', '--query-gpu=utilization.gpu,temperature.gpu', '--format=csv,noheader,nounits'], capture_output=True, text=True, timeout=1)
                 if res.returncode == 0:
                     parts = res.stdout.strip().split(',')
                     if len(parts) >= 2:
                         stats['gpu_load'] = int(parts[0].strip())
                         stats['gpu_temp'] = int(parts[1].strip())
-                        stats['has_gpu'] = True
+                        stats['has_gpu'] = True; stats['gpu_vendor'] = 'NVIDIA'
             except: pass
+
+            # 2. Probe AMD (Linux sysfs) - Only if NVIDIA not found
+            if not stats['has_gpu'] and platform.system() == "Linux":
+                try:
+                    for card in glob.glob('/sys/class/drm/card*/device'):
+                        busy_path = os.path.join(card, 'gpu_busy_percent')
+                        if os.path.exists(busy_path):
+                            with open(busy_path, 'r') as f: stats['gpu_load'] = int(f.read().strip())
+                            stats['has_gpu'] = True; stats['gpu_vendor'] = 'AMD'
+                            # Try to find temperature
+                            temp_files = glob.glob(os.path.join(card, 'hwmon/hwmon*/temp1_input'))
+                            if temp_files:
+                                with open(temp_files[0], 'r') as f: stats['gpu_temp'] = int(int(f.read().strip()) / 1000)
+                            break
+                except: pass
+
+            # 3. Probe Intel (Linux sysfs - limited) - Only if others not found
+            if not stats['has_gpu'] and platform.system() == "Linux":
+                # Basic Intel check (often requires root for load, but we can try vendor ID)
+                try:
+                    for card in glob.glob('/sys/class/drm/card*/device/vendor'):
+                        with open(card, 'r') as f:
+                            if "0x8086" in f.read().lower(): # Intel Vendor ID
+                                stats['has_gpu'] = True; stats['gpu_vendor'] = 'Intel'
+                                # Note: Actual load for Intel on Linux usually needs 'intel_gpu_top' (root)
+                                break
+                except: pass
 
             self.stats_signal.emit(stats)
             time.sleep(2)
