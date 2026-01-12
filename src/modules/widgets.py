@@ -4,12 +4,12 @@ import json
 import platform
 import subprocess
 from PyQt6.QtWidgets import (
-    QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, 
+    QApplication, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, 
     QFileDialog, QTextEdit, QMessageBox, QCheckBox, QGroupBox, QComboBox, 
     QFrame, QFormLayout, QDialog, QToolButton, QRadioButton, QButtonGroup, 
     QGridLayout, QInputDialog, QTableWidget, QTableWidgetItem, QHeaderView
 )
-from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QPixmap
+from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QIcon, QPixmap, QPalette
 from PyQt6.QtCore import Qt, QSize, QSettings
 
 # Internal Module Imports
@@ -202,8 +202,16 @@ class TranscodeSettingsWidget(QGroupBox):
 class JobReportDialog(QDialog):
     def __init__(self, title, report_text, parent=None):
         super().__init__(parent); self.setWindowTitle(title); self.setMinimumWidth(500); self.resize(600, 400); layout = QVBoxLayout()
+        
+        # Theme Polish
+        is_dark = self.palette().color(QPalette.ColorRole.Window).lightness() < 128
+        bg_color = "#2b2b2b" if is_dark else "#ffffff"
+        text_color = "#e0e0e0" if is_dark else "#333333"
+        
         self.text_edit = QTextEdit(); self.text_edit.setReadOnly(True)
-        self.text_edit.setHtml(f"<div style='font-family: Consolas, monospace; font-size: 13px; padding: 10px;'>{report_text}</div>")
+        self.text_edit.setStyleSheet(f"background-color: {bg_color}; color: {text_color}; border: 1px solid #555;")
+        
+        self.text_edit.setHtml(f"<div style='font-family: Consolas, monospace; font-size: 13px; padding: 10px; color: {text_color};'>{report_text}</div>")
         layout.addWidget(self.text_edit); ok_btn = QPushButton("OK"); ok_btn.clicked.connect(self.accept); layout.addWidget(ok_btn); self.setLayout(layout)
 
 class FFmpegConfigDialog(QDialog):

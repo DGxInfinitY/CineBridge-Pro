@@ -207,6 +207,21 @@ class TranscodeEngine:
         except: return 0
 
     @staticmethod
+    def is_edit_friendly(input_path, target_codec_family):
+        """Checks if the file is already in the target codec family (dnxhd/prores)."""
+        # Quick extension check first (optimization)
+        ext = os.path.splitext(input_path)[1].lower()
+        if target_codec_family == 'prores' and ext != '.mov': return False
+        if target_codec_family == 'dnxhd' and ext not in ['.mov', '.mxf']: return False
+
+        info = MediaInfoExtractor.get_info(input_path)
+        if "video_streams" in info and info["video_streams"]:
+            codec = info["video_streams"][0]['codec'].lower()
+            if target_codec_family == 'prores' and 'prores' in codec: return True
+            if target_codec_family == 'dnxhd' and 'dnxhd' in codec: return True
+        return False
+
+    @staticmethod
     def parse_progress(line, total_duration):
         time_match = re.search(r"time=(\d+):(\d+):(\d+\.\d+)", line)
         speed_match = re.search(r"speed=\s*(\d+\.?\d*)x", line)

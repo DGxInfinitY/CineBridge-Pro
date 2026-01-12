@@ -11,7 +11,7 @@ from PyQt6.QtGui import QAction, QIcon, QPixmap
 from PyQt6.QtCore import Qt, QTimer, QSize
 
 from .config import DEBUG_MODE, GUI_LOG_QUEUE, debug_log, info_log, error_log
-from .utils import DeviceRegistry, ReportGenerator, MHLGenerator, SystemNotifier, MediaInfoExtractor
+from .utils import DeviceRegistry, ReportGenerator, MHLGenerator, SystemNotifier, MediaInfoExtractor, TranscodeEngine
 from .workers import (
     ScanWorker, IngestScanner, AsyncTranscoder, CopyWorker, 
     BatchTranscodeWorker, ThumbnailWorker, SystemMonitor
@@ -296,6 +296,16 @@ class IngestTab(QWidget):
         if not is_enough: SystemNotifier.notify("Ingest Failed", "Insufficient storage space on destination drive.")
     def queue_for_transcode(self, src_path, dest_path, filename):
         if self.transcode_worker:
+            # Check if file is already edit-friendly
+            settings = self.transcode_widget.get_settings()
+            if TranscodeEngine.is_edit_friendly(dest_path, settings.get('v_codec')):
+                self.append_copy_log(f"⏩ Smart Skip: {filename} is already {settings.get('v_codec')}.")
+                # We need to inform the transcoder that a job was skipped so the count matches?
+                # Actually, the transcoder just runs until queue is empty. 
+                # But the UI progress "Transcoding X/Total" might look off if Total was set high.
+                # Ideally we'd decrement the total in the worker, but for now skipping is fine.
+                return
+
             base_dir = os.path.dirname(dest_path); tc_dir = os.path.join(base_dir, "Edit_Ready"); os.makedirs(tc_dir, exist_ok=True); name_only = os.path.splitext(filename)[0]; transcode_dest = os.path.join(tc_dir, f"{name_only}_EDIT.mov"); self.transcode_worker.add_job(dest_path, transcode_dest, filename)
     def cancel_import(self):
         if self.copy_worker: self.copy_worker.stop(); self.copy_worker.wait()
