@@ -35,11 +35,14 @@ class IngestTab(QWidget):
         self.auto_info_label = QLabel("Scanning..."); self.auto_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.result_card = QFrame(); self.result_card.setVisible(False); self.result_card.setObjectName("ResultCard"); res_lay = QVBoxLayout()
         self.result_label = QLabel(); self.result_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.select_device_box = QComboBox(); self.select_device_box.setVisible(False); self.select_device_box.currentIndexChanged.connect(self.on_device_selection_change)
+        self.select_device_box = QComboBox(); self.select_device_box.setVisible(False); 
+        self.select_device_box.currentIndexChanged.connect(self.on_device_selection_change)
+        self.select_device_box.currentIndexChanged.connect(self.reset_ingest_mode)
         res_lay.addWidget(self.result_label); res_lay.addWidget(self.select_device_box); self.result_card.setLayout(res_lay)
         auto_lay.addWidget(self.scan_btn); auto_lay.addWidget(self.auto_info_label); auto_lay.addWidget(self.result_card); auto_lay.addStretch()
         self.tab_auto.setLayout(auto_lay); self.tab_manual = QWidget(); man_lay = QVBoxLayout()
         self.source_input = QLineEdit(); self.browse_src = QPushButton("Browse"); self.browse_src.clicked.connect(self.browse_source)
+        self.source_input.textChanged.connect(self.reset_ingest_mode)
         man_lay.addWidget(QLabel("Path:")); man_lay.addWidget(self.source_input); man_lay.addWidget(self.browse_src); man_lay.addStretch()
         self.tab_manual.setLayout(man_lay); self.source_tabs.addTab(self.tab_auto, "Auto"); self.source_tabs.addTab(self.tab_manual, "Manual")
         source_inner.addWidget(self.source_tabs); source_group.setLayout(source_inner)
@@ -131,6 +134,16 @@ class IngestTab(QWidget):
         self.scan_watchdog.stop(); self.found_devices = results; self.scan_btn.setEnabled(True)
         if results: self.auto_info_label.setText("✅ Scan Complete"); self.update_result_ui(results[0], len(results)>1)
         else: self.result_card.setVisible(False); self.auto_info_label.setText("No devices")
+    def reset_ingest_mode(self):
+        """Resets the UI state when source changes."""
+        if self.ingest_mode != "scan":
+            self.ingest_mode = "scan"
+            self.last_scan_results = None
+            self.update_transfer_button_text()
+            # Clear tree placeholder or previous results
+            self.tree.clear()
+            p = QTreeWidgetItem(self.tree); p.setText(0, "Select a source and click 'SCAN SOURCE' to view media."); p.setFlags(p.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+
     def on_device_selection_change(self, idx): 
         if idx >= 0: self.update_result_ui(self.found_devices[idx], True)
     def update_result_ui(self, dev, multi):
@@ -219,15 +232,27 @@ class IngestTab(QWidget):
 
     def update_transfer_button_text(self):
         if not hasattr(self, 'import_btn'): return
+        
+        # If we haven't scanned yet, keep default text
         if self.ingest_mode == "scan":
             self.import_btn.setText("SCAN SOURCE"); return
         
         count = 0; root = self.tree.invisibleRootItem()
         for i in range(root.childCount()):
             date_item = root.child(i)
-            for j in range(date_item.childCount()):
-                if date_item.child(j).checkState(0) == Qt.CheckState.Checked: count += 1
+            # Only count if the item is checkable (actual files/dates)
+            if date_item.flags() & Qt.ItemFlag.ItemIsUserCheckable:
+                for j in range(date_item.childCount()):
+                    if date_item.child(j).checkState(0) == Qt.CheckState.Checked: count += 1
         
+        if self.ingest_mode == "transfer" and count == 0:
+            # Special case: Scan finished but nothing found or nothing selected
+            if not self.last_scan_results:
+                self.import_btn.setText("SCAN SOURCE (NO MEDIA FOUND)")
+            else:
+                self.import_btn.setText("START (SELECT FILES FIRST)")
+            return
+
         action = "TRANSFER/TRANSCODE" if self.check_transcode.isChecked() else "TRANSFER"
         self.import_btn.setText(f"START {action} ({count} FILES)")
 
