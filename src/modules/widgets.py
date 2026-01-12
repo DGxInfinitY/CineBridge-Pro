@@ -210,29 +210,21 @@ class TranscodeSettingsWidget(QGroupBox):
     def set_gpu_checked(self, checked): self.chk_gpu.blockSignals(True); self.chk_gpu.setChecked(checked); self.chk_gpu.blockSignals(False)
 
 class JobReportDialog(QDialog):
-    def __init__(self, title, report_text, parent=None):
-        super().__init__(parent); self.setWindowTitle(title); self.setMinimumWidth(500); self.resize(600, 450); layout = QVBoxLayout()
-        layout.setContentsMargins(20, 20, 20, 20); layout.setSpacing(15)
+    def __init__(self, title, message, parent=None):
+        super().__init__(parent); self.setWindowTitle(title); self.setFixedWidth(450); layout = QVBoxLayout()
+        layout.setContentsMargins(30, 30, 30, 30); layout.setSpacing(20)
         
-        # Theme Polish
-        is_dark = self.palette().color(QPalette.ColorRole.Window).lightness() < 128
-        bg_color = "#1e1e1e" if is_dark else "#f5f5f5"
-        text_color = "#2ECC71" if is_dark else "#27AE60" # Success Green
+        # Icon/Status
+        header_lay = QHBoxLayout()
+        icon_label = QLabel(); icon_label.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton).pixmap(32, 32))
+        header_lay.addWidget(icon_label)
+        msg_label = QLabel(message); msg_label.setWordWrap(True); msg_label.setStyleSheet("font-size: 14px; font-weight: bold;")
+        header_lay.addWidget(msg_label, 1)
+        layout.addLayout(header_lay)
         
-        container = QFrame(); container.setObjectName("DashFrame")
-        if not is_dark: container.setStyleSheet("background-color: #eee; border: 1px solid #ccc; border-radius: 8px;")
-        
-        c_lay = QVBoxLayout(container)
-        self.text_edit = QTextEdit(); self.text_edit.setReadOnly(True)
-        self.text_edit.setStyleSheet(f"background-color: {bg_color}; color: {text_color}; border: 1px solid #444; border-radius: 4px;")
-        
-        # Use more standard font and padding
-        self.text_edit.setHtml(f"<div style='font-family: Segoe UI, sans-serif; font-size: 14px; padding: 15px;'>{report_text}</div>")
-        c_lay.addWidget(self.text_edit)
-        layout.addWidget(container)
-        
-        ok_btn = QPushButton("DISMISS"); ok_btn.setMinimumHeight(40); ok_btn.clicked.connect(self.accept)
-        layout.addWidget(ok_btn); self.setLayout(layout)
+        ok_btn = QPushButton("OK"); ok_btn.setMinimumHeight(40); ok_btn.setFixedWidth(100); ok_btn.clicked.connect(self.accept)
+        btn_lay = QHBoxLayout(); btn_lay.addStretch(); btn_lay.addWidget(ok_btn); btn_lay.addStretch()
+        layout.addLayout(btn_lay); self.setLayout(layout)
 
 class FFmpegConfigDialog(QDialog):
     def __init__(self, parent=None):

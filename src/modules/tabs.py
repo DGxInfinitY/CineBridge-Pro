@@ -387,7 +387,6 @@ class IngestTab(QWidget):
     def on_copy_finished(self, success, msg):
         self.speed_label.setText(""); 
         if success: 
-            SystemNotifier.notify("Ingest Complete", "All files copied successfully.")
             # Generate Report if checked
             if self.check_report.isChecked() and self.copy_worker:
                 self.finalize_report()
@@ -402,11 +401,17 @@ class IngestTab(QWidget):
 
         self.status_label.setText(msg)
         
-        # If transcode is active, don't enable button yet
+        # If transcode is active, don't enable button yet, wait for transcode worker to notify
         if self.check_transcode.isChecked() and self.transcode_worker:
             self.transcode_worker.set_producer_finished()
             self.import_btn.setText("TRANSCODING...")
         else:
+            # ONLY NOTIFY HERE IF NO TRANSCODE IS PENDING
+            if success:
+                SystemNotifier.notify("Ingest Complete", "All files offloaded and verified.")
+                dlg = JobReportDialog("Ingest Complete", "<h3>Ingest Successful</h3><p>All selected media has been offloaded and verified.</p>", self)
+                dlg.exec()
+
             self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False)
             self.import_btn.setText("COMPLETE"); self.import_btn.setStyleSheet("background-color: #27AE60; color: white;")
             self.set_transcode_active(False)
@@ -449,7 +454,7 @@ class IngestTab(QWidget):
         self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False)
         self.import_btn.setText("COMPLETE"); self.import_btn.setStyleSheet("background-color: #27AE60; color: white;")
         self.set_transcode_active(False); self.transcode_status_label.setText("All Transcodes Complete!")
-        dlg = JobReportDialog("Job Complete", "<h3>Job Complete</h3><p>All ingest and transcode operations finished successfully.</p>", self)
+        dlg = JobReportDialog("Job Complete", "<h3>Job Successful</h3><p>All ingest and transcode operations finished successfully.<br>Your media is ready for edit.</p>", self)
         dlg.exec()
     def save_tab_settings(self):
         s = self.app.settings; s.setValue("last_source", self.source_input.text()); s.setValue("last_dest", self.dest_input.text()); s.setValue("sort_date", self.check_date.isChecked()); s.setValue("skip_dupe", self.check_dupe.isChecked()); s.setValue("videos_only", self.check_videos_only.isChecked()); s.setValue("transcode_dnx", self.check_transcode.isChecked()); s.setValue("verify_copy", self.check_verify.isChecked()); s.setValue("gen_report", self.check_report.isChecked())
@@ -535,10 +540,12 @@ class ConvertTab(QWidget):
         items = self.list.findItems(path, Qt.MatchFlag.MatchExactly)
         for item in items: item.setIcon(QIcon(pixmap))
     def stop(self):
-        if self.worker: self.worker.stop(); self.status.setText("Stopping...")
+        if self.worker: self.worker.stop(); self.status_label.setText("Stopping...")
     def on_finished(self):
-        SystemNotifier.notify("Batch Complete", "Transcoding batch finished.")
-        self.toggle_ui_state(False); self.status.setText("Batch Complete!"); dest = self.out_input.text(); msg = f"Files saved to:\n{dest}" if dest else "Files saved to 'Converted' folder next to the source file(s)."; dlg = JobReportDialog("Batch Complete", f"<h3>Batch Successful</h3><p>{msg}</p>", self); dlg.exec()
+        SystemNotifier.notify("Conversion Complete", "Batch transcode finished.")
+        self.toggle_ui_state(False); self.status_label.setText("Batch Complete!"); dest = self.out_input.text(); msg = f"Files saved to:\n{dest}" if dest else "Files saved to 'Converted' folder next to the source file(s)."; 
+        dlg = JobReportDialog("Conversion Complete", f"<h3>Transcode Successful</h3><p>All files in the queue have been converted.<br>Your media is ready for edit.</p>", self)
+        dlg.exec()
     def show_context_menu(self, pos):
         item = self.list.itemAt(pos)
         if item:
@@ -573,7 +580,7 @@ class DeliveryTab(QWidget):
         
         # 4. Render Dashboard
         dash_frame = QFrame(); dash_frame.setObjectName("DashFrame"); dash_layout = QVBoxLayout(); dash_frame.setLayout(dash_layout)
-        self.status = QLabel("Ready to Render"); dash_layout.addWidget(self.status)
+        self.status_label = QLabel("Ready to Render"); dash_layout.addWidget(self.status_label)
         self.pbar = QProgressBar(); self.pbar.setTextVisible(True); dash_layout.addWidget(self.pbar); layout.addWidget(dash_frame)
         
         self.btn_go = QPushButton("GENERATE DELIVERY MASTER"); self.btn_go.setObjectName("StartBtn"); self.btn_go.setMinimumHeight(50); self.btn_go.clicked.connect(self.on_btn_click)
@@ -599,12 +606,14 @@ class DeliveryTab(QWidget):
         if not self.inp_file.text(): return QMessageBox.warning(self, "Missing Info", "Please select a master file.")
         self.toggle_ui_state(True); use_gpu = self.settings.is_gpu_enabled(); dest_folder = self.inp_dest.text().strip()
         self.worker = BatchTranscodeWorker([self.inp_file.text()], dest_folder, self.settings.get_settings(), mode="delivery", use_gpu=use_gpu)
-        self.worker.progress_signal.connect(self.pbar.setValue); self.worker.status_signal.connect(self.status.setText); self.worker.finished_signal.connect(self.on_finished); self.worker.start()
+        self.worker.progress_signal.connect(self.pbar.setValue); self.worker.status_signal.connect(self.status_label.setText); self.worker.finished_signal.connect(self.on_finished); self.worker.start()
     def stop(self):
-        if self.worker: self.worker.stop(); self.status.setText("Stopping...")
+        if self.worker: self.worker.stop(); self.status_label.setText("Stopping...")
     def on_finished(self):
         SystemNotifier.notify("Render Complete", "Delivery render finished.")
-        self.toggle_ui_state(False); self.status.setText("Delivery Render Complete!"); dest = self.inp_dest.text(); msg = f"File saved to:\n{dest}" if dest else "File saved to 'Final_Render' folder next to the master file."; dlg = JobReportDialog("Render Complete", f"<h3>Render Successful</h3><p>{msg}</p>", self); dlg.exec()
+        self.toggle_ui_state(False); self.status_label.setText("Delivery Render Complete!"); dest = self.inp_dest.text(); 
+        dlg = JobReportDialog("Render Complete", f"<h3>Final Render Successful</h3><p>Your master file has been rendered and is ready for distribution.</p>", self)
+        dlg.exec()
 
 class WatchTab(QWidget):
     def __init__(self):
