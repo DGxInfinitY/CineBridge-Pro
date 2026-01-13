@@ -105,8 +105,11 @@ class CopyWorker(QThread):
                 except: continue
             
             free = self.get_free_space(check_path)
+            self.log_signal.emit(f"💾 Drive {drive}: Need {needed/(1024**3):.2f} GB, Free {free/(1024**3):.2f} GB")
             if free < (needed + 104857600): # 100MB buffer
-                self.finished_signal.emit(False, f"Insufficient storage on {drive}!"); return
+                msg = f"Insufficient storage on {drive}! (Need {needed/(1024**3):.2f} GB, Have {free/(1024**3):.2f} GB)"
+                self.log_signal.emit(f"❌ {msg}")
+                self.finished_signal.emit(False, msg); return
 
         # Progress calculation: Copy (1.0) + Verify (1.0 per destination if enabled)
         # However, for UX simplicity, let's keep it based on total bytes to be processed

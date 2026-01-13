@@ -340,20 +340,27 @@ class IngestTab(QWidget):
         self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False); self.set_transcode_active(False)
 
     def on_copy_finished(self, success, msg):
-        if success:
-            mode = self.app.settings.value("report_dest_mode", "project")
-            if mode == "fixed": r_path = self.app.settings.value("report_fixed_path", self.dest_input.text())
-            elif mode == "custom" and self.report_custom_path: r_path = self.report_custom_path
-            else: r_path = self.dest_input.text()
-            if self.check_report.isVisible() and self.check_report.isChecked(): self.finalize_report(r_path)
-            if self.check_mhl.isVisible() and self.check_mhl.isChecked():
-                try: MHLGenerator.generate(r_path, self.copy_worker.transfer_data, self.project_name_input.text() or "CineBridge")
-                except: pass
-        if self.check_transcode.isChecked() and self.transcode_worker: self.transcode_worker.set_producer_finished(); self.import_btn.setText("TRANSCODING...")
+        if not success:
+            self.append_copy_log(f"❌ INGEST FAILED: {msg}")
+            SystemNotifier.notify("Ingest Failed", msg, "dialog-error")
+            QMessageBox.critical(self, "Ingest Error", f"Ingest failed: {msg}")
+            self.cancel_import(); self.import_btn.setText("FAILED"); self.import_btn.setStyleSheet("background-color: #C0392B; color: white;")
+            return
+
+        mode = self.app.settings.value("report_dest_mode", "project")
+        if mode == "fixed": r_path = self.app.settings.value("report_fixed_path", self.dest_input.text())
+        elif mode == "custom" and self.report_custom_path: r_path = self.report_custom_path
+        else: r_path = self.dest_input.text()
+        if self.check_report.isVisible() and self.check_report.isChecked(): self.finalize_report(r_path)
+        if self.check_mhl.isVisible() and self.check_mhl.isChecked():
+            try: MHLGenerator.generate(r_path, self.copy_worker.transfer_data, self.project_name_input.text() or "CineBridge")
+            except: pass
+
+        if self.check_transcode.isChecked() and self.transcode_worker: 
+            self.transcode_worker.set_producer_finished(); self.import_btn.setText("TRANSCODING...")
         else:
-            if success:
-                v = " and verified" if self.check_verify.isChecked() else ""
-                SystemNotifier.notify("Ingest Complete", f"All files offloaded{v}."); JobReportDialog("Ingest Complete", f"<h3>Ingest Successful</h3><p>All selected media has been offloaded{v}.</p>", self).exec()
+            v = " and verified" if self.check_verify.isChecked() else ""
+            SystemNotifier.notify("Ingest Complete", f"All files offloaded{v}."); JobReportDialog("Ingest Complete", f"<h3>Ingest Successful</h3><p>All selected media has been offloaded{v}.</p>", self).exec()
             self.import_btn.setEnabled(True); self.import_btn.setText("COMPLETE"); self.import_btn.setStyleSheet("background-color: #27AE60; color: white;"); self.set_transcode_active(False); self.reset_timer.start(5000)
 
     def finalize_report(self, deliverables_path):
