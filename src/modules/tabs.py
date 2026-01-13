@@ -180,8 +180,13 @@ class IngestTab(QWidget):
         idx = self.device_combo.findText(name)
         if idx >= 0: self.device_combo.setCurrentIndex(idx)
         if multi:
+            self.select_device_box.blockSignals(True)
             self.select_device_box.setVisible(True); self.select_device_box.clear()
             for d in self.found_devices: self.select_device_box.addItem(d.get('display_name', 'Unknown'))
+            # Find the current dev in the list to restore index
+            d_idx = self.found_devices.index(dev)
+            self.select_device_box.setCurrentIndex(d_idx)
+            self.select_device_box.blockSignals(False)
     def on_import_click(self):
         if self.ingest_mode == "scan": self.start_scan()
         else: self.start_transfer()
