@@ -155,7 +155,7 @@ class DriveDetector:
         elif system == "Windows":
             import string
             for d in string.ascii_uppercase:
-                p = f"{d}:\"
+                p = f"{d}:\\"
                 if os.path.exists(p) and d != "C": mounts.append(p)
         return mounts
     @staticmethod
