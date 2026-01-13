@@ -125,7 +125,9 @@ class IngestTab(QWidget):
         
         self.splitter = QSplitter(Qt.Orientation.Vertical); self.copy_log = QTextEdit(); self.transcode_log = QTextEdit()
         self.copy_log.setReadOnly(True); self.copy_log.setMinimumHeight(40); self.copy_log.setStyleSheet("background-color: #1e1e1e; color: #2ECC71; font-family: Consolas; font-size: 11px;")
+        self.copy_log.setPlaceholderText("Copy and Verification Log...")
         self.transcode_log.setReadOnly(True); self.transcode_log.setMinimumHeight(40); self.transcode_log.setStyleSheet("background-color: #2c2c2c; color: #3498DB; font-family: Consolas; font-size: 11px;")
+        self.transcode_log.setPlaceholderText("Transcode and Processing Log...")
         self.transcode_log.setVisible(False)
         self.splitter.addWidget(self.copy_log); self.splitter.addWidget(self.transcode_log); self.layout.addWidget(self.splitter, 1)
 

@@ -54,7 +54,7 @@ class TranscodeSettingsWidget(QGroupBox):
         
         self.layout.addLayout(top_row)
         
-        lut_lay = QHBoxLayout(); self.lut_path = QLineEdit(); self.lut_path.setPlaceholderText("Select 3D LUT (.cube) - Optional")
+lut_lay = QHBoxLayout(); self.lut_path = QLineEdit(); self.lut_path.setPlaceholderText("Select 3D LUT (.cube) - Optional")
         self.lut_path.setToolTip("Apply a 3D LUT (.cube) during transcoding to see your creative look on proxies.")
         self.btn_lut = QPushButton("Browse LUT"); self.btn_lut.clicked.connect(self.browse_lut)
         self.btn_clr_lut = QPushButton("X"); self.btn_clr_lut.setFixedWidth(30); self.btn_clr_lut.clicked.connect(self.lut_path.clear)
@@ -63,9 +63,8 @@ class TranscodeSettingsWidget(QGroupBox):
 
         # Overlays Section
         self.overlay_group = QGroupBox("Visual Overlays (Burn-in)"); overlay_lay = QGridLayout(); self.overlay_group.setLayout(overlay_lay)
-        self.chk_burn_file = QCheckBox("Burn Filename"); self.chk_burn_tc = QCheckBox("Burn Timecode")
-        self.chk_burn_file.setToolTip("Overlay the source filename on the bottom left of the video.")
-        self.chk_burn_tc.setToolTip("Overlay the timecode or duration on the bottom right of the video.")
+        self.chk_burn_file = QCheckBox("Burn Filename"); self.chk_burn_file.setToolTip("Overlay the source filename on the bottom left of the video.")
+        self.chk_burn_tc = QCheckBox("Burn Timecode"); self.chk_burn_tc.setToolTip("Overlay the timecode or duration on the bottom right of the video.")
         self.inp_watermark = QLineEdit(); self.inp_watermark.setPlaceholderText("Watermark Text (Optional)")
         self.inp_watermark.setToolTip("Add a custom text watermark to the center of the frame.")
         overlay_lay.addWidget(self.chk_burn_file, 0, 0); overlay_lay.addWidget(self.chk_burn_tc, 0, 1)
@@ -131,8 +130,7 @@ class TranscodeSettingsWidget(QGroupBox):
             try:
                 with open(f, 'r') as p: data = json.load(p)
                 name = os.path.splitext(os.path.basename(f))[0]
-                if PresetManager.save_preset(name, data):
-                    self.init_presets(); QMessageBox.information(self, "Success", f"Imported '{name}'")
+                if PresetManager.save_preset(name, data): self.init_presets(); QMessageBox.information(self, "Success", f"Imported '{name}'")
             except Exception as e: QMessageBox.critical(self, "Error", f"Failed to import: {e}")
 
     def export_preset_file(self):
