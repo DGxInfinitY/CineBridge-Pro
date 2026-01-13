@@ -179,25 +179,44 @@ class IngestTab(QWidget):
     def on_device_selection_change(self, idx):
         if idx >= 0: self.update_result_ui(self.found_devices[idx], True)
     def update_result_ui(self, dev, multi):
-        self.current_detected_path = dev['path']; self.source_input.setText(dev['path']); name = dev.get('display_name', 'Unknown')
-        self.result_label.setText(f"Detected: {name}"); self.result_card.setVisible(True)
+        self.current_detected_path = dev['path']; self.source_input.setText(dev['path'])
+        name = dev.get('display_name', 'Unknown'); path_short = dev['path']
+        msg = f"✅ {name}" if not dev['empty'] else f"⚠️ {name} (Empty)"
+        if len(path_short) > 35: path_short = path_short[:15] + "..." + path_short[-15:]
+        
+        self.result_label.setText(f"<h3 style='color:{'#27AE60' if not dev['empty'] else '#F39C12'}'>{msg}</h3><span style='color:white;'>{path_short}</span>")
+        self.result_card.setStyleSheet(f"background-color: {'#2e3b33' if not dev['empty'] else '#4d3d2a'}; border: 2px solid {'#27AE60' if not dev['empty'] else '#F39C12'}; border-radius: 8px;")
+        self.result_card.setVisible(True)
+        
+        # Sync Camera Profile Dropdown
         idx = self.device_combo.findText(name)
         if idx >= 0: self.device_combo.setCurrentIndex(idx)
+        elif name == "Generic Storage": self.device_combo.setCurrentIndex(self.device_combo.findData("Generic_Device"))
+        
         if multi:
             self.select_device_box.blockSignals(True)
             self.select_device_box.setVisible(True); self.select_device_box.clear()
-            for d in self.found_devices: self.select_device_box.addItem(d.get('display_name', 'Unknown'))
-            # Find the current dev in the list to restore index
-            d_idx = self.found_devices.index(dev)
-            self.select_device_box.setCurrentIndex(d_idx)
+            for d in self.found_devices:
+                self.select_device_box.addItem(f"{d.get('display_name', 'Unknown')} ({'Empty' if d['empty'] else 'Data'})")
+            self.select_device_box.setCurrentIndex(self.found_devices.index(dev))
             self.select_device_box.blockSignals(False)
+            self.select_device_box.setStyleSheet(f"background-color: #1e1e1e; color: white; border: 1px solid {'#27AE60' if not dev['empty'] else '#F39C12'};")
     def on_import_click(self):
         if self.ingest_mode == "scan": self.start_scan()
         else: self.start_transfer()
     def start_scan(self):
         src = self.current_detected_path if self.source_tabs.currentIndex() == 0 else self.source_input.text()
         if not src or not os.path.exists(src): return QMessageBox.warning(self, "Error", "Invalid Source")
-        self.import_btn.setEnabled(False); self.scanner = IngestScanner(src, self.check_videos_only.isChecked())
+        
+        self.import_btn.setEnabled(False); self.status_label.setText("SCANNING SOURCE..."); self.tree.clear()
+        
+        allowed_exts = None
+        if self.source_tabs.currentIndex() == 0 and self.found_devices:
+             idx = self.select_device_box.currentIndex()
+             if idx >= 0 and idx < len(self.found_devices):
+                 allowed_exts = self.found_devices[idx].get('exts')
+
+        self.scanner = IngestScanner(src, self.check_videos_only.isChecked(), allowed_exts)
         self.scanner.finished_signal.connect(self.on_scan_complete); self.scanner.start()
     def on_scan_complete(self, grouped_files): self.last_scan_results = grouped_files; self.refresh_tree_view()
     def open_video_preview(self, item, column):
@@ -207,11 +226,24 @@ class IngestTab(QWidget):
             self.preview_dlg.load_video(path); self.preview_dlg.show()
     def refresh_tree_view(self):
         self.tree.clear(); total = 0
-        if not self.last_scan_results: return
+        if not self.last_scan_results:
+            p = QTreeWidgetItem(self.tree); p.setText(0, "Select a source and click 'SCAN SOURCE' to view media."); p.setFlags(p.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+            return
+            
         for date, files in sorted(self.last_scan_results.items(), reverse=True):
-            d_item = QTreeWidgetItem(self.tree); d_item.setText(0, f"{date} ({len(files)} files)"); d_item.setCheckState(0, Qt.CheckState.Checked)
+            d_item = QTreeWidgetItem(self.tree); d_item.setText(0, f"{date} ({len(files)} files)")
+            d_item.setFlags(d_item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsAutoTristate)
+            d_item.setCheckState(0, Qt.CheckState.Checked)
             for f in files:
-                f_item = QTreeWidgetItem(d_item); f_item.setText(0, os.path.basename(f)); f_item.setData(0, Qt.ItemDataRole.UserRole, f); f_item.setCheckState(0, Qt.CheckState.Checked); total += 1
+                f_item = QTreeWidgetItem(d_item); f_item.setText(0, os.path.basename(f)); f_item.setData(0, Qt.ItemDataRole.UserRole, f)
+                f_item.setFlags(f_item.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+                f_item.setCheckState(0, Qt.CheckState.Checked); total += 1
+        
+        if total == 0:
+            p = QTreeWidgetItem(self.tree)
+            msg = "No video files found." if self.check_videos_only.isChecked() else "No matching media found."
+            p.setText(0, msg); p.setFlags(p.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+            
         self.ingest_mode = "transfer"; self.update_transfer_button_text(); self.status_label.setText(f"Found {total} files.")
     def update_transfer_button_text(self):
         if self.ingest_mode == "scan": self.import_btn.setText("SCAN SOURCE")
