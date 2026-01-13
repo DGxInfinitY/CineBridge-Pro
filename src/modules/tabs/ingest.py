@@ -79,8 +79,8 @@ class IngestTab(QWidget):
         self.check_report = QCheckBox("Gen Report"); self.check_mhl = QCheckBox("Gen MHL")
         self.check_transcode = QCheckBox("Enable Transcode"); self.check_transcode.setStyleSheet("color: #E67E22; font-weight: bold;"); self.check_transcode.toggled.connect(self.toggle_transcode_ui)
         rules_grid.addWidget(self.check_date, 0, 0); rules_grid.addWidget(self.check_dupe, 0, 1); rules_grid.addWidget(self.check_videos_only, 0, 2)
-        rules_grid.addWidget(self.check_verify, 1, 0); rules_grid.addWidget(self.check_report, 1, 1); rules_grid.addWidget(self.check_mhl, 1, 2)
-        rules_grid.addWidget(self.check_transcode, 2, 0); settings_layout.addLayout(rules_grid)
+        rules_grid.addWidget(self.check_verify, 1, 0); rules_grid.addWidget(self.check_transcode, 1, 1); rules_grid.addWidget(self.check_report, 1, 2)
+        rules_grid.addWidget(self.check_mhl, 2, 0); settings_layout.addLayout(rules_grid)
         
         config_btns = QHBoxLayout()
         self.btn_config_trans = QPushButton("Configure Transcode..."); self.btn_config_trans.setVisible(False); self.btn_config_trans.clicked.connect(self.open_transcode_config)
@@ -299,7 +299,9 @@ class IngestTab(QWidget):
             if self.dest_input_3.text().strip(): dests.append(self.dest_input_3.text().strip())
             debug_log(f"Ingest: Source Path: {src}"); debug_log(f"Ingest: Primary Dest: {dests[0]}")
             if not src or not dests[0]: return QMessageBox.warning(self, "Error", "Set Source/Main Dest")
-            self.save_tab_settings(); self.import_btn.setEnabled(False); self.cancel_btn.setEnabled(True); self.import_btn.setText("INGESTING..."); self.import_btn.setStyleSheet(""); self.storage_bar.setVisible(False)
+            self.save_tab_settings(); self.import_btn.setEnabled(False); self.cancel_btn.setEnabled(True); 
+            self.import_btn.setText("INGESTING..."); self.import_btn.setStyleSheet("background-color: #E67E22; color: white;"); 
+            self.storage_bar.setVisible(False); self.progress_bar.setValue(0); self.clear_logs()
             cam_name = self.device_combo.currentText()
             if self.device_combo.currentData() == "auto":
                 if self.found_devices and self.select_device_box.currentIndex() >= 0: cam_name = self.found_devices[self.select_device_box.currentIndex()].get('display_name', "Generic_Device")
@@ -352,7 +354,7 @@ class IngestTab(QWidget):
             if success:
                 v = " and verified" if self.check_verify.isChecked() else ""
                 SystemNotifier.notify("Ingest Complete", f"All files offloaded{v}."); JobReportDialog("Ingest Complete", f"<h3>Ingest Successful</h3><p>All selected media has been offloaded{v}.</p>", self).exec()
-            self.import_btn.setEnabled(True); self.import_btn.setText("COMPLETE"); self.import_btn.setStyleSheet("background-color: #27AE60; color: white;"); self.set_transcode_active(False); self.reset_timer.start(30000)
+            self.import_btn.setEnabled(True); self.import_btn.setText("COMPLETE"); self.import_btn.setStyleSheet("background-color: #27AE60; color: white;"); self.set_transcode_active(False); self.reset_timer.start(5000)
 
     def finalize_report(self, deliverables_path):
         project = self.project_name_input.text() or "Unnamed"; report_path = os.path.join(deliverables_path, f"Transfer_Report_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf")

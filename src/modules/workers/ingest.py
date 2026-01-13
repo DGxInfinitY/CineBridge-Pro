@@ -56,9 +56,11 @@ class CopyWorker(QThread):
         v_exts = DeviceRegistry.VIDEO_EXTS
         files_to_process = [f for f in found_files if os.path.splitext(f)[1].upper() in v_exts] if self.videos_only else found_files
         total_files = len(files_to_process)
+        self.log_signal.emit(f"🔍 Found {total_files} files to process.")
         self.transcode_count_signal.emit(len([f for f in files_to_process if os.path.splitext(f)[1].upper() in ('.MP4', '.MOV', '.MKV', '.AVI')]))
         
         source_size = sum(os.path.getsize(f) for f in files_to_process)
+        self.log_signal.emit(f"📦 Total size: {source_size / (1024**3):.2f} GB")
         
         # Estimate transcode space if enabled
         transcode_extra = 0
