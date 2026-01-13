@@ -4,7 +4,13 @@ import shutil
 import platform
 import subprocess
 from PyQt6.QtCore import QSettings
-from ..config import debug_log, error_log
+from ..config import debug_log, info_log, error_log
+
+try:
+    import xxhash
+    HAS_XXHASH = True
+except ImportError:
+    HAS_XXHASH = False
 
 class EnvUtils:
     @staticmethod

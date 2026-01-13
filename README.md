@@ -65,7 +65,8 @@ For most users, we recommend downloading the standalone installer for your OS.
 
 ## 📝 Change Log
 
-### v4.16.5 (In Development)
+### v4.16.5 (Current Release)
+* **Architecture:** Complete modular refactor of the codebase for improved maintainability and long-term stability.
 * **UI/UX:** Unified "1-2-3" numbered workflow across all tabs for a professional, consistent experience.
 * **Feature:** **Multi-Destination Ingest.** Offload to up to 3 drives simultaneously with a single read pass.
 * **Feature:** **Visual PDF Reports.** Reworked reporting engine to embed frame-accurate thumbnails into PDF hand-offs.
@@ -74,7 +75,7 @@ For most users, we recommend downloading the standalone installer for your OS.
 * **Refinement:** Intelligent **Camera Profile** selection with auto-sync from detection logic.
 * **Refinement:** Reworked **System Notifications** with platform-native sounds and icons.
 
-### v4.16.4 (Current Release)
+### v4.16.4
 * **New Feature:** **Video Preview.** Instant, scrubbable playback popup for source media in the Ingest tab. (Double-click to view).
 * **Performance:** **Zero-Overhead Checksums.** Optimized ingest verification to run concurrently with the copy stream, doubling verification speed.
 * **UX:** **Clear Logs.** Added button to clear the Ingest status logs.

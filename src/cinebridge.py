@@ -11,7 +11,7 @@ from PyQt6.QtCore import Qt, QSettings, QTimer
 from modules.config import DEBUG_MODE, AppLogger, AppConfig, debug_log
 from modules.utils import EnvUtils
 from modules.workers import SystemMonitor
-from modules.widgets import SettingsDialog, AboutDialog
+from modules.ui import SettingsDialog, AboutDialog
 from modules.tabs import IngestTab, ConvertTab, DeliveryTab, WatchTab
 
 class CineBridgeApp(QMainWindow):
@@ -73,6 +73,9 @@ class CineBridgeApp(QMainWindow):
         self.sys_monitor.start()
 
         # Startup Logic
+        import modules.config
+        modules.config.DEBUG_MODE = self.settings.value("debug_mode", False, type=bool)
+        
         self.update_feature_visibility()
         saved_gpu = self.settings.value("use_gpu_accel", False, type=bool)
         self.sync_gpu_toggle(saved_gpu)
@@ -185,11 +188,11 @@ class CineBridgeApp(QMainWindow):
             widget.set_gpu_checked(checked)
         self.settings.setValue("use_gpu_accel", checked)
 
-    def toggle_debug(self): 
-        # Modifying global variable in config module
+    def toggle_debug(self, checked): 
         import modules.config
-        modules.config.DEBUG_MODE = not modules.config.DEBUG_MODE
-        debug_log("Debug logging active.")
+        modules.config.DEBUG_MODE = checked
+        self.settings.setValue("debug_mode", checked)
+        debug_log(f"Debug logging {'active' if checked else 'disabled'}.")
 
     def show_about(self): 
         dlg = AboutDialog(self)

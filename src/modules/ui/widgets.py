@@ -58,7 +58,9 @@ class TranscodeSettingsWidget(QGroupBox):
         self.codec_combo.setToolTip("Select the video encoding engine.")
         self.profile_combo = QComboBox(); self.profile_combo.setToolTip("Select the specific quality profile for the chosen codec.")
         self.audio_combo = QComboBox(); self.audio_combo.addItems(["PCM (Uncompressed)", "AAC (Compressed)"]); self.audio_combo.setToolTip("Select the audio encoding format.")
+        
         self.chk_audio_fix = QCheckBox("Fix Audio Drift (48kHz)"); self.chk_audio_fix.setToolTip("Attempts to correct audio drift and normalizes to 48kHz.")
+        
         adv_layout.addRow("Video Codec:", self.codec_combo); adv_layout.addRow("Profile:", self.profile_combo)
         adv_layout.addRow("Audio Codec:", self.audio_combo); adv_layout.addRow("Processing:", self.chk_audio_fix)
         self.layout.addWidget(self.advanced_frame); self.update_profiles(); self.apply_preset() 
@@ -119,8 +121,11 @@ class TranscodeSettingsWidget(QGroupBox):
 
     def apply_preset(self):
         text = self.preset_combo.currentText(); is_custom_entry = (text == "Custom"); is_user_preset = text.startswith("⭐ ")
-        self.advanced_frame.setEnabled(is_custom_entry or is_user_preset)
+        
+        # Keep advanced settings enabled for all modes so users can apply modifiers (like Audio Drift Fix)
+        self.advanced_frame.setEnabled(True)
         self.btn_del_preset.setEnabled(is_user_preset); self.btn_export_preset.setEnabled(is_user_preset or is_custom_entry)
+        
         data = self.preset_combo.currentData()
         if data and isinstance(data, dict):
             v_map = {"dnxhd": 0, "prores_ks": 1, "libx264": 2, "libx265": 3}

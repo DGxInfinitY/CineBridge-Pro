@@ -90,14 +90,18 @@ class DeviceRegistry:
             score = 0; detected_root = None
             for root_hint in profile['roots']:
                 if not root_hint or root_hint == ".": continue
-                if "100GOPRO" in root_hint:
-                     dcim = check_structure(mount_point, "DCIM")
-                     if dcim:
-                         try:
-                             for sub in DeviceRegistry.safe_list_dir(dcim):
-                                 if re.match(r"\d{3}GOPRO", os.path.basename(sub).upper()): detected_root = sub; score += 100; break
-                         except: pass
-                else:
+                
+                # Check for GoPro specific folders (DCIM/100GOPRO, etc)
+                dcim = check_structure(mount_point, "DCIM")
+                if "GOPRO" in name.upper() and dcim:
+                    try:
+                        for sub in DeviceRegistry.safe_list_dir(dcim):
+                            base_sub = os.path.basename(sub).upper()
+                            if "GOPRO" in base_sub or re.match(r"\d{3}GOPRO", base_sub):
+                                detected_root = sub; score += 100; break
+                    except: pass
+                
+                if score < 100:
                     found_path = check_structure(mount_point, root_hint)
                     if found_path: detected_root = found_path; score += 100; break
             if score < 100:

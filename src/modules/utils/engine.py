@@ -34,7 +34,7 @@ class TranscodeEngine:
         font = TranscodeEngine.get_font_path()
         if font:
             if settings.get("burn_file"): vf_chain.append(f"drawtext=text='%{{filename}}':x=10:y=H-th-10:fontfile='{font}':fontcolor=white:fontsize=24:box=1:boxcolor=black@0.5")
-            if settings.get("burn_tc"): vf_chain.append(f"drawtext=text='%{{pts\:hms}}':x=W-tw-10:y=H-th-10:fontfile='{font}':fontcolor=white:fontsize=24:box=1:boxcolor=black@0.5")
+            if settings.get("burn_tc"): vf_chain.append(f"drawtext=text='%{{pts\\:hms}}':x=W-tw-10:y=H-th-10:fontfile='{font}':fontcolor=white:fontsize=24:box=1:boxcolor=black@0.5")
             if settings.get("watermark"):
                 txt = settings['watermark'].replace("'", "")
                 vf_chain.append(f"drawtext=text='{txt}':x=(W-tw)/2:y=10:fontfile='{font}':fontcolor=white@0.3:fontsize=32")

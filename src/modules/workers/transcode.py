@@ -2,6 +2,7 @@ import os
 import platform
 import subprocess
 import time
+import shutil
 from collections import deque
 from PyQt6.QtCore import QThread, pyqtSignal
 from ..config import debug_log, error_log
@@ -51,11 +52,27 @@ class AsyncTranscoder(QThread):
     def stop(self): self.is_running = False
 
 class BatchTranscodeWorker(QThread):
-    progress_signal = pyqtSignal(int); log_signal = pyqtSignal(str); status_signal = pyqtSignal(str); finished_signal = pyqtSignal(bool)
+    progress_signal = pyqtSignal(int); log_signal = pyqtSignal(str); status_signal = pyqtSignal(str); metrics_signal = pyqtSignal(str); finished_signal = pyqtSignal(bool, str)
     def __init__(self, file_list, dest_folder, settings, mode="convert", use_gpu=False):
         super().__init__(); self.files = file_list; self.dest = dest_folder; self.settings = settings; self.mode = mode; self.use_gpu = use_gpu; self.is_running = True
     def run(self):
-        total = len(self.files)
+        total = len(self.files); total_duration = 0
+        for f in self.files:
+            try: d = TranscodeEngine.get_duration(f); total_duration += d
+            except: pass
+        
+        # Estimate storage (100MB/s for high-quality, 10MB/s for H.264)
+        codec = self.settings.get('v_codec', 'dnxhd')
+        est_mbps = 100 if codec in ['dnxhd', 'prores_ks'] else 10
+        needed = int(total_duration * est_mbps * 1024 * 1024)
+        
+        target_base = self.dest if (self.dest and os.path.isdir(self.dest)) else os.path.dirname(self.files[0])
+        try:
+            free = shutil.disk_usage(target_base).free
+            if free < (needed + 524288000): # 500MB buffer
+                self.finished_signal.emit(False, f"Insufficient storage! Need ~{needed/1073741824:.1f} GB"); return
+        except: pass
+
         for i, input_path in enumerate(self.files):
             if not self.is_running: break
             filename = os.path.basename(input_path); name_only = os.path.splitext(filename)[0]
@@ -67,6 +84,7 @@ class BatchTranscodeWorker(QThread):
                 ext = ".mp4" if "libx26" in self.settings.get('v_codec', '') else ".mov"
                 output_path = os.path.join(target_dir, f"{name_only}_DELIVERY{ext}")
             os.makedirs(target_dir, exist_ok=True)
+            self.status_signal.emit(f"Processing {i+1}/{total}: {filename}")
             cmd = TranscodeEngine.build_command(input_path, output_path, self.settings, self.use_gpu); duration = TranscodeEngine.get_duration(input_path)
             try:
                 startupinfo = None
@@ -79,7 +97,8 @@ class BatchTranscodeWorker(QThread):
                     if line and duration > 0:
                         pct, speed = TranscodeEngine.parse_progress(line, duration)
                         if pct > 0: self.progress_signal.emit(pct)
-                        if speed: self.status_signal.emit(f"Processing {i+1}/{total}: {speed}")
+                        if speed: self.metrics_signal.emit(f"🎬 {speed}")
+                if process.returncode != 0: self.log_signal.emit(f"❌ Error transcoding {filename}")
             except Exception as e: error_log(f"Batch Transcode Error: {e}")
-        self.finished_signal.emit(True)
+        self.finished_signal.emit(True, "Complete")
     def stop(self): self.is_running = False

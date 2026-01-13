@@ -1,11 +1,12 @@
 import os
+import sys
 import subprocess
 import platform
 from PyQt6.QtWidgets import (
-    QDialog, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, 
+    QDialog, QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, 
     QFileDialog, QCheckBox, QGroupBox, QComboBox, QFrame, QRadioButton, 
     QButtonGroup, QTextEdit, QTableWidget, QTableWidgetItem, QHeaderView,
-    QSlider, QStyle, QSizePolicy
+    QSlider, QStyle, QSizePolicy, QToolButton
 )
 from PyQt6.QtGui import QPixmap, QIcon, QPalette
 from PyQt6.QtCore import Qt, QSettings, QUrl, QTimer
@@ -43,11 +44,48 @@ class FFmpegConfigDialog(QDialog):
         if f: self.settings.setValue("ffmpeg_custom_path", f); self.refresh_status()
     def reset_ffmpeg(self): self.settings.remove("ffmpeg_custom_path"); self.refresh_status()
     def refresh_status(self):
-        path = DependencyManager.get_ffmpeg_path(); self.path_input.setText(path or "Not found")
-        if not path: self.report_area.setHtml("<h3 style='color:red'>FFmpeg not found!</h3>"); return
-        report = f"<b>Active binary:</b> {path}<br>"; report += "<hr>"; active_prof = DependencyManager.detect_hw_accel()
-        msg = f"Using: <b>{active_prof.upper()}</b>" if active_prof else "Using: <b>Software (CPU)</b>"
-        report += f"<p>{msg}</p>"; self.report_area.setHtml(report)
+        path = DependencyManager.get_ffmpeg_path()
+        self.path_input.setText(path if path else "Not Found")
+        if not path:
+            self.report_area.setHtml("<h3 style='color:red'>FFmpeg binary not found!</h3>"); return
+
+        report = f"<b>Active Binary:</b> {path}<br>"
+        if DependencyManager.detect_hw_accel(): 
+            report += "<span style='color: green'>[Hardware Acceleration Ready]</span><br>"
+        report += "<hr>"
+        
+        try:
+            res = subprocess.run([path, '-version'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=EnvUtils.get_clean_env())
+            ver = res.stdout.splitlines()[0] if res.stdout else "Unknown"; report += f"<b>Version:</b> {ver}<br>"
+        except: report += "<b>Version:</b> Error checking version<br>"
+
+        report += "<br><b>Hardware Acceleration:</b><br>"
+        try:
+            res = subprocess.run([path, '-hwaccels'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=EnvUtils.get_clean_env())
+            accels = [x.strip() for x in res.stdout.splitlines()[1:] if x.strip()] if res.stdout else []
+            if accels: report += f"APIs: {', '.join(accels)}<br>"
+        except: pass
+        
+        target_encoders = ["h264_nvenc", "hevc_nvenc", "h264_qsv", "hevc_qsv", "h264_vaapi", "hevc_vaapi", "h264_videotoolbox", "hevc_videotoolbox"]
+        found_encs = []
+        try:
+            res = subprocess.run([path, '-encoders'], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, env=EnvUtils.get_clean_env())
+            for enc in target_encoders:
+                if enc in res.stdout: found_encs.append(enc)
+        except: pass
+        
+        if found_encs: report += f"Encoders: <span style='color:green'>{' '.join(found_encs)}</span>"
+        else: report += "Encoders: <span style='color:orange'>No Hardware Encoders Found</span>"
+        
+        report += "<hr><b>CineBridge Active Strategy:</b><br>"
+        active_prof = DependencyManager.detect_hw_accel()
+        if active_prof: 
+            msg = f"CineBridge is currently configured to use: <b style='color:#E67E22; font-size:14px'>{active_prof.upper()}</b>"
+        else: 
+            msg = "CineBridge will use: <b>Software Encoding (CPU)</b>"
+        report += f"<p>{msg}</p>"
+        
+        self.report_area.setHtml(report)
 
 class MediaInfoDialog(QDialog):
     def __init__(self, media_info, parent=None):
@@ -98,8 +136,15 @@ class SettingsDialog(QDialog):
         self.chk_copy.setChecked(parent.tab_ingest.copy_log.isVisible()); self.chk_trans.setChecked(parent.tab_ingest.transcode_log.isVisible()); self.chk_copy.toggled.connect(self.apply_view_options); self.chk_trans.toggled.connect(self.apply_view_options); view_lay.addWidget(self.chk_copy); view_lay.addWidget(self.chk_trans); view_group.setLayout(view_lay); layout.addWidget(view_group)
         sys_group = QGroupBox("System settings"); sys_lay = QVBoxLayout(); sys_group.setLayout(sys_lay)
         self.adv_btn = QPushButton("⚙️ CONFIGURE ADVANCED FEATURES"); self.adv_btn.setMinimumHeight(45); self.adv_btn.setStyleSheet("font-weight: bold; color: #3498DB;"); self.adv_btn.clicked.connect(self.open_advanced); sys_lay.addWidget(self.adv_btn)
-        self.btn_ffmpeg = QPushButton("🔧 CONFIGURE FFMPEG ENGINE"); self.btn_ffmpeg.setMinimumHeight(45); self.btn_ffmpeg.setStyleSheet("font-weight: bold; color: #3498DB;"); self.btn_ffmpeg.clicked.connect(self.show_ffmpeg_info); sys_lay.addWidget(self.btn_ffmpeg)
-        self.btn_log = QPushButton("View debug log"); self.btn_log.clicked.connect(self.view_log); sys_lay.addWidget(self.btn_log); self.chk_debug = QCheckBox("Enable debug mode"); self.chk_debug.setChecked(DEBUG_MODE); self.chk_debug.toggled.connect(parent.toggle_debug); sys_lay.addWidget(self.chk_debug); self.btn_reset = QPushButton("Reset to default settings"); self.btn_reset.setStyleSheet("color: red;"); self.btn_reset.clicked.connect(parent.reset_to_defaults); sys_lay.addWidget(self.btn_reset); layout.addWidget(sys_group)
+        self.btn_ffmpeg = QPushButton("🔧 CONFIGURE FFMPEG"); self.btn_ffmpeg.setMinimumHeight(45); self.btn_ffmpeg.setStyleSheet("font-weight: bold; color: #3498DB;"); self.btn_ffmpeg.clicked.connect(self.show_ffmpeg_info); sys_lay.addWidget(self.btn_ffmpeg)
+        self.btn_log = QPushButton("View debug log"); self.btn_log.clicked.connect(self.view_log); sys_lay.addWidget(self.btn_log)
+        
+        self.chk_debug = QCheckBox("Enable debug mode")
+        self.chk_debug.setChecked(parent.settings.value("debug_mode", False, type=bool))
+        self.chk_debug.toggled.connect(parent.toggle_debug)
+        sys_lay.addWidget(self.chk_debug)
+        
+        self.btn_reset = QPushButton("Reset to default settings"); self.btn_reset.setStyleSheet("color: red;"); self.btn_reset.clicked.connect(parent.reset_to_defaults); sys_lay.addWidget(self.btn_reset); layout.addWidget(sys_group)
         self.btn_about = QPushButton("About CineBridge Pro"); self.btn_about.clicked.connect(parent.show_about); layout.addWidget(self.btn_about); layout.addStretch(); close_btn = QPushButton("Close"); close_btn.clicked.connect(self.accept); layout.addWidget(close_btn); self.setLayout(layout)
     def open_advanced(self): AdvancedFeaturesDialog(self.parent_app).exec()
     def apply_view_options(self): self.parent_app.tab_ingest.toggle_logs(self.chk_copy.isChecked(), self.chk_trans.isChecked()); self.parent_app.settings.setValue("show_copy_log", self.chk_copy.isChecked()); self.parent_app.settings.setValue("show_trans_log", self.chk_trans.isChecked())
@@ -121,7 +166,7 @@ class AboutDialog(QDialog):
         else: base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
         logo_path = os.path.join(base_dir, "assets", "icon.svg")
         if os.path.exists(logo_path): pixmap = QPixmap(logo_path); logo_label.setPixmap(pixmap.scaled(80, 80, Qt.AspectRatioMode.KeepAspectRatio, Qt.TransformationMode.SmoothTransformation))
-        layout.addWidget(logo_label); title = QLabel("CineBridge Pro"); title.setStyleSheet("font-size: 22px; font-weight: bold; color: #3498DB;"); title.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(title); version = QLabel("v4.16.5 (Dev)"); version.setStyleSheet("font-size: 14px; color: #888;"); version.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(version); desc = QLabel("The Linux DIT & Post-Production Suite.\nSolving the 'Resolve on Linux' problem."); desc.setWordWrap(True); desc.setStyleSheet("font-size: 13px;"); desc.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(desc); credits = QLabel("<b>Developed by:</b><br>Donovan Goodwin<br>(with Gemini AI)"); credits.setStyleSheet("font-size: 13px;"); credits.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(credits); links = QLabel('<a href="mailto:ddg2goodwin@gmail.com" style="color: #3498DB;">ddg2goodwin@gmail.com</a><br><br><a href="https://github.com/DGxInfinitY" style="color: #3498DB;">GitHub: DGxInfinitY</a>'); links.setOpenExternalLinks(True); links.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(links); layout.addStretch(); btn_box = QHBoxLayout(); ok_btn = QPushButton("Close"); ok_btn.setFixedWidth(100); ok_btn.clicked.connect(self.accept); btn_box.addStretch(); btn_box.addWidget(ok_btn); btn_box.addStretch(); layout.addLayout(btn_box); self.setLayout(layout)
+        layout.addWidget(logo_label); title = QLabel("CineBridge Pro"); title.setStyleSheet("font-size: 22px; font-weight: bold; color: #3498DB;"); title.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(title); version = QLabel("v4.16.5"); version.setStyleSheet("font-size: 14px; color: #888;"); version.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(version); desc = QLabel("The Linux DIT & Post-Production Suite.\nSolving the 'Resolve on Linux' problem."); desc.setWordWrap(True); desc.setStyleSheet("font-size: 13px;"); desc.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(desc); credits = QLabel("<b>Developed by:</b><br>Donovan Goodwin<br>(with Gemini AI)"); credits.setStyleSheet("font-size: 13px;"); credits.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(credits); links = QLabel('<a href="mailto:ddg2goodwin@gmail.com" style="color: #3498DB;">ddg2goodwin@gmail.com</a><br><br><a href="https://github.com/DGxInfinitY" style="color: #3498DB;">GitHub: DGxInfinitY</a>'); links.setOpenExternalLinks(True); links.setAlignment(Qt.AlignmentFlag.AlignCenter); layout.addWidget(links); layout.addStretch(); btn_box = QHBoxLayout(); ok_btn = QPushButton("Close"); ok_btn.setFixedWidth(100); ok_btn.clicked.connect(self.accept); btn_box.addStretch(); btn_box.addWidget(ok_btn); btn_box.addStretch(); layout.addLayout(btn_box); self.setLayout(layout)
 
 class VideoPreviewDialog(QDialog):
     def __init__(self, video_path, parent=None):
@@ -133,6 +178,16 @@ class VideoPreviewDialog(QDialog):
         super().showEvent(event)
         if not HAS_MULTIMEDIA or self.player: return
         self.player = QMediaPlayer(); self.audio = QAudioOutput(); self.player.setAudioOutput(self.audio); self.audio.setVolume(self.vol_slider.value() / 100); self.video_widget = QVideoWidget(); self.video_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding); self.video_layout.addWidget(self.video_widget); self.player.setVideoOutput(self.video_widget); self.player.positionChanged.connect(self.position_changed); self.player.durationChanged.connect(self.duration_changed); self.player.mediaStatusChanged.connect(self.status_changed); self.player.errorOccurred.connect(self.handle_errors); self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause)); self.player.setSource(QUrl.fromLocalFile(self.video_path)); self.player.play()
+
+    def load_video(self, video_path):
+        if not HAS_MULTIMEDIA: return
+        self.video_path = video_path
+        self.setWindowTitle(f"Preview: {os.path.basename(video_path)}")
+        self.play_btn.setEnabled(True); self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
+        if self.player:
+            self.player.setVideoOutput(None); self.player.setVideoOutput(self.video_widget)
+            self.player.setSource(QUrl.fromLocalFile(video_path)); self.player.play()
+
     def cleanup(self):
         if self.player: self.player.stop(); self.player.setSource(QUrl()); self.player.setVideoOutput(None); self.player.setAudioOutput(None); self.player.deleteLater(); self.player = None
         if self.audio: self.audio.deleteLater(); self.audio = None

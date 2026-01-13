@@ -52,7 +52,7 @@ class SystemMonitor(QThread):
                     v_res = subprocess.run(['wmic', 'path', 'Win32_VideoController', 'get', 'Name'], capture_output=True, text=True, timeout=1)
                     v_out = v_res.stdout.upper()
                     vendor = 'AMD' if "AMD" in v_out else 'Intel' if "INTEL" in v_out else 'GPU'
-                    ps = "(Get-Counter '\GPU Engine(*)\Utilization Percentage' -ErrorAction SilentlyContinue).CounterSamples | Measure-Object -Property CookedValue -Max | Select-Object -ExpandProperty Maximum"
+                    ps = r"(Get-Counter '\GPU Engine(*)\Utilization Percentage' -ErrorAction SilentlyContinue).CounterSamples | Measure-Object -Property CookedValue -Max | Select-Object -ExpandProperty Maximum"
                     l_res = subprocess.run(['powershell', '-Command', ps], capture_output=True, text=True, timeout=1)
                     if l_res.returncode == 0 and l_res.stdout.strip():
                         stats['gpu_load'] = int(float(l_res.stdout.strip())); stats['has_gpu'] = True; stats['gpu_vendor'] = vendor
