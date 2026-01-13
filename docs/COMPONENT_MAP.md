@@ -11,39 +11,31 @@ This document maps the source files to their primary responsibilities and contai
 - `AppConfig`: Static methods for reading/writing global config state.
 - `AppLogger`: Sets up file-based logging (`cinebridge_pro.log`).
 
-## `src/modules/tabs.py`
+## `src/modules/tabs/`
 **Role:** Main UI Screens (Tabs)
-- `IngestTab(QWidget)`: The "Ingest" tab. Handles drive scanning, file selection, and copy operations.
-- `ConvertTab(QWidget)`: The "Convert" tab. Drag-and-drop transcoding interface.
-- `DeliveryTab(QWidget)`: The "Delivery" tab. Similar to Convert but tailored for web/delivery codecs.
-- `WatchTab(QWidget)`: The "Watch Folder" tab. Manages the automated background monitoring service.
+- `ingest.py`: `IngestTab(QWidget)` - Drive scanning, file selection, and copy operations.
+- `convert.py`: `ConvertTab(QWidget)` - Drag-and-drop transcoding interface.
+- `delivery.py`: `DeliveryTab(QWidget)` - Tailored for web/delivery codecs.
+- `watch.py`: `WatchTab(QWidget)` - Automated background monitoring service.
 
-## `src/modules/workers.py`
+## `src/modules/workers/`
 **Role:** Background Threads (Concurrency)
-- `ScanWorker`: Scans system mount points for drives.
-- `ThumbnailWorker`: Generates thumbnail images for video files using FFmpeg.
-- `IngestScanner`: Recursively scans a source folder for media files.
-- `AsyncTranscoder`: Queue-based transcoder. Processes jobs one by one to avoid system overload.
-- `CopyWorker`: The heavy lifter for Offloading. Handles Copy, Verification (xxHash/MD5), and Reporting.
-- `BatchTranscodeWorker`: Used by Convert/Delivery tabs for simple list-based processing.
-- `SystemMonitor`: Polls CPU usage for the UI dashboard.
+- `scan.py`: `ScanWorker`, `ThumbnailWorker`, `IngestScanner`.
+- `transcode.py`: `AsyncTranscoder`, `BatchTranscodeWorker`.
+- `ingest.py`: `CopyWorker` - Copy, Verification (xxHash/MD5), and Storage Safety.
+- `system.py`: `SystemMonitor` - Polls CPU/GPU usage for the UI dashboard.
 
-## `src/modules/widgets.py`
-**Role:** Reusable UI Components
-- `TranscodeSettingsWidget`: The "Settings" panel inside Convert/Ingest tabs.
-- `FileDropLineEdit`: A text input that accepts file drags.
-- `SettingsDialog`: The main application preferences window.
-- `AdvancedFeaturesDialog`: Configuration for Pro features (Multi-Dest, Reports, MHL).
-- `MediaInfoDialog`: Popup showing codec details (using `ffprobe`).
-- `FFmpegConfigDialog`: Settings for managing the FFmpeg binary path.
-- `VideoPreviewDialog`: High-performance video player for media review.
+## `src/modules/ui/`
+**Role:** Reusable UI Components & Styling
+- `widgets.py`: `TranscodeSettingsWidget`, `FileDropLineEdit`.
+- `styles.py`: `ThemeManager` - Centralized application styling and theme detection.
+- `dialogs.py`: Standardized popups (Settings, About, MediaInfo, VideoPreview, etc.).
 
-## `src/modules/utils.py`
+## `src/modules/utils/`
 **Role:** Business Logic & Libraries
-- `DeviceRegistry`: Definitions for Camera Folder structures (Sony, Canon, BMD, etc.).
-- `DriveDetector`: OS-specific logic to find mounted volumes (Linux/Win/Mac).
-- `TranscodeEngine`: Generates FFmpeg CLI commands.
-- `DependencyManager`: Locates external binaries (ffmpeg, ffprobe).
-- `ReportGenerator`: Generates PDF reports.
-- `MHLGenerator`: Generates ASC-MHL XML checksum lists.
-- `PresetManager`: Saves/Loads JSON transcoding presets.
+- `registry.py`: `DeviceRegistry`, `DriveDetector`.
+- `engine.py`: `TranscodeEngine`, `MediaInfoExtractor`.
+- `reports.py`: `ReportGenerator`, `MHLGenerator`.
+- `notifier.py`: `SystemNotifier`.
+- `presets.py`: `PresetManager`.
+- `common.py`: `EnvUtils`, `DependencyManager`.

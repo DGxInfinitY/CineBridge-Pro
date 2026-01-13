@@ -20,27 +20,26 @@ The application logic is refactored into specialized modules to improve maintain
     - logging configuration.
     - `AppConfig` helper for centralized settings management.
 
-2.  **`tabs.py`**: 
-    - Contains the major UI "Screens" of the application (`IngestTab`, `ConvertTab`, `DeliveryTab`, `WatchTab`).
-    - Each class here is a `QWidget` that assembles smaller widgets and connects them to `Workers`.
+2.  **`tabs/`**: 
+    - Contains granular UI "Screens" of the application (`ingest.py`, `convert.py`, `delivery.py`, `watch.py`).
+    - Each module assembly its respective tab logic and connects it to `Workers`.
 
-3.  **`workers.py`**: 
+3.  **`workers/`**: 
     - Contains all `QThread` subclasses for background processing.
     - **Critical for GUI responsiveness.** Any heavy lifting (file copying, scanning, transcoding) happens here.
-    - Key Workers:
-        - `CopyWorker`: Handles the "Ingest" process (Copy + Verify + Report).
-        - `AsyncTranscoder`: A queue-based worker for transcoding jobs.
-        - `ScanWorker`: Detects attached drives and camera cards.
+    - **`ingest.py`**: `CopyWorker` - Handles Offloading (Copy + Verify + Storage Safety).
+    - **`transcode.py`**: `AsyncTranscoder` & `BatchTranscodeWorker`.
+    - **`scan.py`**: `ScanWorker`, `ThumbnailWorker`, `IngestScanner`.
+    - **`system.py`**: `SystemMonitor`.
 
-4.  **`widgets.py`**: 
-    - Reusable UI components.
-    - `TranscodeSettingsWidget`: The complex form for selecting codecs/presets.
-    - `SettingsDialog`: The global preferences window.
-    - `AdvancedFeaturesDialog`: A sub-dialog for enabling Pro features like Multi-Dest and Visual Reports.
-    - `JobReportDialog`: A simplified, standardized completion popup.
+4.  **`ui/`**: 
+    - Reusable UI components and styling.
+    - **`widgets.py`**: `TranscodeSettingsWidget`, `FileDropLineEdit`.
+    - **`dialogs.py`**: Standardized popups (Settings, About, MediaInfo, etc.).
+    - **`styles.py`**: `ThemeManager` for centralized Dark/Light mode management.
 
-5.  **`utils.py`**: 
-# ...
+5.  **`utils/`**: 
+    - Core business logic libraries (`engine.py`, `registry.py`, `reports.py`, `notifier.py`, `presets.py`).# ...
 ## Data Flow
 
 1.  **Ingest Flow**:

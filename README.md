@@ -68,8 +68,10 @@ For most users, we recommend downloading the standalone installer for your OS.
 ### v4.16.5 (Current Release)
 * **Architecture:** Complete modular refactor of the codebase for improved maintainability and long-term stability.
 * **UI/UX:** Unified "1-2-3" numbered workflow across all tabs for a professional, consistent experience.
+* **Feature:** **Live Transcode Metrics.** Dedicated real-time dashboard for FPS and Encoding Speed (🎬 48 fps | 3.2x Speed).
 * **Feature:** **Multi-Destination Ingest.** Offload to up to 3 drives simultaneously with a single read pass.
 * **Feature:** **Visual PDF Reports.** Reworked reporting engine to embed frame-accurate thumbnails into PDF hand-offs.
+* **Stability:** **Drive-Aware Storage Safety.** Intelligent pre-flight checks that group destinations by physical drive and estimate transcode overhead to prevent disk exhaustion.
 * **System:** Expanded **Hardware Monitoring** to track CPU/GPU Load and Temperature for NVIDIA, AMD, and Intel.
 * **UX:** Re-organized settings with a new **Advanced Features Dialog** to keep the main interface clean.
 * **Refinement:** Intelligent **Camera Profile** selection with auto-sync from detection logic.

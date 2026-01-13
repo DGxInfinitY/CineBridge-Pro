@@ -6,7 +6,7 @@ import sys
 # Add src to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
-from modules.workers import AsyncTranscoder
+from modules.workers import AsyncTranscoder, CopyWorker
 
 class TestWorkers(unittest.TestCase):
     
@@ -31,6 +31,20 @@ class TestWorkers(unittest.TestCase):
         worker.report_skipped("skipped_file.mp4")
         self.assertEqual(worker.completed_jobs, 1)
         worker.status_signal.emit.assert_called_with("Skipped 1/5: skipped_file.mp4")
+
+    @patch('shutil.disk_usage')
+    def test_copy_worker_storage_check_logic(self, mock_disk_usage):
+        # Mock 10GB free space
+        mock_disk_usage.return_value = MagicMock(free=10 * 1024**3)
+        
+        worker = CopyWorker("/src", ["/dest"], "Project", True, True, False, "auto", True)
+        
+        # Test get_free_space recursive parent check
+        with patch('os.path.exists') as mock_exists:
+            # Simulate /dest exists but subfolders don't
+            mock_exists.side_effect = lambda p: p == "/dest"
+            free = worker.get_free_space("/dest/new_folder/file")
+            self.assertEqual(free, 10 * 1024**3)
 
 if __name__ == '__main__':
     unittest.main()

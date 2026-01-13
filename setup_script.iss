@@ -1,7 +1,7 @@
 
 [Setup]
 AppName=CineBridge Pro
-AppVersion=4.16.4
+AppVersion=4.16.5
 DefaultDirName={autopf}\CineBridge Pro
 DefaultGroupName=CineBridge Pro
 UninstallDisplayIcon={app}\CineBridgePro.exe
