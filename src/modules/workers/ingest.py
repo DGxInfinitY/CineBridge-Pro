@@ -65,6 +65,7 @@ class CopyWorker(QThread):
         # Estimate transcode space if enabled
         transcode_extra = 0
         if self.transcode_settings:
+            self.log_signal.emit("⚙️ Calculating transcode storage overhead...")
             total_duration = 0
             for f in files_to_process:
                 if os.path.splitext(f)[1].upper() in ('.MP4', '.MOV', '.MKV', '.AVI'):
@@ -73,6 +74,9 @@ class CopyWorker(QThread):
             codec = self.transcode_settings.get('v_codec', 'dnxhd')
             est_mbps = 100 if codec in ['dnxhd', 'prores_ks'] else 10
             transcode_extra = int(total_duration * est_mbps * 1024 * 1024)
+            self.log_signal.emit(f"⚙️ Estimated transcode space: {transcode_extra / (1024**3):.2f} GB")
+        else:
+            self.log_signal.emit("ℹ️ Transcoding disabled: skipping storage overhead calculation.")
 
         # Accurate Storage Check: Group by drive/mount
         drive_usage = {}
@@ -117,6 +121,9 @@ class CopyWorker(QThread):
         total_work_bytes = source_size
         if self.verify_copy:
             total_work_bytes += (source_size * len(active_dests))
+        
+        if total_work_bytes == 0:
+            self.finished_signal.emit(True, "✅ No data to transfer."); return
         
         bytes_done = 0
         last_time = time.time(); last_bytes = 0
