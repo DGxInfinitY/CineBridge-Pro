@@ -44,7 +44,7 @@ class ThumbnailWorker(QThread):
             try:
                 cmd = [ffmpeg, '-y', '-ss', '00:00:00.5', '-i', path, '-vframes', '1', '-vf', 'scale=320:-1', '-f', 'image2pipe', '-']
                 startupinfo = None
-                if platform.system() == 'Windows': startupinfo = subprocess.STARTINFO(); startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                if platform.system() == 'Windows': startupinfo = subprocess.STARTUPINFO(); startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                 res = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, startupinfo=startupinfo, env=EnvUtils.get_clean_env(), timeout=10)
                 if res.returncode == 0 and res.stdout:
                     img = QImage(); img.loadFromData(res.stdout)

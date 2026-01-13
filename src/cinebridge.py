@@ -11,7 +11,7 @@ from PyQt6.QtCore import Qt, QSettings, QTimer
 from modules.config import DEBUG_MODE, AppLogger, AppConfig, debug_log
 from modules.utils import EnvUtils
 from modules.workers import SystemMonitor
-from modules.ui import SettingsDialog, AboutDialog
+from modules.ui import SettingsDialog, AboutDialog, ThemeManager
 from modules.tabs import IngestTab, ConvertTab, DeliveryTab, WatchTab
 
 class CineBridgeApp(QMainWindow):
@@ -117,8 +117,7 @@ class CineBridgeApp(QMainWindow):
                 res2 = subprocess.run(["gsettings", "get", "org.gnome.desktop.interface", "gtk-theme"], capture_output=True, text=True, timeout=0.5, env=EnvUtils.get_clean_env())
                 if "dark" in res2.stdout.lower(): return True
             except: pass
-        try: return QApplication.palette().color(QPalette.ColorRole.Window).lightness() < 128
-        except: return False
+        return ThemeManager.is_dark_mode()
 
     def open_settings(self): 
         dlg = SettingsDialog(self)
@@ -201,17 +200,8 @@ class CineBridgeApp(QMainWindow):
     def set_theme(self, mode):
         self.theme_mode = mode
         self.settings.setValue("theme_mode", mode)
-        is_dark = False
-        if mode == "dark": is_dark = True
-        elif mode == "system": is_dark = self.is_system_dark()
-        self.current_applied_is_dark = is_dark
-        
-        style = """QMainWindow, QWidget { background-color: #F0F2F5; color: #333; font-family: 'Segoe UI'; font-size: 14px; } QGroupBox { background: #FFF; border: 1px solid #CCC; border-radius: 5px; margin-top: 20px; font-weight: bold; } QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; color: #2980B9; } QLineEdit, QComboBox, QTextEdit, QListWidget { background: #FFF; border: 1px solid #CCC; color: #333; } QPushButton { background: #E0E0E0; border: 1px solid #CCC; color: #333; padding: 8px; } QPushButton:hover { background: #D0D0D0; } QPushButton#StartBtn { background: #3498DB; color: white; font-weight: bold; } QPushButton#StopBtn { background: #E74C3C; color: white; font-weight: bold; } QTabWidget::pane { border: 1px solid #CCC; } QTabBar::tab { background: #E0E0E0; color: #555; border: 1px solid #CCC; } QTabBar::tab:selected { background: #FFF; color: #2980B9; border-top: 2px solid #2980B9; } QFrame#ResultCard, QFrame#DashFrame { background-color: #FFF; border-radius: 8px; }"""
-        
-        if is_dark: 
-            style = """QMainWindow, QWidget { background-color: #2b2b2b; color: #e0e0e0; font-family: 'Segoe UI'; font-size: 14px; } QGroupBox { background: #333; border: 1px solid #444; border-radius: 5px; margin-top: 20px; font-weight: bold; } QGroupBox::title { subcontrol-origin: margin; left: 10px; padding: 0 5px; color: #3498DB; } QLineEdit, QComboBox, QTextEdit, QListWidget { background: #1e1e1e; border: 1px solid #555; color: white; } QPushButton { background: #444; border: 1px solid #555; color: white; padding: 8px; } QPushButton:hover { background: #555; } QPushButton#StartBtn { background: #2980B9; font-weight: bold; } QPushButton#StopBtn { background: #C0392B; font-weight: bold; } QTabWidget::pane { border: 1px solid #444; } QTabBar::tab { background: #222; color: #888; border: 1px solid #444; } QTabBar::tab:selected { background: #333; color: #3498DB; border-top: 2px solid #3498DB; } QFrame#ResultCard, QFrame#DashFrame { background-color: #1e1e1e; border-radius: 8px; }"""
-        
-        self.setStyleSheet(style)
+        self.current_applied_is_dark = (mode == "dark") if mode != "system" else ThemeManager.is_dark_mode()
+        self.setStyleSheet(ThemeManager.get_style(mode))
         
         if hasattr(self, 'tab_ingest') and self.tab_ingest.result_card.isVisible():
              if self.tab_ingest.current_detected_path:

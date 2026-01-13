@@ -44,7 +44,7 @@ class AsyncTranscoder(QThread):
                         if duration > 0:
                             pct, speed_str = TranscodeEngine.parse_progress(line, duration)
                             if pct > 0: self.progress_signal.emit(pct)
-                            if speed_str: self.metrics_signal.emit(f"{base_status} | {speed_str}")
+                            if speed_str: self.metrics_signal.emit(f"🎬 {speed_str}")
                 if process.returncode == 0: self.log_signal.emit(f"✅ Transcode Finished: {job['name']}")
                 else: self.log_signal.emit(f"❌ Transcode Failed: {job['name']}")
             except Exception as e: error_log(f"Transcode Critical Error: {e}")

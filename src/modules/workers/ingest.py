@@ -2,8 +2,9 @@ import os
 import time
 import shutil
 import hashlib
+import platform
 from PyQt6.QtCore import QThread, pyqtSignal
-from ..utils import DeviceRegistry, HAS_XXHASH
+from ..utils import DeviceRegistry, HAS_XXHASH, TranscodeEngine
 if HAS_XXHASH: import xxhash
 
 class CopyWorker(QThread):
