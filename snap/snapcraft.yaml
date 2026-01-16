@@ -27,6 +27,7 @@ apps:
       - audio-playback
       - mount-observe
       - hardware-observe
+      - udisks2
 
 parts:
   cinebridge:
