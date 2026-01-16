@@ -230,9 +230,11 @@ class IngestTab(QWidget):
             if not self.preview_dlg: self.preview_dlg = VideoPreviewDialog(path, self)
             self.preview_dlg.load_video(path); self.preview_dlg.show()
     def refresh_tree_view(self):
+        self.tree.blockSignals(True)
         self.tree.clear(); total = 0
         if not self.last_scan_results:
-            p = QTreeWidgetItem(self.tree); p.setText(0, "Select a source and click 'SCAN SOURCE' to view media."); p.setFlags(p.flags() & ~Qt.ItemFlag.ItemIsUserCheckable); return
+            p = QTreeWidgetItem(self.tree); p.setText(0, "Select a source and click 'SCAN SOURCE' to view media."); p.setFlags(p.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
+            self.tree.blockSignals(False); return
         
         v_exts = DeviceRegistry.VIDEO_EXTS
         for date, files in sorted(self.last_scan_results.items(), reverse=True):
@@ -251,6 +253,7 @@ class IngestTab(QWidget):
         if total == 0:
             p = QTreeWidgetItem(self.tree); p.setText(0, "No matching media found."); p.setFlags(p.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
         self.tree.expandAll(); self.ingest_mode = "transfer"; self.update_transfer_button_text(); self.status_label.setText(f"Found {total} files.")
+        self.tree.blockSignals(False)
 
     def on_tree_changed(self, item, column):
         self.tree.blockSignals(True)
