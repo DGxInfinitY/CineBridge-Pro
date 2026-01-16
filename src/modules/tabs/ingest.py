@@ -83,11 +83,12 @@ class IngestTab(QWidget):
         
         self.check_verify = QCheckBox("Verify Copy"); self.check_verify.setStyleSheet("color: #27AE60; font-weight: bold;"); self.check_verify.setToolTip("Perform checksum verification.")
         self.check_report = QCheckBox("Gen Report"); self.check_mhl = QCheckBox("Gen MHL")
+        self.check_simplify = QCheckBox("Simplify Structure"); self.check_simplify.setToolTip("Flattens output folder structure (Date -> Files) without Camera/Category subfolders.")
         self.check_transcode = QCheckBox("Enable Transcode"); self.check_transcode.setStyleSheet("color: #E67E22; font-weight: bold;"); self.check_transcode.toggled.connect(self.toggle_transcode_ui)
         
         rules_grid.addWidget(self.check_date, 0, 0); rules_grid.addWidget(self.check_dupe, 0, 1); rules_grid.addWidget(self.combo_filter, 0, 2)
         rules_grid.addWidget(self.check_verify, 1, 0); rules_grid.addWidget(self.check_transcode, 1, 1); rules_grid.addWidget(self.check_report, 1, 2)
-        rules_grid.addWidget(self.check_mhl, 2, 0); settings_layout.addLayout(rules_grid)
+        rules_grid.addWidget(self.check_mhl, 2, 0); rules_grid.addWidget(self.check_simplify, 2, 1); settings_layout.addLayout(rules_grid)
         
         config_btns = QHBoxLayout()
         self.btn_config_trans = QPushButton("Configure Transcode..."); self.btn_config_trans.setVisible(False); self.btn_config_trans.clicked.connect(self.open_transcode_config)
@@ -330,7 +331,7 @@ class IngestTab(QWidget):
                 self.transcode_worker.log_signal.connect(self.append_transcode_log)
                 self.transcode_worker.metrics_signal.connect(self.transcode_metrics_label.setText)
                 self.transcode_worker.all_finished_signal.connect(self.on_all_transcodes_finished); self.transcode_worker.start(); self.set_transcode_active(True)
-            debug_log("Ingest: Initializing CopyWorker threads"); self.copy_worker = CopyWorker(src, dests, self.project_name_input.text(), self.check_date.isChecked(), self.check_dupe.isChecked(), False, cam_name, self.check_verify.isChecked(), selected, tc_settings if tc_enabled else None)
+            debug_log("Ingest: Initializing CopyWorker threads"); self.copy_worker = CopyWorker(src, dests, self.project_name_input.text(), self.check_date.isChecked(), self.check_dupe.isChecked(), False, cam_name, self.check_verify.isChecked(), selected, tc_settings if tc_enabled else None, self.check_simplify.isChecked())
             self.copy_worker.log_signal.connect(self.append_copy_log); self.copy_worker.progress_signal.connect(self.progress_bar.setValue); self.copy_worker.status_signal.connect(self.status_label.setText); self.copy_worker.speed_signal.connect(self.speed_label.setText); self.copy_worker.finished_signal.connect(self.on_copy_finished); self.copy_worker.storage_check_signal.connect(self.update_storage_display_bar)
             if tc_enabled: self.copy_worker.file_ready_signal.connect(self.queue_for_transcode); self.copy_worker.transcode_count_signal.connect(self.transcode_worker.set_total_jobs)
             self.copy_worker.start(); debug_log("Ingest: CopyWorker successfully started")
@@ -402,10 +403,10 @@ class IngestTab(QWidget):
         v = " and verified" if self.check_verify.isChecked() else ""; JobReportDialog("Job Complete", f"<h3>Job Successful</h3><p>All ingest{v} and transcode operations finished successfully.<br>Your media is ready for edit.</p>", self).exec(); self.reset_timer.start(30000)
 
     def save_tab_settings(self):
-        s = self.app.settings; s.setValue("last_source", self.source_input.text()); s.setValue("last_dest", self.dest_input.text()); s.setValue("sort_date", self.check_date.isChecked()); s.setValue("skip_dupe", self.check_dupe.isChecked()); s.setValue("filter_mode", self.combo_filter.currentText()); s.setValue("transcode_dnx", self.check_transcode.isChecked()); s.setValue("verify_copy", self.check_verify.isChecked()); s.setValue("gen_report", self.check_report.isChecked()); s.setValue("gen_mhl", self.check_mhl.isChecked())
+        s = self.app.settings; s.setValue("last_source", self.source_input.text()); s.setValue("last_dest", self.dest_input.text()); s.setValue("sort_date", self.check_date.isChecked()); s.setValue("skip_dupe", self.check_dupe.isChecked()); s.setValue("filter_mode", self.combo_filter.currentText()); s.setValue("transcode_dnx", self.check_transcode.isChecked()); s.setValue("verify_copy", self.check_verify.isChecked()); s.setValue("gen_report", self.check_report.isChecked()); s.setValue("gen_mhl", self.check_mhl.isChecked()); s.setValue("simplify_struct", self.check_simplify.isChecked())
 
     def load_tab_settings(self):
         s = self.app.settings; self.source_input.setText(s.value("last_source", "")); self.dest_input.setText(s.value("last_dest", "")); self.check_date.setChecked(s.value("sort_date", True, type=bool)); self.check_dupe.setChecked(s.value("skip_dupe", True, type=bool)); 
         self.combo_filter.set_checked_texts(s.value("filter_mode", "All Media"))
-        self.check_transcode.setChecked(s.value("transcode_dnx", False, type=bool)); self.check_verify.setChecked(s.value("verify_copy", False, type=bool)); self.check_report.setChecked(s.value("gen_report", True, type=bool)); self.check_mhl.setChecked(s.value("gen_mhl", False, type=bool))
+        self.check_transcode.setChecked(s.value("transcode_dnx", False, type=bool)); self.check_verify.setChecked(s.value("verify_copy", False, type=bool)); self.check_report.setChecked(s.value("gen_report", True, type=bool)); self.check_mhl.setChecked(s.value("gen_mhl", False, type=bool)); self.check_simplify.setChecked(s.value("simplify_struct", False, type=bool))
         self.toggle_transcode_ui(self.check_transcode.isChecked())

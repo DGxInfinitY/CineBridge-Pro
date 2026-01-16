@@ -21,7 +21,7 @@
 | ![Simple Ingest](assets/screen_ingest_clean.png) | ![Pro Ingest](assets/screen_ingest_pro.png) |
 
 ### Monitoring & Preview
-| Instant Video Preview | Hardware Monitoring |
+| Instant Video Preview | Settings |
 | :---: | :---: |
 | ![Preview](assets/screen_preview.png) | ![Settings](assets/screen_settings.png) |
 

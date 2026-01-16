@@ -12,7 +12,7 @@ from modules.config import DEBUG_MODE, AppLogger, AppConfig, debug_log
 from modules.utils import EnvUtils
 from modules.workers import SystemMonitor
 from modules.ui import SettingsDialog, AboutDialog, ThemeManager
-from modules.tabs import IngestTab, ConvertTab, DeliveryTab, WatchTab, GalleryTab
+from modules.tabs import IngestTab, ConvertTab, DeliveryTab, WatchTab, ReportsTab
 
 class CineBridgeApp(QMainWindow):
     def __init__(self):
@@ -51,14 +51,13 @@ class CineBridgeApp(QMainWindow):
         self.tab_ingest = IngestTab(self)
         self.tab_convert = ConvertTab()
         self.tab_delivery = DeliveryTab()
-        self.tab_gallery = GalleryTab()
+        self.tab_reports = ReportsTab(self)
         self.tab_watch = WatchTab()
         
         self.tabs.addTab(self.tab_ingest, "📥 INGEST")
         self.tabs.addTab(self.tab_convert, "🛠️ CONVERT")
         self.tabs.addTab(self.tab_delivery, "🚀 DELIVERY")
-        self.tabs.addTab(self.tab_gallery, "🖼️ GALLERY")
-        # Watch tab is added dynamically via update_feature_visibility
+        # Reports and Watch tabs are added dynamically via update_feature_visibility
         
         self.setCentralWidget(self.tabs)
         
@@ -169,8 +168,25 @@ class CineBridgeApp(QMainWindow):
         # Notify IngestTab to refresh its UI layout
         if hasattr(self, 'tab_ingest'):
             self.tab_ingest.update_pro_features_ui(show_multi, show_visual)
+
+        # Reports Tab Visibility Logic
+        show_pdf = self.settings.value("feature_pdf_report", False, type=bool)
+        show_mhl = self.settings.value("feature_mhl", False, type=bool)
+        show_reports = show_pdf or show_mhl
+        
+        reports_idx = -1
+        for i in range(self.tabs.count()):
+            if "REPORTS" in self.tabs.tabText(i).upper():
+                reports_idx = i; break
+        
+        if show_reports:
+            if reports_idx == -1: self.tabs.insertTab(3, self.tab_reports, "📊 REPORTS")
+        else:
+            if reports_idx != -1: self.tabs.removeTab(reports_idx)
         
         # Fix resize bug: Ensure window shrinks if possible after hiding widgets
+        # But ensure we don't look 'skinny' by enforcing a minimum width
+        self.setMinimumWidth(1000)
         QTimer.singleShot(100, lambda: self.adjustSize())
 
     def reset_to_defaults(self):

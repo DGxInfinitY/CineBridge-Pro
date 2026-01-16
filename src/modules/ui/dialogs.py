@@ -110,18 +110,10 @@ class AdvancedFeaturesDialog(QDialog):
         self.chk_mhl = QCheckBox("Enable MHL generation (Media hash list)"); self.chk_mhl.setChecked(self.settings.value("feature_mhl", False, type=bool)); feat_lay.addWidget(self.chk_mhl)
         self.chk_pdf = QCheckBox("Enable PDF transfer reports"); self.chk_pdf.setChecked(self.settings.value("feature_pdf_report", False, type=bool)); feat_lay.addWidget(self.chk_pdf)
         self.chk_visual = QCheckBox("Use visual PDF reports (Thumbnails)"); self.chk_visual.setChecked(self.settings.value("feature_visual_report", False, type=bool)); feat_lay.addWidget(self.chk_visual); layout.addWidget(feat_group)
-        dest_group = QGroupBox("Report & MHL destination"); dest_lay = QVBoxLayout(); dest_group.setLayout(dest_lay); self.combo_dest = QComboBox()
-        self.combo_dest.addItem("Follow project folder (Default)", "project"); self.combo_dest.addItem("Fixed global destination", "fixed"); self.combo_dest.addItem("Ask / change per job", "custom")
-        mode = self.settings.value("report_dest_mode", "project"); idx = self.combo_dest.findData(mode)
-        if idx >= 0: self.combo_dest.setCurrentIndex(idx)
-        dest_lay.addWidget(QLabel("Destination strategy:")); dest_lay.addWidget(self.combo_dest); fixed_lay = QHBoxLayout(); self.inp_fixed = QLineEdit(); self.inp_fixed.setText(self.settings.value("report_fixed_path", ""))
-        self.btn_fixed = QPushButton("Browse..."); self.btn_fixed.clicked.connect(self.browse_fixed); fixed_lay.addWidget(self.inp_fixed); fixed_lay.addWidget(self.btn_fixed); self.fixed_wrap = QWidget(); self.fixed_wrap.setLayout(fixed_lay); dest_lay.addWidget(self.fixed_wrap); self.combo_dest.currentIndexChanged.connect(lambda: self.fixed_wrap.setVisible(self.combo_dest.currentData() == "fixed")); self.fixed_wrap.setVisible(mode == "fixed"); layout.addWidget(dest_group)
-        btns = QHBoxLayout(); btn_save = QPushButton("APPLY ADVANCED SETTINGS"); btn_save.clicked.connect(self.save_settings); btn_cancel = QPushButton("Cancel"); btn_cancel.clicked.connect(self.reject); btns.addStretch(); btns.addWidget(btn_cancel); btns.addWidget(btn_save); layout.addLayout(btns); self.setLayout(layout)
-    def browse_fixed(self):
-        d = QFileDialog.getExistingDirectory(self, "Select global report folder", self.inp_fixed.text())
-        if d: self.inp_fixed.setText(d)
+        
+        btns = QHBoxLayout(); btn_save = QPushButton("APPLY ADVANCED SETTINGS"); btn_save.clicked.connect(self.save_settings); btn_cancel = QPushButton("Cancel"); btn_cancel.clicked.connect(self.reject); btns.addStretch(); btn_cancel.setFixedWidth(100); btn_save.setFixedWidth(200); btns.addWidget(btn_cancel); btns.addWidget(btn_save); layout.addLayout(btns); self.setLayout(layout)
     def save_settings(self):
-        self.settings.setValue("feature_watch_folder", self.chk_watch.isChecked()); self.settings.setValue("feature_burn_in", self.chk_burn.isChecked()); self.settings.setValue("feature_multi_dest", self.chk_multi.isChecked()); self.settings.setValue("feature_mhl", self.chk_mhl.isChecked()); self.settings.setValue("feature_pdf_report", self.chk_pdf.isChecked()); self.settings.setValue("feature_visual_report", self.chk_visual.isChecked()); self.settings.setValue("report_dest_mode", self.combo_dest.currentData()); self.settings.setValue("report_fixed_path", self.inp_fixed.text()); self.settings.sync(); self.parent_app.update_feature_visibility(); self.accept()
+        self.settings.setValue("feature_watch_folder", self.chk_watch.isChecked()); self.settings.setValue("feature_burn_in", self.chk_burn.isChecked()); self.settings.setValue("feature_multi_dest", self.chk_multi.isChecked()); self.settings.setValue("feature_mhl", self.chk_mhl.isChecked()); self.settings.setValue("feature_pdf_report", self.chk_pdf.isChecked()); self.settings.setValue("feature_visual_report", self.chk_visual.isChecked()); self.settings.sync(); self.parent_app.update_feature_visibility(); self.accept()
 
 class SettingsDialog(QDialog):
     def __init__(self, parent):
