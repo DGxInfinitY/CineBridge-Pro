@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, 
     QFileDialog, QProgressBar, QTextEdit, QMessageBox, QCheckBox, QGroupBox, 
     QComboBox, QTabWidget, QFrame, QSplitter, QTreeWidget, QTreeWidgetItem, 
-    QGridLayout, QAbstractItemView
+    QGridLayout, QAbstractItemView, QToolButton
 )
 from PyQt6.QtGui import QAction, QIcon, QPixmap, QImage
 from PyQt6.QtCore import Qt, QTimer, QSize, QBuffer, QByteArray, QIODevice
@@ -74,7 +74,13 @@ class IngestTab(QWidget):
         rules_grid = QGridLayout()
         self.check_date = QCheckBox("Sort Date"); self.check_date.setToolTip("Organize media by capture date.")
         self.check_dupe = QCheckBox("Skip Dupes"); self.check_dupe.setToolTip("Skip identical existing files.")
-        self.check_videos_only = QCheckBox("Video Only"); self.check_videos_only.setToolTip("Only scan video formats."); self.check_videos_only.toggled.connect(self.refresh_tree_view)
+        
+        self.combo_filter = CheckableComboBox()
+        self.combo_filter.add_check_item("Video", DeviceRegistry.VIDEO_EXTS)
+        self.combo_filter.add_check_item("Photos", DeviceRegistry.PHOTO_EXTS)
+        self.combo_filter.add_check_item("Audio", DeviceRegistry.AUDIO_EXTS)
+        self.combo_filter.checked_items_changed.connect(self.refresh_tree_view)
+        
         self.check_verify = QCheckBox("Verify Copy"); self.check_verify.setStyleSheet("color: #27AE60; font-weight: bold;"); self.check_verify.setToolTip("Perform checksum verification.")
         self.check_report = QCheckBox("Gen Report"); self.check_mhl = QCheckBox("Gen MHL")
         self.btn_structure = QToolButton(); self.btn_structure.setText("📂 Folder Structure..."); self.btn_structure.clicked.connect(self.open_structure_config)
