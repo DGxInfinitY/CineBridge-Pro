@@ -1,0 +1,47 @@
+name: cinebridge-pro
+base: core22
+version: '4.16.6'
+summary: Professional DIT and Transcoding Suite
+description: |
+  CineBridge Pro is a high-performance Digital Imaging Technician (DIT) 
+  and Post-Production suite for Linux. It bridges the gap between 
+  professional camera acquisitions and Linux-based NLEs like DaVinci Resolve.
+
+grade: stable
+confinement: strict
+
+apps:
+  cinebridge-pro:
+    command: bin/python3 $SNAP/src/cinebridge.py
+    extensions: [gnome]
+    environment:
+      # Ensure Python can find our modules and dependencies
+      PYTHONPATH: $SNAP/lib/python3.10/site-packages:$SNAP/usr/lib/python3/dist-packages:$SNAP/src
+      # Force Qt to use XCB if Wayland has issues (optional, remove if Wayland works well)
+      QT_QPA_PLATFORM: xcb
+    plugs:
+      - home
+      - removable-media
+      - network
+      - opengl
+      - audio-playback
+      - mount-observe
+      - hardware-observe
+
+parts:
+  cinebridge:
+    plugin: python
+    source: .
+    python-requirements: requirements.txt
+    stage-packages:
+      - ffmpeg
+      - python3-tk
+      - libxcb-cursor0
+      - libxkbcommon-x11-0
+      # Core multimedia libs
+      - libgstreamer1.0-0
+      - gstreamer1.0-plugins-base
+      - gstreamer1.0-plugins-good
+      - gstreamer1.0-plugins-bad
+      - gstreamer1.0-plugins-ugly
+      - gstreamer1.0-libav
