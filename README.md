@@ -26,7 +26,7 @@
 
 | 📥 Professional Ingest | 🛠️ Transcoding & Dailies | 🛡️ Integrity & Safety |
 | :--- | :--- | :--- |
-| **Multi-Dest Offload:** Backup to 3 drives at once. | **Edit-Ready Codecs:** DNxHR HQ/LB & ProRes. | **xxHash64 Verify:** Zero-overhead checksums. |
+| **Multi-Dest Offload:** Backup to 3 drives at once. (Optional) | **Edit-Ready Codecs:** DNxHR HQ/LB & ProRes. | **xxHash64 Verify:** Zero-overhead checksums. |
 | **Device Registry:** Auto-detects Sony, BMD, DJI, etc. | **Visual Burn-in:** Timecode, Name, Watermark. | **Visual Reports:** PDF reports with thumbnails. |
 | **Smart Filtering:** Video, Photo, Audio filters. | **3D LUTs:** Apply looks during transcode. | **MHL Support:** Industry-standard hash lists. |
 | **Video Preview:** Instant scrubbable playback. | **Hardware Accel:** NVENC, QSV, VAAPI support. | **Drive Safety:** Intelligent space pre-check. |
@@ -50,7 +50,22 @@
 3.  **Process:** Click **START TRANSFER**.
     *   Files are copied and verified (xxHash64).
     *   (Optional) Proxies are generated in the background.
-    *   A PDF report is saved to your destination.
+    *   (Optional) A PDF report or MHL can also be saved alongside media or to a specific destination.
+
+---
+
+## ⚠️ Experimental Support & Multi-Platform Status
+
+**Primary Platform:** Ubuntu Linux (Tested & Verified)
+
+CineBridge Pro is primarily developed and tested on **Ubuntu Linux**. While we provide automated builds for other platforms to increase accessibility, please note the current status:
+
+*   **Linux (.deb / Portable):** High stability. This is the lead development target.
+*   **Linux (.rpm / .snap):** **Experimental.** These formats are automatically generated but not manually verified on every release.
+*   **Windows (.exe):** **Experimental.** Basic functionality is tested, but UI scaling or hardware acceleration may vary.
+*   **macOS (.dmg):** **Experimental.** macOS security restrictions (Gatekeeper) may require manual override to run.
+
+> **Note:** If you encounter issues on non-Ubuntu platforms, please [open an issue](https://github.com/DGxInfinitY/CineBridge-Pro/issues) with details about your environment.
 
 ---
 
@@ -76,6 +91,22 @@
 * **Visual Transfer Reports:** Automatically generates professional PDF reports with embedded video thumbnails for every clip.
 * **MHL Support:** Generates ASC-MHL compliant XML checksum lists to ensure bit-for-bit accuracy throughout the pipeline.
 * **Flexible Storage:** Choose to save reports in the project folder, a fixed global archive, or a custom location per job.
+
+---
+
+## 🎬 Creator-First, DIT-Ready
+
+CineBridge Pro is designed to be **simple by default**. For Creators, YouTubers, and Editors, the out-of-the-box experience provides a clean, 3-step workflow to offload and prep footage without distraction.
+
+### Advanced / DIT Features (Optional)
+For professional Digital Imaging Technicians (DITs) or complex workflows, powerful tools can be enabled via the **Settings Menu**:
+
+*   **Watch Folder Service:** Automatically transcode any file dropped into a monitored directory (e.g., from network transfers).
+*   **Multi-Destination Ingest:** Offload to 3 drives simultaneously (Primary, Backup, Shuttle) with a single read pass.
+*   **Burn-in Overlays:** Apply Timecode, Filename, and Watermarks to dailies for review.
+*   **MHL & PDF Reports:** Generate industry-standard hash lists and visual transfer logs for insurance and hand-offs.
+
+> **Note:** These features are disabled by default to keep the interface clean. Enable them in **Settings -> Advanced Features**.
 
 ---
 
