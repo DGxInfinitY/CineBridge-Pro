@@ -6,7 +6,7 @@ import xml.etree.ElementTree as ET
 # Add src to path
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '../src')))
 
-from modules.utils import MHLGenerator
+from modules.utils import MHLGenerator, ReportGenerator
 
 class TestDeliverables(unittest.TestCase):
     
@@ -31,6 +31,18 @@ class TestDeliverables(unittest.TestCase):
             self.assertEqual(file_node.text, "test.mp4")
         finally:
             if os.path.exists(mhl_path): os.remove(mhl_path)
+
+    def test_report_generation(self):
+        transfer_data = [
+            {'name': 'test_video.mp4', 'size': 1024 * 1024 * 50, 'hash': 'abc', 'status': 'OK'}
+        ]
+        html = ReportGenerator.generate_html(transfer_data, "TestProject")
+        
+        self.assertIn("<h1>CineBridge Pro | Transfer Report</h1>", html)
+        self.assertIn("TestProject", html)
+        self.assertIn("test_video.mp4", html)
+        self.assertIn("50.00", html) # Size check
+        self.assertIn("abc", html)
 
 if __name__ == '__main__':
     unittest.main()

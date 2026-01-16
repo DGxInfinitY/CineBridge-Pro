@@ -24,6 +24,11 @@ class TestDeviceRegistry(unittest.TestCase):
             self.assertIn('exts', profile)
             self.assertNotIn(".", profile['roots'], f"Profile {name} has unsafe root '.'")
             self.assertFalse(any(r == "" for r in profile['roots']), f"Profile {name} has empty root")
+            
+            # Verify extensions are known
+            all_valid = DeviceRegistry.get_all_valid_exts()
+            for ext in profile['exts']:
+                self.assertIn(ext, all_valid, f"Profile {name} has unknown extension {ext}")
 
     def test_dji_neo_support(self):
         # Specific check for our recent fix

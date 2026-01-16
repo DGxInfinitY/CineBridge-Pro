@@ -6,14 +6,19 @@ import shutil
 from collections import deque
 from PyQt6.QtCore import QThread, pyqtSignal
 from ..config import debug_log, error_log
-from ..utils import EnvUtils, TranscodeEngine, DependencyManager
+from ..utils import EnvUtils, TranscodeEngine, DependencyManager, DeviceRegistry
 
 class AsyncTranscoder(QThread):
     log_signal = pyqtSignal(str); status_signal = pyqtSignal(str); metrics_signal = pyqtSignal(str); progress_signal = pyqtSignal(int); all_finished_signal = pyqtSignal()
     def __init__(self, settings, use_gpu):
         super().__init__(); self.settings = settings; self.use_gpu = use_gpu; self.queue = deque(); self.is_running = True; self.is_idle = True; self.total_expected_jobs = 0; self.completed_jobs = 0; self.producer_finished = False
     def set_total_jobs(self, count): self.total_expected_jobs = count
-    def add_job(self, input_path, output_path, filename): self.queue.append({'in': input_path, 'out': output_path, 'name': filename})
+    def add_job(self, input_path, output_path, filename):
+        ext = os.path.splitext(filename)[1].upper()
+        if ext not in DeviceRegistry.VIDEO_EXTS:
+            self.log_signal.emit(f"⚠️ Skipped non-video file: {filename}")
+            return
+        self.queue.append({'in': input_path, 'out': output_path, 'name': filename})
     def report_skipped(self, filename):
         self.completed_jobs += 1
         display_total = self.total_expected_jobs if self.total_expected_jobs > 0 else (self.completed_jobs + len(self.queue))
