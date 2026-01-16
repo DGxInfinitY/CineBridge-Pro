@@ -4,10 +4,10 @@ import json
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, 
     QFileDialog, QCheckBox, QGroupBox, QComboBox, QFrame, QFormLayout, 
-    QToolButton, QGridLayout, QInputDialog, QMessageBox
+    QToolButton, QGridLayout, QInputDialog, QMessageBox, QListView
 )
-from PyQt6.QtGui import QDragEnterEvent, QDropEvent
-from PyQt6.QtCore import Qt
+from PyQt6.QtGui import QDragEnterEvent, QDropEvent, QStandardItemModel, QStandardItem
+from PyQt6.QtCore import Qt, pyqtSignal, QEvent
 from ..utils import PresetManager, MediaInfoExtractor
 
 class FileDropLineEdit(QLineEdit):
@@ -173,3 +173,55 @@ class TranscodeSettingsWidget(QGroupBox):
         return settings
     def is_gpu_enabled(self): return self.chk_gpu.isChecked()
     def set_gpu_checked(self, checked): self.chk_gpu.blockSignals(True); self.chk_gpu.setChecked(checked); self.chk_gpu.blockSignals(False)
+
+class CheckableComboBox(QComboBox):
+    checked_items_changed = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setEditable(True)
+        self.lineEdit().setReadOnly(True)
+        self.lineEdit().setPlaceholderText("All Media")
+        
+        self.p_model = QStandardItemModel(self)
+        self.setModel(self.p_model)
+        self.view().viewport().installEventFilter(self)
+        self.view().pressed.connect(self.handle_item_pressed)
+
+    def eventFilter(self, obj, event):
+        if obj == self.view().viewport() and event.type() == QEvent.Type.MouseButtonRelease:
+            return True # Prevent popup closing
+        return False
+
+    def handle_item_pressed(self, index):
+        item = self.p_model.itemFromIndex(index)
+        if item.checkState() == Qt.CheckState.Checked: item.setCheckState(Qt.CheckState.Unchecked)
+        else: item.setCheckState(Qt.CheckState.Checked)
+        self.update_text()
+        self.checked_items_changed.emit()
+
+    def add_check_item(self, text, data=None):
+        item = QStandardItem(text)
+        item.setFlags(Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsEnabled)
+        item.setData(data)
+        item.setCheckState(Qt.CheckState.Unchecked)
+        self.p_model.appendRow(item)
+        self.update_text()
+
+    def update_text(self):
+        items = [self.p_model.item(i).text() for i in range(self.p_model.rowCount()) if self.p_model.item(i).checkState() == Qt.CheckState.Checked]
+        text = ", ".join(items) if items else "All Media"
+        self.lineEdit().setText(text)
+
+    def get_checked_data(self):
+        return [self.p_model.item(i).data() for i in range(self.p_model.rowCount()) if self.p_model.item(i).checkState() == Qt.CheckState.Checked]
+        
+    def set_checked_texts(self, texts_str):
+        if not texts_str or texts_str == "All Media": 
+            for i in range(self.p_model.rowCount()): self.p_model.item(i).setCheckState(Qt.CheckState.Unchecked)
+        else:
+            texts = [t.strip() for t in texts_str.split(',')]
+            for i in range(self.p_model.rowCount()):
+                item = self.p_model.item(i)
+                item.setCheckState(Qt.CheckState.Checked if item.text() in texts else Qt.CheckState.Unchecked)
+        self.update_text()

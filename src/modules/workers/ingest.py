@@ -11,9 +11,8 @@ class CopyWorker(QThread):
     log_signal = pyqtSignal(str); progress_signal = pyqtSignal(int); status_signal = pyqtSignal(str); speed_signal = pyqtSignal(str); file_ready_signal = pyqtSignal(str, str, str); transcode_count_signal = pyqtSignal(int); finished_signal = pyqtSignal(bool, str)
     storage_check_signal = pyqtSignal(int, int, bool)
     
-    def __init__(self, source, dest_list, project_name, sort_by_date, skip_dupes, videos_only, camera_override, verify_copy, file_list=None, transcode_settings=None):
-        super().__init__(); self.source = source; self.dest_list = [d.strip() for d in dest_list if d.strip()]; self.project_name = project_name.strip(); self.sort_by_date = sort_by_date; self.skip_dupes = skip_dupes; self.videos_only = videos_only; self.camera_override = camera_override; self.verify_copy = verify_copy; self.file_list = file_list; self.transcode_settings = transcode_settings; self.is_running = True
-        self.transfer_data = []
+    def __init__(self, source, dest_list, project_name, sort_by_date, skip_dupes, videos_only, camera_override, verify_copy, file_list=None, transcode_settings=None, structure_template="{Date}/{Camera}/{Category}"):
+        super().__init__(); self.source = source; self.dest_list = [d.strip() for d in dest_list if d.strip()]; self.project_name = project_name.strip(); self.sort_by_date = sort_by_date; self.skip_dupes = skip_dupes; self.videos_only = videos_only; self.camera_override = camera_override; self.verify_copy = verify_copy; self.file_list = file_list; self.transcode_settings = transcode_settings; self.structure_template = structure_template; self.is_running = True
     
     def get_mmt_category(self, filename):
         ext = os.path.splitext(filename.upper())[1]
@@ -131,10 +130,17 @@ class CopyWorker(QThread):
             if not self.is_running: break
             name = os.path.basename(src); sz = os.path.getsize(src); dest_paths = []
             for base in active_dests:
-                td = base
-                if self.sort_by_date: td = os.path.join(td, self.get_media_date(src))
-                if self.camera_override != "Generic_Device": td = os.path.join(td, self.camera_override)
-                td = os.path.join(td, self.get_mmt_category(name)); os.makedirs(td, exist_ok=True); dest_paths.append(os.path.join(td, name))
+                # Apply custom structure template
+                date_str = self.get_media_date(src)
+                cam_str = self.camera_override if self.camera_override != "Generic_Device" else "Generic"
+                cat_str = self.get_mmt_category(name)
+                
+                rel_path = self.structure_template.replace("{Date}", date_str).replace("{Camera}", cam_str).replace("{Category}", cat_str)
+                # Sanitize path to prevent absolute path injection or .. traversal
+                rel_path = rel_path.lstrip("/\\")
+                
+                td = os.path.join(base, rel_path)
+                os.makedirs(td, exist_ok=True); dest_paths.append(os.path.join(td, name))
             
             try:
                 h = xxhash.xxh64() if HAS_XXHASH else hashlib.md5()

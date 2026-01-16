@@ -12,7 +12,7 @@ from PyQt6.QtCore import Qt, QTimer, QSize, QBuffer, QByteArray, QIODevice
 from ..config import DEBUG_MODE, GUI_LOG_QUEUE, debug_log, info_log, error_log
 from ..utils import DeviceRegistry, ReportGenerator, MHLGenerator, SystemNotifier, MediaInfoExtractor, TranscodeEngine
 from ..workers import ScanWorker, IngestScanner, AsyncTranscoder, CopyWorker, ThumbnailWorker
-from ..ui import TranscodeSettingsWidget, JobReportDialog, TranscodeConfigDialog, VideoPreviewDialog
+from ..ui import TranscodeSettingsWidget, JobReportDialog, TranscodeConfigDialog, VideoPreviewDialog, CheckableComboBox, StructureConfigDialog
 
 class IngestTab(QWidget):
     def __init__(self, parent_app):
@@ -77,10 +77,14 @@ class IngestTab(QWidget):
         self.check_videos_only = QCheckBox("Video Only"); self.check_videos_only.setToolTip("Only scan video formats."); self.check_videos_only.toggled.connect(self.refresh_tree_view)
         self.check_verify = QCheckBox("Verify Copy"); self.check_verify.setStyleSheet("color: #27AE60; font-weight: bold;"); self.check_verify.setToolTip("Perform checksum verification.")
         self.check_report = QCheckBox("Gen Report"); self.check_mhl = QCheckBox("Gen MHL")
+        self.btn_structure = QToolButton(); self.btn_structure.setText("📂 Folder Structure..."); self.btn_structure.clicked.connect(self.open_structure_config)
+        self.structure_template = "{Date}/{Camera}/{Category}" # Default
+        
         self.check_transcode = QCheckBox("Enable Transcode"); self.check_transcode.setStyleSheet("color: #E67E22; font-weight: bold;"); self.check_transcode.toggled.connect(self.toggle_transcode_ui)
-        rules_grid.addWidget(self.check_date, 0, 0); rules_grid.addWidget(self.check_dupe, 0, 1); rules_grid.addWidget(self.check_videos_only, 0, 2)
+        
+        rules_grid.addWidget(self.check_date, 0, 0); rules_grid.addWidget(self.check_dupe, 0, 1); rules_grid.addWidget(self.combo_filter, 0, 2)
         rules_grid.addWidget(self.check_verify, 1, 0); rules_grid.addWidget(self.check_transcode, 1, 1); rules_grid.addWidget(self.check_report, 1, 2)
-        rules_grid.addWidget(self.check_mhl, 2, 0); settings_layout.addLayout(rules_grid)
+        rules_grid.addWidget(self.check_mhl, 2, 0); rules_grid.addWidget(self.btn_structure, 2, 1); settings_layout.addLayout(rules_grid)
         
         config_btns = QHBoxLayout()
         self.btn_config_trans = QPushButton("Configure Transcode..."); self.btn_config_trans.setVisible(False); self.btn_config_trans.clicked.connect(self.open_transcode_config)
@@ -137,6 +141,11 @@ class IngestTab(QWidget):
     def toggle_logs(self, show_copy, show_transcode): self.copy_log.setVisible(show_copy); self.transcode_log.setVisible(show_transcode); self.splitter.setVisible(show_copy or show_transcode)
     def toggle_transcode_ui(self, checked): self.btn_config_trans.setVisible(checked); self.transcode_status_label.setVisible(checked); self.update_transfer_button_text()
     def open_transcode_config(self): TranscodeConfigDialog(self.transcode_widget, self).exec()
+    def open_structure_config(self):
+        dlg = StructureConfigDialog(self.structure_template, self)
+        if dlg.exec():
+            self.structure_template = dlg.get_template()
+            self.save_tab_settings()
     def open_report_config(self):
         d = QFileDialog.getExistingDirectory(self, "Select Report Folder", self.report_custom_path or self.dest_input.text())
         if d: self.report_custom_path = d
@@ -385,8 +394,11 @@ class IngestTab(QWidget):
         v = " and verified" if self.check_verify.isChecked() else ""; JobReportDialog("Job Complete", f"<h3>Job Successful</h3><p>All ingest{v} and transcode operations finished successfully.<br>Your media is ready for edit.</p>", self).exec(); self.reset_timer.start(30000)
 
     def save_tab_settings(self):
-        s = self.app.settings; s.setValue("last_source", self.source_input.text()); s.setValue("last_dest", self.dest_input.text()); s.setValue("sort_date", self.check_date.isChecked()); s.setValue("skip_dupe", self.check_dupe.isChecked()); s.setValue("videos_only", self.check_videos_only.isChecked()); s.setValue("transcode_dnx", self.check_transcode.isChecked()); s.setValue("verify_copy", self.check_verify.isChecked()); s.setValue("gen_report", self.check_report.isChecked()); s.setValue("gen_mhl", self.check_mhl.isChecked())
+        s = self.app.settings; s.setValue("last_source", self.source_input.text()); s.setValue("last_dest", self.dest_input.text()); s.setValue("sort_date", self.check_date.isChecked()); s.setValue("skip_dupe", self.check_dupe.isChecked()); s.setValue("filter_mode", self.combo_filter.currentText()); s.setValue("transcode_dnx", self.check_transcode.isChecked()); s.setValue("verify_copy", self.check_verify.isChecked()); s.setValue("gen_report", self.check_report.isChecked()); s.setValue("gen_mhl", self.check_mhl.isChecked()); s.setValue("struct_template", self.structure_template)
 
     def load_tab_settings(self):
-        s = self.app.settings; self.source_input.setText(s.value("last_source", "")); self.dest_input.setText(s.value("last_dest", "")); self.check_date.setChecked(s.value("sort_date", True, type=bool)); self.check_dupe.setChecked(s.value("skip_dupe", True, type=bool)); self.check_videos_only.setChecked(s.value("videos_only", False, type=bool)); self.check_transcode.setChecked(s.value("transcode_dnx", False, type=bool)); self.check_verify.setChecked(s.value("verify_copy", False, type=bool)); self.check_report.setChecked(s.value("gen_report", True, type=bool)); self.check_mhl.setChecked(s.value("gen_mhl", False, type=bool))
+        s = self.app.settings; self.source_input.setText(s.value("last_source", "")); self.dest_input.setText(s.value("last_dest", "")); self.check_date.setChecked(s.value("sort_date", True, type=bool)); self.check_dupe.setChecked(s.value("skip_dupe", True, type=bool)); 
+        self.combo_filter.set_checked_texts(s.value("filter_mode", "All Media"))
+        self.check_transcode.setChecked(s.value("transcode_dnx", False, type=bool)); self.check_verify.setChecked(s.value("verify_copy", False, type=bool)); self.check_report.setChecked(s.value("gen_report", True, type=bool)); self.check_mhl.setChecked(s.value("gen_mhl", False, type=bool))
+        self.structure_template = s.value("struct_template", "{Date}/{Camera}/{Category}")
         self.toggle_transcode_ui(self.check_transcode.isChecked())

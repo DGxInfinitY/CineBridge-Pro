@@ -87,6 +87,75 @@ class FFmpegConfigDialog(QDialog):
         
         self.report_area.setHtml(report)
 
+class StructureConfigDialog(QDialog):
+    def __init__(self, current_template, parent=None):
+        super().__init__(parent); self.setWindowTitle("Folder Structure Configuration"); self.resize(500, 250)
+        layout = QVBoxLayout(); layout.setSpacing(15); self.setLayout(layout)
+        
+        layout.addWidget(QLabel("<b>Select Output Structure</b>"))
+        layout.addWidget(QLabel("Define how files are organized inside the Project folder."))
+        
+        self.combo_presets = QComboBox()
+        self.presets = {
+            "Standard DIT (Date/Camera/Type)": "{Date}/{Camera}/{Category}",
+            "Simple Date (Date only)": "{Date}",
+            "Device Centric (Camera/Date)": "{Camera}/{Date}",
+            "Type Centric (Type/Date)": "{Category}/{Date}",
+            "Flat (Files in Project root)": ""
+        }
+        for name, tmpl in self.presets.items():
+            self.combo_presets.addItem(name, tmpl)
+        
+        self.combo_presets.addItem("Custom...", "custom")
+        layout.addWidget(self.combo_presets)
+        
+        self.inp_custom = QLineEdit()
+        self.inp_custom.setPlaceholderText("e.g. {Date}/{Camera}")
+        self.inp_custom.setText(current_template)
+        layout.addWidget(self.inp_custom)
+        
+        self.lbl_preview = QLabel()
+        self.lbl_preview.setStyleSheet("color: #777; font-style: italic;")
+        layout.addWidget(self.lbl_preview)
+        
+        self.combo_presets.currentIndexChanged.connect(self.on_combo_change)
+        self.inp_custom.textChanged.connect(self.update_preview)
+        
+        # Set initial state
+        found = False
+        for i in range(self.combo_presets.count()):
+            if self.combo_presets.itemData(i) == current_template:
+                self.combo_presets.setCurrentIndex(i); found = True; break
+        if not found:
+            self.combo_presets.setCurrentIndex(self.combo_presets.count() - 1) # Custom
+            self.inp_custom.setEnabled(True)
+        else:
+            self.inp_custom.setEnabled(False)
+            
+        self.update_preview()
+        
+        btns = QHBoxLayout(); btns.addStretch()
+        btn_ok = QPushButton("OK"); btn_ok.clicked.connect(self.accept)
+        btn_cancel = QPushButton("Cancel"); btn_cancel.clicked.connect(self.reject)
+        btns.addWidget(btn_cancel); btns.addWidget(btn_ok); layout.addLayout(btns)
+
+    def on_combo_change(self):
+        data = self.combo_presets.currentData()
+        if data == "custom":
+            self.inp_custom.setEnabled(True); self.inp_custom.setFocus()
+        else:
+            self.inp_custom.setEnabled(False); self.inp_custom.setText(data)
+        self.update_preview()
+
+    def update_preview(self):
+        tmpl = self.inp_custom.text()
+        example = tmpl.replace("{Date}", "2023-10-27").replace("{Camera}", "Sony_FX3").replace("{Category}", "videos")
+        path = os.path.join("Project_Name", example, "C001.mp4")
+        self.lbl_preview.setText(f"Preview: {path}")
+
+    def get_template(self):
+        return self.inp_custom.text()
+
 class MediaInfoDialog(QDialog):
     def __init__(self, media_info, parent=None):
         super().__init__(parent); self.setWindowTitle(f"Media Info: {media_info.get('filename', 'Unknown')}"); self.resize(500, 600); layout = QVBoxLayout(); self.setLayout(layout)
