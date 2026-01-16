@@ -12,7 +12,7 @@ from PyQt6.QtCore import Qt, QTimer, QSize, QBuffer, QByteArray, QIODevice
 from ..config import DEBUG_MODE, GUI_LOG_QUEUE, debug_log, info_log, error_log
 from ..utils import DeviceRegistry, ReportGenerator, MHLGenerator, SystemNotifier, MediaInfoExtractor, TranscodeEngine
 from ..workers import ScanWorker, IngestScanner, AsyncTranscoder, CopyWorker, ThumbnailWorker
-from ..ui import TranscodeSettingsWidget, JobReportDialog, TranscodeConfigDialog, VideoPreviewDialog
+from ..ui import TranscodeSettingsWidget, JobReportDialog, TranscodeConfigDialog, VideoPreviewDialog, CheckableComboBox
 
 class IngestTab(QWidget):
     def __init__(self, parent_app):
@@ -75,10 +75,11 @@ class IngestTab(QWidget):
         self.check_date = QCheckBox("Sort Date"); self.check_date.setToolTip("Organize media by capture date.")
         self.check_dupe = QCheckBox("Skip Dupes"); self.check_dupe.setToolTip("Skip identical existing files.")
         
-        self.combo_filter = QComboBox()
-        self.combo_filter.addItems(["All Media", "Video Only", "Photos Only", "Audio Only"])
-        self.combo_filter.setCurrentIndex(0) # Default All
-        self.combo_filter.currentIndexChanged.connect(self.refresh_tree_view)
+        self.combo_filter = CheckableComboBox()
+        self.combo_filter.add_check_item("Video", DeviceRegistry.VIDEO_EXTS)
+        self.combo_filter.add_check_item("Photos", DeviceRegistry.PHOTO_EXTS)
+        self.combo_filter.add_check_item("Audio", DeviceRegistry.AUDIO_EXTS)
+        self.combo_filter.checked_items_changed.connect(self.refresh_tree_view)
         
         self.check_verify = QCheckBox("Verify Copy"); self.check_verify.setStyleSheet("color: #27AE60; font-weight: bold;"); self.check_verify.setToolTip("Perform checksum verification.")
         self.check_report = QCheckBox("Gen Report"); self.check_mhl = QCheckBox("Gen MHL")
@@ -243,11 +244,13 @@ class IngestTab(QWidget):
             p = QTreeWidgetItem(self.tree); p.setText(0, "Select a source and click 'SCAN SOURCE' to view media."); p.setFlags(p.flags() & ~Qt.ItemFlag.ItemIsUserCheckable)
             self.tree.blockSignals(False); return
         
-        filter_mode = self.combo_filter.currentText()
-        target_exts = None
-        if filter_mode == "Video Only": target_exts = DeviceRegistry.VIDEO_EXTS
-        elif filter_mode == "Photos Only": target_exts = DeviceRegistry.PHOTO_EXTS
-        elif filter_mode == "Audio Only": target_exts = DeviceRegistry.AUDIO_EXTS
+        checked_data = self.combo_filter.get_checked_data()
+        target_exts = set()
+        if checked_data:
+            for s in checked_data: target_exts.update(s)
+        else:
+            # All Media
+            target_exts = None
         
         for date, files in sorted(self.last_scan_results.items(), reverse=True):
             if target_exts:
@@ -403,6 +406,6 @@ class IngestTab(QWidget):
 
     def load_tab_settings(self):
         s = self.app.settings; self.source_input.setText(s.value("last_source", "")); self.dest_input.setText(s.value("last_dest", "")); self.check_date.setChecked(s.value("sort_date", True, type=bool)); self.check_dupe.setChecked(s.value("skip_dupe", True, type=bool)); 
-        self.combo_filter.setCurrentText(s.value("filter_mode", "All Media"))
+        self.combo_filter.set_checked_texts(s.value("filter_mode", "All Media"))
         self.check_transcode.setChecked(s.value("transcode_dnx", False, type=bool)); self.check_verify.setChecked(s.value("verify_copy", False, type=bool)); self.check_report.setChecked(s.value("gen_report", True, type=bool)); self.check_mhl.setChecked(s.value("gen_mhl", False, type=bool))
         self.toggle_transcode_ui(self.check_transcode.isChecked())

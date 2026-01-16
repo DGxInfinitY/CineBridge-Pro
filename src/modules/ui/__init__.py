@@ -1,4 +1,4 @@
-from .widgets import TranscodeSettingsWidget, FileDropLineEdit
+from .widgets import TranscodeSettingsWidget, FileDropLineEdit, CheckableComboBox
 from .styles import ThemeManager
 from .dialogs import (
     SettingsDialog, AdvancedFeaturesDialog, JobReportDialog, 
