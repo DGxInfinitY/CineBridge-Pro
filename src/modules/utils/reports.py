@@ -8,7 +8,7 @@ from .common import HAS_XXHASH
 
 class ReportGenerator:
     @staticmethod
-    def generate_pdf(dest_path, file_data_list, project_name="Unnamed Project", thumbnails=None):
+    def generate_html(file_data_list, project_name="Unnamed Project", thumbnails=None):
         is_visual = thumbnails is not None
         html = f"""
         <html>
@@ -62,6 +62,11 @@ class ReportGenerator:
         </body>
         </html>
         """
+        return html
+
+    @staticmethod
+    def generate_pdf(dest_path, file_data_list, project_name="Unnamed Project", thumbnails=None):
+        html = ReportGenerator.generate_html(file_data_list, project_name, thumbnails)
         doc = QTextDocument(); doc.setHtml(html)
         printer = QPrinter(QPrinter.PrinterMode.HighResolution)
         printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat); printer.setOutputFileName(dest_path)
