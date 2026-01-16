@@ -7,7 +7,28 @@
 > **The Missing Link for Linux Post-Production.**  
 > CineBridge Pro solves the "Resolve on Linux" problem by bridging the gap between professional camera acquisitions and the free version of DaVinci Resolve on Linux.
 
-![CineBridge Pro Screenshot](assets/screenshot.png)
+<p align="center">
+  <img src="assets/screen_ingest_clean.png" width="800" alt="CineBridge Pro Main Ingest">
+</p>
+
+---
+
+## 🖼️ Interface Gallery
+
+### Ingest & Selection
+| Simple Ingest (Default) | Pro DIT Dashboard |
+| :---: | :---: |
+| ![Simple Ingest](assets/screen_ingest_clean.png) | ![Pro Ingest](assets/screen_ingest_pro.png) |
+
+### Monitoring & Preview
+| Instant Video Preview | Hardware Monitoring |
+| :---: | :---: |
+| ![Preview](assets/screen_preview.png) | ![Settings](assets/screen_settings.png) |
+
+### Advanced Configuration
+| Pro Feature Management |
+| :---: |
+| ![Advanced](assets/screen_advancedfeatures.png) |
 
 ---
 
