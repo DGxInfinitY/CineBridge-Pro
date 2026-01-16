@@ -15,11 +15,11 @@ class TestWorkers(unittest.TestCase):
         worker = AsyncTranscoder(settings, use_gpu=False)
         
         self.assertEqual(len(worker.queue), 0)
-        worker.add_job("in.mp4", "out.mov", "file1")
+        worker.add_job("in.mp4", "out.mov", "file1.mp4")
         self.assertEqual(len(worker.queue), 1)
         
         job = worker.queue.popleft()
-        self.assertEqual(job['name'], "file1")
+        self.assertEqual(job['name'], "file1.mp4")
 
     def test_transcoder_skip_reporting(self):
         worker = AsyncTranscoder({}, False)
