@@ -1,10 +1,12 @@
 import os
+import shutil
 import xml.etree.ElementTree as ET
 from datetime import datetime
 from PyQt6.QtGui import QTextDocument, QPageLayout, QPageSize
 from PyQt6.QtPrintSupport import QPrinter
 from PyQt6.QtCore import QMarginsF
 from .common import HAS_XXHASH
+from ..config import AppConfig
 
 class ReportGenerator:
     @staticmethod
@@ -71,7 +73,16 @@ class ReportGenerator:
         printer = QPrinter(QPrinter.PrinterMode.HighResolution)
         printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat); printer.setOutputFileName(dest_path)
         printer.setPageLayout(QPageLayout(QPageSize(QPageSize.PageSizeId.A4), QPageLayout.Orientation.Portrait, QMarginsF(15, 15, 15, 15)))
-        doc.print(printer); return dest_path
+        doc.print(printer)
+        
+        # Save copy to history
+        try:
+            hist_dir = AppConfig.get_history_dir()
+            os.makedirs(hist_dir, exist_ok=True)
+            shutil.copy2(dest_path, os.path.join(hist_dir, os.path.basename(dest_path)))
+        except: pass
+        
+        return dest_path
 
 class MHLGenerator:
     @staticmethod

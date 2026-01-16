@@ -28,6 +28,10 @@ class AppConfig:
     def get_preset_dir():
         return os.path.join(AppConfig.get_data_dir(), "presets")
 
+    @staticmethod
+    def get_history_dir():
+        return os.path.join(AppConfig.get_data_dir(), "history")
+
 class AppLogger:
     _log_path = "" # Initialized in init_log
 

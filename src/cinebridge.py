@@ -12,7 +12,7 @@ from modules.config import DEBUG_MODE, AppLogger, AppConfig, debug_log
 from modules.utils import EnvUtils
 from modules.workers import SystemMonitor
 from modules.ui import SettingsDialog, AboutDialog, ThemeManager
-from modules.tabs import IngestTab, ConvertTab, DeliveryTab, WatchTab
+from modules.tabs import IngestTab, ConvertTab, DeliveryTab, WatchTab, GalleryTab
 
 class CineBridgeApp(QMainWindow):
     def __init__(self):
@@ -51,11 +51,13 @@ class CineBridgeApp(QMainWindow):
         self.tab_ingest = IngestTab(self)
         self.tab_convert = ConvertTab()
         self.tab_delivery = DeliveryTab()
+        self.tab_gallery = GalleryTab()
         self.tab_watch = WatchTab()
         
         self.tabs.addTab(self.tab_ingest, "📥 INGEST")
         self.tabs.addTab(self.tab_convert, "🛠️ CONVERT")
         self.tabs.addTab(self.tab_delivery, "🚀 DELIVERY")
+        self.tabs.addTab(self.tab_gallery, "🖼️ GALLERY")
         # Watch tab is added dynamically via update_feature_visibility
         
         self.setCentralWidget(self.tabs)
@@ -167,6 +169,9 @@ class CineBridgeApp(QMainWindow):
         # Notify IngestTab to refresh its UI layout
         if hasattr(self, 'tab_ingest'):
             self.tab_ingest.update_pro_features_ui(show_multi, show_visual)
+        
+        # Fix resize bug: Ensure window shrinks if possible after hiding widgets
+        QTimer.singleShot(100, lambda: self.adjustSize())
 
     def reset_to_defaults(self):
         reply = QMessageBox.question(self, "Confirm Reset", "Are you sure you want to reset all settings to default? This cannot be undone.", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No)
