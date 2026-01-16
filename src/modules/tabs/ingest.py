@@ -51,7 +51,7 @@ class IngestTab(QWidget):
         self.dest_lbl_1 = QLabel("Main Location:"); self.dest_inner.addWidget(self.dest_lbl_1)
         self.dest_inner.addWidget(self.dest_input); self.dest_inner.addWidget(self.browse_dest_btn)
         
-        self.btn_structure = QToolButton(); self.btn_structure.setText("📂 Folder Structure..."); self.btn_structure.clicked.connect(self.open_structure_config)
+        self.btn_structure = QToolButton(); self.btn_structure.setText("📂 Folder Structure Configuration..."); self.btn_structure.clicked.connect(self.open_structure_config)
         self.dest_inner.addWidget(self.btn_structure)
         self.structure_template = "{Date}/{Camera}/{Category}" # Default
         
