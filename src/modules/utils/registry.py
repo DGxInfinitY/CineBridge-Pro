@@ -6,9 +6,9 @@ from .common import EnvUtils, debug_log
 
 class DeviceRegistry:
     VIDEO_EXTS = {'.MP4', '.MOV', '.MKV', '.INSV', '.360', '.AVI', '.MXF', '.CRM', '.BRAW', '.VR'}
-    PHOTO_EXTS = {'.JPG', '.JPEG', '.PNG', '.ARW', '.CR2', '.CR3', '.DNG', '.GPR', '.HEIC'}
+    PHOTO_EXTS = {'.JPG', '.JPEG', '.PNG', '.ARW', '.CR2', '.CR3', '.DNG', '.GPR', '.HEIC', '.INSP', '.RW2'}
     AUDIO_EXTS = {'.WAV', '.MP3', '.AAC'}
-    MISC_EXTS = {'.SRT', '.LRV', '.THM', '.XML', '.BIM', '.RSV', '.AAE'}
+    MISC_EXTS = {'.SRT', '.LRV', '.THM', '.XML', '.BIM', '.RSV', '.AAE', '.LOG'}
 
     @staticmethod
     def get_all_valid_exts():
