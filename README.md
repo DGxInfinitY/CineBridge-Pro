@@ -4,22 +4,57 @@
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
 [![Platform](https://img.shields.io/badge/platform-Linux%20%7C%20Windows%20%7C%20macOS-lightgrey.svg)]()
 
-**CineBridge Pro** is an open-source Digital Imaging Technician (DIT) and Post-Production suite specifically engineered to solve the **"Resolve on Linux" problem**.
-
-### 🐧 The Linux Gap
-While DaVinci Resolve is a world-class NLE on Linux, the **Free Version** lacks native support for standard H.264/H.265 (HEVC) codecs due to licensing restrictions. This often leaves Linux users with "Media Offline" errors or the need for complex command-line transcoding.
-
-**CineBridge Pro bridges this gap** by providing a high-performance, GUI-driven workflow to:
-1. **Offload** media securely from professional cameras.
-2. **Verify** data integrity with industry-standard checksums (xxHash64/MD5).
-3. **Automate** organization into dated, camera-specific hierarchies.
-4. **Transcode** consumer/phone footage into edit-ready, high-fidelity formats like **DNxHR** and **ProRes** that work natively in Resolve on Linux.
+> **The Missing Link for Linux Post-Production.**  
+> CineBridge Pro solves the "Resolve on Linux" problem by bridging the gap between professional camera acquisitions and the free version of DaVinci Resolve on Linux.
 
 ![CineBridge Pro Screenshot](assets/screenshot.png)
 
 ---
 
-## 🚀 Key Features
+## 🐧 The Problem & The Solution
+
+**The Gap:** While DaVinci Resolve is a world-class NLE, the **Free Version on Linux** lacks native support for H.264/H.265 (HEVC) codecs due to licensing restrictions. This leaves users with "Media Offline" errors or complex CLI workarounds.
+
+**The Bridge:** CineBridge Pro provides a GUI-driven, professional workflow to:
+1.  **Offload** media securely from cameras with checksum verification.
+2.  **Transcode** footage into Linux-friendly edit-ready formats (**DNxHR** / **ProRes**).
+3.  **Automate** organization and generating DIT reports.
+
+---
+
+## ⚡ Quick Features
+
+| 📥 Professional Ingest | 🛠️ Transcoding & Dailies | 🛡️ Integrity & Safety |
+| :--- | :--- | :--- |
+| **Multi-Dest Offload:** Backup to 3 drives at once. | **Edit-Ready Codecs:** DNxHR HQ/LB & ProRes. | **xxHash64 Verify:** Zero-overhead checksums. |
+| **Device Registry:** Auto-detects Sony, BMD, DJI, etc. | **Visual Burn-in:** Timecode, Name, Watermark. | **Visual Reports:** PDF reports with thumbnails. |
+| **Smart Filtering:** Video, Photo, Audio filters. | **3D LUTs:** Apply looks during transcode. | **MHL Support:** Industry-standard hash lists. |
+| **Video Preview:** Instant scrubbable playback. | **Hardware Accel:** NVENC, QSV, VAAPI support. | **Drive Safety:** Intelligent space pre-check. |
+
+---
+
+## 🚀 Getting Started
+
+### 1. Installation
+* **[Download Latest Release](https://github.com/DGxInfinitY/CineBridge-Pro/releases/latest)** (Linux AppImage / Windows Installer)
+* Or run from source:
+  ```bash
+  git clone https://github.com/DGxInfinitY/CineBridge-Pro.git
+  pip install PyQt6 psutil xxhash
+  python3 src/cinebridge.py
+  ```
+
+### 2. Workflow
+1.  **Scan:** Select your camera card. CineBridge automatically identifies the device and folder structure.
+2.  **Select:** Use the tree view to choose clips. Filter by "Video Only" or specific days.
+3.  **Process:** Click **START TRANSFER**.
+    *   Files are copied and verified (xxHash64).
+    *   (Optional) Proxies are generated in the background.
+    *   A PDF report is saved to your destination.
+
+---
+
+## 📦 Detailed Capabilities
 
 ### 📥 Professional Ingest
 * **Device Registry:** Intelligent, high-reliability auto-detection for Sony (Alpha/FX), Blackmagic (BRAW), Canon (CRM), DJI (Neo 2), GoPro, Insta360, and Android devices.
@@ -41,25 +76,6 @@ While DaVinci Resolve is a world-class NLE on Linux, the **Free Version** lacks 
 * **Visual Transfer Reports:** Automatically generates professional PDF reports with embedded video thumbnails for every clip.
 * **MHL Support:** Generates ASC-MHL compliant XML checksum lists to ensure bit-for-bit accuracy throughout the pipeline.
 * **Flexible Storage:** Choose to save reports in the project folder, a fixed global archive, or a custom location per job.
-
----
-
-## 📦 Installation
-
-### 📥 Releases (Pre-Compiled)
-For most users, we recommend downloading the standalone installer for your OS.
-
-* **[Download Latest Release Here](https://github.com/DGxInfinitY/CineBridge-Pro/releases/latest)**
-
-### 🛠️ Manual Build (For Developers)
-1.  **Clone the Repository:** `git clone https://github.com/DGxInfinitY/CineBridge-Pro.git`
-2.  **Install Dependencies:** `pip install PyQt6 psutil xxhash`
-3.  **Run:** `python3 src/cinebridge.py`
-
-### 📋 Prerequisites
-* **Python 3.10+**
-* **FFmpeg** (Included in Windows/Mac releases; Linux users should install via `apt install ffmpeg`)
-* **QtMultimedia** (Linux users: `sudo apt install python3-pyqt6.qtmultimedia`)
 
 ---
 
