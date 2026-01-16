@@ -51,6 +51,10 @@ class IngestTab(QWidget):
         self.dest_lbl_1 = QLabel("Main Location:"); self.dest_inner.addWidget(self.dest_lbl_1)
         self.dest_inner.addWidget(self.dest_input); self.dest_inner.addWidget(self.browse_dest_btn)
         
+        self.btn_structure = QToolButton(); self.btn_structure.setText("📂 Folder Structure..."); self.btn_structure.clicked.connect(self.open_structure_config)
+        self.dest_inner.addWidget(self.btn_structure)
+        self.structure_template = "{Date}/{Camera}/{Category}" # Default
+        
         # Pro Destinations
         self.dest_2_wrap = QWidget(); d2_lay = QVBoxLayout(); d2_lay.setContentsMargins(0,0,0,0); self.dest_2_wrap.setLayout(d2_lay)
         self.dest_input_2 = QLineEdit(); self.btn_b2 = QPushButton("Browse (Dest 2)"); self.btn_b2.clicked.connect(lambda: self.browse_dest_field(self.dest_input_2))
@@ -83,14 +87,12 @@ class IngestTab(QWidget):
         
         self.check_verify = QCheckBox("Verify Copy"); self.check_verify.setStyleSheet("color: #27AE60; font-weight: bold;"); self.check_verify.setToolTip("Perform checksum verification.")
         self.check_report = QCheckBox("Gen Report"); self.check_mhl = QCheckBox("Gen MHL")
-        self.btn_structure = QToolButton(); self.btn_structure.setText("📂 Folder Structure..."); self.btn_structure.clicked.connect(self.open_structure_config)
-        self.structure_template = "{Date}/{Camera}/{Category}" # Default
         
         self.check_transcode = QCheckBox("Enable Transcode"); self.check_transcode.setStyleSheet("color: #E67E22; font-weight: bold;"); self.check_transcode.toggled.connect(self.toggle_transcode_ui)
         
         rules_grid.addWidget(self.check_date, 0, 0); rules_grid.addWidget(self.check_dupe, 0, 1); rules_grid.addWidget(self.combo_filter, 0, 2)
         rules_grid.addWidget(self.check_verify, 1, 0); rules_grid.addWidget(self.check_transcode, 1, 1); rules_grid.addWidget(self.check_report, 1, 2)
-        rules_grid.addWidget(self.check_mhl, 2, 0); rules_grid.addWidget(self.btn_structure, 2, 1); settings_layout.addLayout(rules_grid)
+        rules_grid.addWidget(self.check_mhl, 2, 0); settings_layout.addLayout(rules_grid)
         
         config_btns = QHBoxLayout()
         self.btn_config_trans = QPushButton("Configure Transcode..."); self.btn_config_trans.setVisible(False); self.btn_config_trans.clicked.connect(self.open_transcode_config)
