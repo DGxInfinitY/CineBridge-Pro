@@ -133,7 +133,15 @@ For professional Digital Imaging Technicians (DITs) or complex workflows, powerf
 
 ## 📝 Change Log
 
-### v4.16.5 (Current Release)
+### v4.16.6 (Current Release)
+* **Feature:** **Custom Folder Structure.** New template system allows users to define exact output paths (e.g., `{Date}/{Camera}`) or flatten the hierarchy completely.
+* **Feature:** **Multi-Select Filter.** Replaced simple "Video Only" toggle with a powerful filter dropdown to select any combination of Video, Photo, and Audio files.
+* **Feature:** **Reports Tab.** Dedicated gallery to view and manage past PDF transfer logs (visible when Reports are enabled).
+* **UI/UX:** **Creator-First Mode.** Simplified default interface with advanced features (Watch Folder, Reports) hidden until enabled.
+* **Stability:** **Resizing Fix.** Resolved layout issues where the window would not shrink after disabling pro features.
+* **Refinement:** **Structure Configuration.** New dedicated dialog for managing path templates with live preview.
+
+### v4.16.5
 * **Architecture:** Complete modular refactor of the codebase for improved maintainability and long-term stability.
 * **UI/UX:** Unified "1-2-3" numbered workflow across all tabs for a professional, consistent experience.
 * **Feature:** **Live Transcode Metrics.** Dedicated real-time dashboard for FPS and Encoding Speed (🎬 48 fps | 3.2x Speed).

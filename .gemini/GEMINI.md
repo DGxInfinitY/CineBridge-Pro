@@ -3,8 +3,8 @@
 ## 🚀 Project Overview
 **CineBridge Pro** is a high-performance Digital Imaging Technician (DIT) and Post-Production suite for Linux, Windows, and macOS. It bridges the gap between professional camera acquisitions and Linux-based NLEs like DaVinci Resolve by providing secure offloading, verification, and transcoding workflows.
 
-### Current Version: v4.16.5
-- **Latest Development:** Modular refactor, Intelligent Storage Safety, and Live Transcode Metrics.
+### Current Version: v4.16.6
+- **Latest Development:** Custom Folder Structures, Multi-Select Media Filtering, Reports Gallery, and UI Hardening.
 - **Next Milestone:** v4.17.0 refinement cycle.
 
 ## 📈 Development Workflow
@@ -13,8 +13,8 @@ We follow a strict incremental development cycle:
 2.  **Live Updates:** Every code change is pushed to `origin dev` for transparency.
 3.  **Release Process:**
     *   Merge `dev` into `master`.
-    *   Tag the release on `master` (e.g., `v4.16.5`).
-    *   Bump `dev` to the next increment (e.g., `v4.16.6 (Dev)`).
+    *   Tag the release on `master` (e.g., `v4.16.6`).
+    *   Bump `dev` to the next increment (e.g., `v4.16.7 (Dev)`).
 
 ## 🎨 UI & UX Standards
 *   **Logical Flow:** Explicit "1-2-3" numbering for workflow steps in every tab.

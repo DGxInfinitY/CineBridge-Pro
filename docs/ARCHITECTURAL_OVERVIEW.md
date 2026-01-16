@@ -21,7 +21,7 @@ The application logic is refactored into specialized modules to improve maintain
     - `AppConfig` helper for centralized settings management.
 
 2.  **`tabs/`**: 
-    - Contains granular UI "Screens" of the application (`ingest.py`, `convert.py`, `delivery.py`, `watch.py`).
+    - Contains granular UI "Screens" of the application (`ingest.py`, `convert.py`, `delivery.py`, `watch.py`, `reports.py`).
     - Each module assembly its respective tab logic and connects it to `Workers`.
 
 3.  **`workers/`**: 

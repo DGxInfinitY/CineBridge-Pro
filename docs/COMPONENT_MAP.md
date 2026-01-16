@@ -17,6 +17,7 @@ This document maps the source files to their primary responsibilities and contai
 - `convert.py`: `ConvertTab(QWidget)` - Drag-and-drop transcoding interface.
 - `delivery.py`: `DeliveryTab(QWidget)` - Tailored for web/delivery codecs.
 - `watch.py`: `WatchTab(QWidget)` - Automated background monitoring service.
+- `reports.py`: `ReportsTab(QWidget)` - Gallery for viewing past transfer logs and configuring report settings.
 
 ## `src/modules/workers/`
 **Role:** Background Threads (Concurrency)
@@ -27,9 +28,9 @@ This document maps the source files to their primary responsibilities and contai
 
 ## `src/modules/ui/`
 **Role:** Reusable UI Components & Styling
-- `widgets.py`: `TranscodeSettingsWidget`, `FileDropLineEdit`.
+- `widgets.py`: `TranscodeSettingsWidget`, `FileDropLineEdit`, `CheckableComboBox`.
 - `styles.py`: `ThemeManager` - Centralized application styling and theme detection.
-- `dialogs.py`: Standardized popups (Settings, About, MediaInfo, VideoPreview, etc.).
+- `dialogs.py`: Standardized popups (Settings, About, MediaInfo, StructureConfigDialog, etc.).
 
 ## `src/modules/utils/`
 **Role:** Business Logic & Libraries
