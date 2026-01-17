@@ -54,6 +54,28 @@ class TestTranscodeEngine(unittest.TestCase):
         cmd = TranscodeEngine.build_command("in.mp4", "out.mp4", settings, use_gpu=True)
         self.assertIn("h264_nvenc", cmd)
 
+    @patch('modules.utils.DependencyManager.get_ffmpeg_path')
+    @patch('modules.utils.TranscodeEngine.get_font_path')
+    def test_lut_and_burnin(self, mock_font, mock_ffmpeg):
+        mock_ffmpeg.return_value = "/usr/bin/ffmpeg"
+        mock_font.return_value = "/font.ttf"
+        
+        settings = {
+            'v_codec': 'dnxhd',
+            'lut_path': '/path/to/lut.cube',
+            'burn_file': True,
+            'burn_tc': True,
+            'watermark': 'DRAFT'
+        }
+        
+        cmd = TranscodeEngine.build_command("in.mp4", "out.mov", settings)
+        cmd_str = " ".join(cmd)
+        
+        self.assertIn("lut3d='/path/to/lut.cube'", cmd_str)
+        self.assertIn("drawtext=text='%{filename}'", cmd_str) # Filename burn-in
+        self.assertIn("drawtext=text='%{pts\:hms}'", cmd_str) # Timecode burn-in
+        self.assertIn("drawtext=text='DRAFT'", cmd_str)       # Watermark
+
     def test_is_edit_friendly_logic(self):
         # Test normalization logic without real ffprobe calls
         with patch('modules.utils.MediaInfoExtractor.get_info') as mock_info:
