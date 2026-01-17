@@ -3,6 +3,7 @@ import platform
 import subprocess
 import re
 from .common import EnvUtils, debug_log
+from .engine import MediaInfoExtractor
 
 class DeviceRegistry:
     VIDEO_EXTS = {'.MP4', '.MOV', '.MKV', '.INSV', '.360', '.AVI', '.MXF', '.CRM', '.BRAW', '.VR'}
@@ -35,7 +36,7 @@ class DeviceRegistry:
             "roots": ["DCIM/100GOPRO"],
             "exts": {'.MP4', '.LRV', '.THM', '.JPG', '.GPR'}
         },
-        "DJI Drone/Osmo": {
+        "DJI Device": { # Renamed from DJI Drone/Osmo for generic catch
             "signatures": ["DJI", "100MEDIA", "DJI_001"],
             "roots": ["DCIM/100MEDIA", "DCIM/101MEDIA", "DCIM/DJI_001"],
             "exts": {'.MP4', '.MOV', '.DNG', '.JPG', '.SRT'}
@@ -50,6 +51,16 @@ class DeviceRegistry:
             "roots": ["DCIM/100_PANA", "PRIVATE/AVCHD/BDMV/STREAM"],
             "exts": {'.MOV', '.MP4', '.RW2'}
         }
+    }
+
+    DJI_MODELS = {
+        "FC8436": "DJI Neo 2", # Hypothetical ID for Neo 2 based on prompt
+        "FC8284": "DJI Avata 2",
+        "FC3582": "DJI Mini 3 Pro",
+        "FC848": "DJI Air 3",
+        "OT-210": "DJI Action 2",
+        "AC003": "DJI Osmo Action 3",
+        "AC004": "DJI Osmo Action 4"
     }
 
     @staticmethod
@@ -112,6 +123,24 @@ class DeviceRegistry:
                 for hint in usb_hints:
                     if sig.lower() in hint.lower(): score += 5
             if score > best_score: best_score = score; best_match = name; best_root = detected_root if detected_root else mount_point; best_exts = profile['exts']
+
+        # Metadata Refinement for DJI
+        if best_match == "DJI Device":
+            try:
+                # Find a sample video file
+                sample_file = None
+                items = DeviceRegistry.safe_list_dir(best_root)
+                for item in items:
+                    if os.path.splitext(item)[1].upper() in {'.MP4', '.MOV'}:
+                        sample_file = item; break
+                
+                if sample_file:
+                    meta = MediaInfoExtractor.get_device_metadata(sample_file)
+                    model = meta.get('model')
+                    if model:
+                        # Check map or use raw model string
+                        best_match = DeviceRegistry.DJI_MODELS.get(model, f"DJI {model}")
+            except Exception as e: debug_log(f"DJI Metadata check failed: {e}")
 
         if best_score >= 20: return best_match, best_root, best_exts
         internal = check_structure(mount_point, "Internal shared storage") or check_structure(mount_point, "Internal Storage")

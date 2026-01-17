@@ -116,3 +116,21 @@ class MediaInfoExtractor:
                     info["audio_streams"].append(a_info)
             return info
         except Exception as e: return {"error": str(e)}
+
+    @staticmethod
+    def get_device_metadata(input_path):
+        ffprobe = DependencyManager.get_binary_path("ffprobe")
+        if not ffprobe: return {}
+        try:
+            # -show_format gives global tags like model, make, serial
+            cmd = [ffprobe, "-v", "quiet", "-print_format", "json", "-show_format", input_path]
+            res = subprocess.run(cmd, capture_output=True, text=True, env=EnvUtils.get_clean_env())
+            if res.returncode != 0: return {}
+            data = json.loads(res.stdout)
+            tags = data.get("format", {}).get("tags", {})
+            return {
+                "make": tags.get("make", "").strip(),
+                "model": tags.get("model", "").strip(),
+                "serial": tags.get("com.dji.device.serial", tags.get("camera_serial_number", "")).strip()
+            }
+        except: return {}
