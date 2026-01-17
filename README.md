@@ -133,7 +133,11 @@ For professional Digital Imaging Technicians (DITs) or complex workflows, powerf
 
 ## 📝 Change Log
 
-### v4.16.6 (Current Release)
+### v4.16.7 (Current Release)
+* **Feature:** **DJI Metadata Support.** Improved delineation of DJI devices (Avata 2, Action 2, etc.) using internal model IDs.
+* **Maintenance:** **Test Suite Expansion.** Comprehensive regression testing and hardening of professional features (Watch Folder, Reports, Registry).
+
+### v4.16.6
 * **Feature:** **Custom Folder Structure.** New template system allows users to define exact output paths (e.g., `{Date}/{Camera}`) or flatten the hierarchy completely.
 * **Feature:** **Multi-Select Filter.** Replaced simple "Video Only" toggle with a powerful filter dropdown to select any combination of Video, Photo, and Audio files.
 * **Feature:** **Reports Tab.** Dedicated gallery to view and manage past PDF transfer logs (visible when Reports are enabled).

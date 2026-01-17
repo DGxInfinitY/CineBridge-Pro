@@ -60,7 +60,7 @@ class ReportGenerator:
                 </tbody>
             </table>
             <p><b>Summary:</b> Total Data {total_bytes/(1024**3):.2f} GB transferred and verified.</p>
-            <div class="footer">CineBridge Pro v4.16.5 - Professional DIT & Post-Production Suite</div>
+            <div class="footer">CineBridge Pro v4.16.7 - Professional DIT & Post-Production Suite</div>
         </body>
         </html>
         """
