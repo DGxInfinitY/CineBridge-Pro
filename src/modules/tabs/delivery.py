@@ -1,7 +1,7 @@
 import os
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, 
-    QFileDialog, QProgressBar, QGroupBox, QFrame
+    QFileDialog, QProgressBar, QGroupBox, QFrame, QMessageBox
 )
 from PyQt6.QtCore import Qt
 from ..workers import BatchTranscodeWorker
@@ -49,6 +49,5 @@ class DeliveryTab(QWidget):
             SystemNotifier.notify("Render Complete", "Delivery render finished."); self.status_label.setText("Delivery Render Complete!")
             JobReportDialog("Render Complete", "Final Render Successful. Your master is ready for distribution.", self).exec()
         else:
-            from PyQt6.QtWidgets import QMessageBox
             QMessageBox.critical(self, "Render Failed", msg); self.status_label.setText("Failed.")
         self.toggle_ui_state(False)

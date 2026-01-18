@@ -2,7 +2,7 @@ import os
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, 
     QFileDialog, QProgressBar, QListWidget, QGroupBox, QFrame, 
-    QAbstractItemView, QMenu
+    QAbstractItemView, QMenu, QMessageBox
 )
 from PyQt6.QtGui import QAction, QIcon, QPixmap
 from PyQt6.QtCore import Qt, QSize
