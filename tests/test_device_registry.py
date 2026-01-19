@@ -32,7 +32,7 @@ class TestDeviceRegistry(unittest.TestCase):
 
     def test_dji_neo_support(self):
         # Specific check for our recent fix
-        profile = DeviceRegistry.PROFILES.get("DJI Drone/Osmo")
+        profile = DeviceRegistry.PROFILES.get("DJI Device")
         self.assertIsNotNone(profile)
         self.assertIn("DCIM/DJI_001", profile['roots'])
         self.assertIn("DJI_001", profile['signatures'])

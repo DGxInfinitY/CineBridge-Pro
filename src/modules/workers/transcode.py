@@ -91,19 +91,29 @@ class BatchTranscodeWorker(QThread):
             os.makedirs(target_dir, exist_ok=True)
             self.status_signal.emit(f"Processing {i+1}/{total}: {filename}")
             cmd = TranscodeEngine.build_command(input_path, output_path, self.settings, self.use_gpu); duration = TranscodeEngine.get_duration(input_path)
+            
+            if not cmd:
+                self.log_signal.emit(f"⚠️ Skipped invalid source/settings: {filename}")
+                continue
+
             try:
                 startupinfo = None
                 if platform.system() == 'Windows': startupinfo = subprocess.STARTUPINFO(); startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                 process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, universal_newlines=True, startupinfo=startupinfo, env=EnvUtils.get_clean_env())
                 while True:
-                    if not self.is_running: process.kill(); break
+                    if not self.is_running: process.kill(); process.wait(); break
                     line = process.stderr.readline()
                     if not line and process.poll() is not None: break
                     if line and duration > 0:
                         pct, speed = TranscodeEngine.parse_progress(line, duration)
                         if pct > 0: self.progress_signal.emit(pct)
                         if speed: self.metrics_signal.emit(f"🎬 {speed}")
+                
+                if not self.is_running: break
+
                 if process.returncode != 0: self.log_signal.emit(f"❌ Error transcoding {filename}")
             except Exception as e: error_log(f"Batch Transcode Error: {e}")
-        self.finished_signal.emit(True, "Complete")
+        
+        if self.is_running:
+            self.finished_signal.emit(True, "Complete")
     def stop(self): self.is_running = False

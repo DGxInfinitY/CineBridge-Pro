@@ -11,12 +11,13 @@ from PyQt6.QtCore import Qt, QTimer, QSize, QBuffer, QByteArray, QIODevice
 
 from ..config import DEBUG_MODE, GUI_LOG_QUEUE, debug_log, info_log, error_log
 from ..utils import DeviceRegistry, ReportGenerator, MHLGenerator, SystemNotifier, MediaInfoExtractor, TranscodeEngine
-from ..workers import ScanWorker, IngestScanner, AsyncTranscoder, CopyWorker, ThumbnailWorker
+from ..workers import ScanWorker, IngestScanner, AsyncTranscoder, CopyWorker, ThumbnailWorker, SystemMonitor
 from ..ui import TranscodeSettingsWidget, JobReportDialog, TranscodeConfigDialog, VideoPreviewDialog, CheckableComboBox, StructureConfigDialog
 
 class IngestTab(QWidget):
     def __init__(self, parent_app):
         super().__init__(); self.app = parent_app; self.layout = QVBoxLayout(); self.layout.setSpacing(10); self.layout.setContentsMargins(20, 20, 20, 20); self.setLayout(self.layout)
+        self.sys_mon = SystemMonitor(); self.sys_mon.stats_signal.connect(self.update_load_display)
         self.copy_worker = None; self.transcode_worker = None; self.scan_worker = None; self.found_devices = []; self.current_detected_path = None
         self.ingest_mode = "scan"; self.last_scan_results = None; self.preview_dlg = None
         self.setup_ui(); self.load_tab_settings()
@@ -319,6 +320,7 @@ class IngestTab(QWidget):
             self.save_tab_settings(); self.import_btn.setEnabled(False); self.cancel_btn.setEnabled(True); 
             self.import_btn.setText("INGESTING..."); self.import_btn.setStyleSheet("background-color: #E67E22; color: white;"); 
             self.storage_bar.setVisible(False); self.progress_bar.setValue(0); self.clear_logs()
+            self.sys_mon.start()
             cam_name = self.device_combo.currentText()
             if self.device_combo.currentData() == "auto":
                 if self.found_devices and self.select_device_box.currentIndex() >= 0: cam_name = self.found_devices[self.select_device_box.currentIndex()].get('display_name', "Generic_Device")
@@ -354,6 +356,7 @@ class IngestTab(QWidget):
     def cancel_import(self):
         if self.copy_worker: self.copy_worker.stop()
         if self.transcode_worker: self.transcode_worker.stop()
+        self.sys_mon.stop()
         self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False); self.set_transcode_active(False)
 
     def on_copy_finished(self, success, msg):
@@ -376,6 +379,7 @@ class IngestTab(QWidget):
         if self.check_transcode.isChecked() and self.transcode_worker: 
             self.transcode_worker.set_producer_finished(); self.import_btn.setText("TRANSCODING...")
         else:
+            self.sys_mon.stop()
             v = " and verified" if self.check_verify.isChecked() else ""
             SystemNotifier.notify("Ingest Complete", f"All files offloaded{v}."); JobReportDialog("Ingest Complete", f"<h3>Ingest Successful</h3><p>All selected media has been offloaded{v}.</p>", self).exec()
             self.import_btn.setEnabled(True); self.import_btn.setText("COMPLETE"); self.import_btn.setStyleSheet("background-color: #27AE60; color: white;"); self.set_transcode_active(False); self.reset_timer.start(5000)
@@ -398,6 +402,7 @@ class IngestTab(QWidget):
         except: pass
 
     def on_all_transcodes_finished(self):
+        self.sys_mon.stop()
         SystemNotifier.notify("Job Complete", "Ingest and Transcoding finished."); self.import_btn.setEnabled(True); self.import_btn.setText("COMPLETE"); self.import_btn.setStyleSheet("background-color: #27AE60; color: white;")
         v = " and verified" if self.check_verify.isChecked() else ""; JobReportDialog("Job Complete", f"<h3>Job Successful</h3><p>All ingest{v} and transcode operations finished successfully.<br>Your media is ready for edit.</p>", self).exec(); self.reset_timer.start(30000)
 
@@ -410,3 +415,7 @@ class IngestTab(QWidget):
         self.check_transcode.setChecked(s.value("transcode_dnx", False, type=bool)); self.check_verify.setChecked(s.value("verify_copy", False, type=bool)); self.check_report.setChecked(s.value("gen_report", True, type=bool)); self.check_mhl.setChecked(s.value("gen_mhl", False, type=bool))
         self.structure_template = s.value("struct_template", "{Date}/{Camera}/{Category}")
         self.toggle_transcode_ui(self.check_transcode.isChecked())
+
+    def closeEvent(self, event):
+        if hasattr(self, 'sys_mon'): self.sys_mon.stop(); self.sys_mon.wait()
+        super().closeEvent(event)

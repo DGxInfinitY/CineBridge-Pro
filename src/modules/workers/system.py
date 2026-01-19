@@ -12,8 +12,16 @@ except ImportError:
 
 class SystemMonitor(QThread):
     stats_signal = pyqtSignal(dict)
+    def __init__(self):
+        super().__init__()
+        self.is_running = True
+
+    def stop(self):
+        self.is_running = False
+
     def run(self):
-        while True:
+        self.is_running = True
+        while self.is_running:
             stats = {'cpu_load': 0, 'cpu_temp': 0, 'gpu_load': 0, 'gpu_temp': 0, 'has_gpu': False, 'gpu_vendor': ''}
             if PSUTIL_AVAILABLE:
                 try: 

@@ -8,12 +8,15 @@ from PyQt6.QtGui import QAction, QIcon, QPixmap
 from PyQt6.QtCore import Qt, QSize
 
 from ..utils import SystemNotifier, MediaInfoExtractor
-from ..workers import BatchTranscodeWorker, ThumbnailWorker
+from ..workers import BatchTranscodeWorker, ThumbnailWorker, SystemMonitor
 from ..ui import TranscodeSettingsWidget, JobReportDialog, MediaInfoDialog
 
 class ConvertTab(QWidget):
     def __init__(self):
         super().__init__(); self.setAcceptDrops(True); self.is_processing = False; self.thumb_workers = []
+        self.sys_mon = SystemMonitor()
+        self.sys_mon.stats_signal.connect(self.update_load_display)
+        
         layout = QVBoxLayout(); layout.setSpacing(15); layout.setContentsMargins(20, 20, 20, 20); self.setLayout(layout)
         self.settings = TranscodeSettingsWidget("1. Conversion Settings", mode="general"); layout.addWidget(self.settings)
         input_group = QGroupBox("2. Input Media"); input_lay = QVBoxLayout(); self.btn_browse = QPushButton("Select Video Files..."); self.btn_browse.clicked.connect(self.browse_files); input_lay.addWidget(self.btn_browse)
@@ -58,9 +61,14 @@ class ConvertTab(QWidget):
         else: self.start()
     def toggle_ui_state(self, running):
         self.is_processing = running; self.stats_row.setVisible(running); self.metrics_label.setVisible(running)
-        if not running: self.metrics_label.setText("")
-        if running: self.btn_go.setText("STOP BATCH"); self.btn_go.setObjectName("StopBtn")
-        else: self.btn_go.setText("START BATCH"); self.btn_go.setObjectName("StartBtn")
+        if running:
+            self.sys_mon.start()
+            self.btn_go.setText("STOP BATCH"); self.btn_go.setObjectName("StopBtn")
+        else:
+            self.sys_mon.stop()
+            self.btn_go.setText("START BATCH"); self.btn_go.setObjectName("StartBtn")
+            self.metrics_label.setText("")
+        
         self.btn_go.style().unpolish(self.btn_go); self.btn_go.style().polish(self.btn_go)
     def start(self):
         files = [self.list.item(i).text() for i in range(self.list.count())]
@@ -89,3 +97,7 @@ class ConvertTab(QWidget):
         path = item.text()
         if os.path.exists(path):
             info = MediaInfoExtractor.get_info(path); dlg = MediaInfoDialog(info, self); dlg.exec()
+
+    def closeEvent(self, event):
+        if hasattr(self, 'sys_mon'): self.sys_mon.stop(); self.sys_mon.wait()
+        super().closeEvent(event)
