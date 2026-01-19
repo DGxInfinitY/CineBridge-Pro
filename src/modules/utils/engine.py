@@ -44,7 +44,7 @@ class TranscodeEngine:
             if v_codec == 'dnxhd': cmd.extend(['-pix_fmt', 'yuv422p'])
         elif v_codec in ['libx264', 'libx265']:
             if hw_method == "cuda" and v_codec == 'libx264': cmd.extend(['-c:v', 'h264_nvenc', '-preset', 'fast'])
-            elif hw_method == "cuda" and v_codec == 'libx265': cmd.extend(['-c:v', hevc_nvenc, '-preset', 'fast'])
+            elif hw_method == "cuda" and v_codec == 'libx265': cmd.extend(['-c:v', 'hevc_nvenc', '-preset', 'fast'])
             elif hw_method == "qsv" and v_codec == 'libx264': cmd.extend(['-c:v', 'h264_qsv', '-preset', 'fast'])
             elif hw_method == "qsv" and v_codec == 'libx265': cmd.extend(['-c:v', 'hevc_qsv', '-preset', 'fast'])
             elif hw_method == "vaapi" and v_codec == 'libx264': cmd.extend(['-c:v', 'h264_vaapi'])
