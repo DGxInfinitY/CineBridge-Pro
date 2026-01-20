@@ -78,7 +78,7 @@ EOF
 
 # Create Control File
 # Get version from version info or default
-VERSION="4.16.7" 
+VERSION="4.17.4" 
 cat <<EOF > dist/deb/DEBIAN/control
 Package: cinebridgepro
 Version: $VERSION
