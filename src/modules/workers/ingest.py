@@ -57,7 +57,7 @@ class CopyWorker(QThread):
         files_to_process = [f for f in found_files if os.path.splitext(f)[1].upper() in v_exts] if self.videos_only else found_files
         total_files = len(files_to_process)
         self.log_signal.emit(f"🔍 Found {total_files} files to process.")
-        self.transcode_count_signal.emit(len([f for f in files_to_process if os.path.splitext(f)[1].upper() in ('.MP4', '.MOV', '.MKV', '.AVI')]))
+        self.transcode_count_signal.emit(len([f for f in files_to_process if os.path.splitext(f)[1].upper() in v_exts]))
         
         source_size = sum(os.path.getsize(f) for f in files_to_process)
         self.log_signal.emit(f"📦 Total size: {source_size / (1024**3):.2f} GB")
@@ -68,7 +68,7 @@ class CopyWorker(QThread):
             self.log_signal.emit("⚙️ Calculating transcode storage overhead...")
             total_duration = 0
             for f in files_to_process:
-                if os.path.splitext(f)[1].upper() in ('.MP4', '.MOV', '.MKV', '.AVI'):
+                if os.path.splitext(f)[1].upper() in v_exts:
                     try: total_duration += TranscodeEngine.get_duration(f)
                     except: pass
             codec = self.transcode_settings.get('v_codec', 'dnxhd')
@@ -204,7 +204,7 @@ class CopyWorker(QThread):
                     'hash': current_hash,
                     'status': "OK" if current_hash != "FAILED" else "VERIFY FAILED"
                 })
-                if name.upper().endswith(('.MP4', '.MOV', '.MKV', '.AVI')): self.file_ready_signal.emit(src, dest_paths[0], name)
+                if os.path.splitext(name)[1].upper() in v_exts: self.file_ready_signal.emit(src, dest_paths[0], name)
             except Exception as e:
                 self.log_signal.emit(f"❌ Error {name}: {e}")
         
