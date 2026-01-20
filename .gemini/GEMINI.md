@@ -1,8 +1,8 @@
 ## CineBridge Pro: Project Memory
 
-### Current Version: v4.17.2 (Dev)
-- **Latest Release:** v4.17.1 (Batch logic fix, Hardware Monitoring, Engine stability).
-- **Current Development:** v4.17.2 refinement cycle.
+### Current Version: v4.17.2
+- **Latest Release:** v4.17.2 (Centralized HW Monitoring, Auto-Start Watch Folder, Stability fixes).
+- **Current Development:** Preparation for v4.17.3 cycle.
 
 ## 🚀 Project Overview
 **CineBridge Pro** is a high-performance Digital Imaging Technician (DIT) and Post-Production suite for Linux, Windows, and macOS. It bridges the gap between professional camera acquisitions and Linux-based NLEs like DaVinci Resolve by providing secure offloading, verification, and transcoding workflows.
