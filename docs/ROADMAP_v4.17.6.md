@@ -26,7 +26,7 @@
 
 ## 4. UI Polish
 - [x] **Alignment:** Audit `ingest.py`, `convert.py`, and `delivery.py` to ensure vertical alignment of top-level widgets.
-- [ ] **Tab Flow:** Review navigation order (Tab order) for keyboard accessibility.
+- [x] **Tab Flow:** Review navigation order (Tab order) for keyboard accessibility.
 
 ## 5. Device Identification (User Request)
 - [x] **Granular Detection:** Detect DJI Neo 2 and Action 5 Pro specifically.

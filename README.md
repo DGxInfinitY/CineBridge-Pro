@@ -134,6 +134,8 @@ For professional Digital Imaging Technicians (DITs) or complex workflows, powerf
 ## 📝 Change Log
 
 ### v4.17.6 (Dev)
+* **Feature:** **Hybrid Preview Engine.** Replaced the unstable video player with a robust hybrid engine (Native FFmpeg Pipe for Video + FFplay for Audio). This guarantees 100% stable embedding on Linux (Wayland/X11) and Windows without floating windows or crashes.
+* **Feature:** **Smart Device Management.** Added persistent **Inline Renaming** for detected devices. Click any device name to rename it; changes are saved per-model or per-drive. Added a global "Reset Overrides" button.
 * **UI/UX:** **Consolidated Dashboard.** Merged hardware monitoring and transcode metrics into a single, unified status row for better vertical space usage.
 * **Feature:** **Enhanced Progress Tracking.** New dual-stage status reporting (Copy -> Transcode) with "File X/Y" counters and detailed copy progress.
 * **Refinement:** **Verbose Logging.** Improved transcoding logs with clearer codec details and duration statistics.
