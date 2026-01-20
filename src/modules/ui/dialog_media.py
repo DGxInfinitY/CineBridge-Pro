@@ -138,8 +138,13 @@ class VideoPreviewDialog(QDialog):
         ffplay = DependencyManager.get_binary_path("ffplay")
         if ffplay:
             try:
+                startupinfo = None
+                if os.name == 'nt':
+                    startupinfo = subprocess.STARTUPINFO()
+                    startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
+                
                 cmd = [ffplay, '-nodisp', '-autoexit', '-loglevel', 'quiet', self.video_path]
-                self.audio_process = subprocess.Popen(cmd, env=EnvUtils.get_clean_env())
+                self.audio_process = subprocess.Popen(cmd, env=EnvUtils.get_clean_env(), startupinfo=startupinfo)
             except: pass
 
     def update_frame(self, image):
