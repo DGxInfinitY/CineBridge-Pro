@@ -22,8 +22,26 @@ class DeliveryTab(QWidget):
         dash_frame = QFrame(); dash_frame.setObjectName("DashFrame"); dash_layout = QVBoxLayout(dash_frame)
         self.status_label = QLabel("Ready to Render"); dash_layout.addWidget(self.status_label)
         self.metrics_label = QLabel(""); self.metrics_label.setVisible(False); self.metrics_label.setStyleSheet("color: #3498DB; font-family: Consolas; font-size: 11px;"); dash_layout.addWidget(self.metrics_label)
+        
+        self.stats_row = QWidget(); self.stats_row.setVisible(False); sr_lay = QHBoxLayout(self.stats_row); sr_lay.setContentsMargins(0,0,0,0); sr_lay.setSpacing(10)
+        self.cpu_load_lbl = QLabel("CPU: 0%"); self.cpu_load_lbl.setStyleSheet("color: #E74C3C; font-weight: bold; font-size: 11px;")
+        self.cpu_temp_lbl = QLabel(""); self.cpu_temp_lbl.setStyleSheet("color: #E74C3C; font-size: 11px;")
+        self.gpu_load_lbl = QLabel(""); self.gpu_load_lbl.setStyleSheet("color: #3498DB; font-weight: bold; font-size: 11px;")
+        self.gpu_temp_lbl = QLabel(""); self.gpu_temp_lbl.setStyleSheet("color: #3498DB; font-size: 11px;")
+        sr_lay.addStretch(); sr_lay.addWidget(self.cpu_load_lbl); sr_lay.addWidget(self.cpu_temp_lbl); sr_lay.addWidget(self.gpu_load_lbl); sr_lay.addWidget(self.gpu_temp_lbl); sr_lay.addStretch()
+        dash_layout.addWidget(self.stats_row)
+        
         self.pbar = QProgressBar(); dash_layout.addWidget(self.pbar); layout.addWidget(dash_frame)
         self.btn_go = QPushButton("GENERATE DELIVERY MASTER"); self.btn_go.setObjectName("StartBtn"); self.btn_go.setMinimumHeight(50); self.btn_go.clicked.connect(self.on_btn_click); layout.addWidget(self.btn_go); layout.addStretch() 
+
+    def update_load_display(self, stats):
+        self.cpu_load_lbl.setText(f"CPU: {stats['cpu_load']}%")
+        self.cpu_temp_lbl.setText(f"({stats['cpu_temp']}°C)" if stats['cpu_temp'] > 0 else "")
+        if stats['has_gpu']:
+            v = stats.get('gpu_vendor', 'GPU'); self.gpu_load_lbl.setText(f"{v}: {stats['gpu_load']}%"); self.gpu_temp_lbl.setText(f"({stats['gpu_temp']}°C)" if stats['gpu_temp'] > 0 else "")
+            self.gpu_load_lbl.setVisible(True); self.gpu_temp_lbl.setVisible(True)
+        else: self.gpu_load_lbl.setVisible(False); self.gpu_temp_lbl.setVisible(False)
+
     def dragEnterEvent(self, e):
         if e.mimeData().hasUrls(): e.accept()
     def dropEvent(self, e):
@@ -33,7 +51,7 @@ class DeliveryTab(QWidget):
         if self.is_processing: self.stop()
         else: self.start()
     def toggle_ui_state(self, running):
-        self.is_processing = running; self.metrics_label.setVisible(running)
+        self.is_processing = running; self.metrics_label.setVisible(running); self.stats_row.setVisible(running)
         if not running: self.metrics_label.setText("")
         if running: self.btn_go.setText("STOP RENDER"); self.btn_go.setObjectName("StopBtn")
         else: self.btn_go.setText("RENDER"); self.btn_go.setObjectName("StartBtn")

@@ -14,8 +14,6 @@ from ..ui import TranscodeSettingsWidget, JobReportDialog, MediaInfoDialog
 class ConvertTab(QWidget):
     def __init__(self):
         super().__init__(); self.setAcceptDrops(True); self.is_processing = False; self.thumb_workers = []
-        self.sys_mon = SystemMonitor()
-        self.sys_mon.stats_signal.connect(self.update_load_display)
         
         layout = QVBoxLayout(); layout.setSpacing(15); layout.setContentsMargins(20, 20, 20, 20); self.setLayout(layout)
         self.settings = TranscodeSettingsWidget("1. Conversion Settings", mode="general"); layout.addWidget(self.settings)
@@ -35,11 +33,11 @@ class ConvertTab(QWidget):
         h.addWidget(b_clr); h.addWidget(self.btn_go); queue_lay.addLayout(h); queue_group.setLayout(queue_lay); layout.addWidget(queue_group); layout.addStretch()
                 
     def update_load_display(self, stats):
-        self.cpu_load_lbl.setText(f"CPU: {stats['cpu_load']}")
+        self.cpu_load_lbl.setText(f"CPU: {stats['cpu_load']}%")
         self.cpu_temp_lbl.setText(f"({stats['cpu_temp']}°C)" if stats['cpu_temp'] > 0 else "")
         if stats['has_gpu']:
             vendor = stats.get('gpu_vendor', 'GPU')
-            self.gpu_load_lbl.setText(f"{vendor}: {stats['gpu_load']}")
+            self.gpu_load_lbl.setText(f"{vendor}: {stats['gpu_load']}%")
             self.gpu_temp_lbl.setText(f"({stats['gpu_temp']}°C)" if stats['gpu_temp'] > 0 else "")
             self.gpu_load_lbl.setVisible(True); self.gpu_temp_lbl.setVisible(True)
         else:
@@ -62,10 +60,8 @@ class ConvertTab(QWidget):
     def toggle_ui_state(self, running):
         self.is_processing = running; self.stats_row.setVisible(running); self.metrics_label.setVisible(running)
         if running:
-            self.sys_mon.start()
             self.btn_go.setText("STOP BATCH"); self.btn_go.setObjectName("StopBtn")
         else:
-            self.sys_mon.stop()
             self.btn_go.setText("START BATCH"); self.btn_go.setObjectName("StartBtn")
             self.metrics_label.setText("")
         
@@ -99,5 +95,4 @@ class ConvertTab(QWidget):
             info = MediaInfoExtractor.get_info(path); dlg = MediaInfoDialog(info, self); dlg.exec()
 
     def closeEvent(self, event):
-        if hasattr(self, 'sys_mon'): self.sys_mon.stop(); self.sys_mon.wait()
         super().closeEvent(event)

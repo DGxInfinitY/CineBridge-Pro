@@ -23,8 +23,26 @@ class WatchTab(QWidget):
         dash_frame = QFrame(); dash_frame.setObjectName("DashFrame"); dash_layout = QVBoxLayout(dash_frame)
         self.status_label = QLabel("Watch Folder: INACTIVE"); dash_layout.addWidget(self.status_label)
         self.metrics_label = QLabel(""); self.metrics_label.setVisible(False); self.metrics_label.setStyleSheet("color: #3498DB; font-family: Consolas; font-size: 11px;"); dash_layout.addWidget(self.metrics_label)
+        
+        self.stats_row = QWidget(); self.stats_row.setVisible(False); sr_lay = QHBoxLayout(self.stats_row); sr_lay.setContentsMargins(0,0,0,0); sr_lay.setSpacing(10)
+        self.cpu_load_lbl = QLabel("CPU: 0%"); self.cpu_load_lbl.setStyleSheet("color: #E74C3C; font-weight: bold; font-size: 11px;")
+        self.cpu_temp_lbl = QLabel(""); self.cpu_temp_lbl.setStyleSheet("color: #E74C3C; font-size: 11px;")
+        self.gpu_load_lbl = QLabel(""); self.gpu_load_lbl.setStyleSheet("color: #3498DB; font-weight: bold; font-size: 11px;")
+        self.gpu_temp_lbl = QLabel(""); self.gpu_temp_lbl.setStyleSheet("color: #3498DB; font-size: 11px;")
+        sr_lay.addStretch(); sr_lay.addWidget(self.cpu_load_lbl); sr_lay.addWidget(self.cpu_temp_lbl); sr_lay.addWidget(self.gpu_load_lbl); sr_lay.addWidget(self.gpu_temp_lbl); sr_lay.addStretch()
+        dash_layout.addWidget(self.stats_row)
+        
         self.pbar = QProgressBar(); self.pbar.setVisible(False); dash_layout.addWidget(self.pbar); layout.addWidget(dash_frame)
         self.btn_toggle = QPushButton("ACTIVATE WATCH FOLDER"); self.btn_toggle.setObjectName("StartBtn"); self.btn_toggle.setMinimumHeight(50); self.btn_toggle.clicked.connect(self.toggle_watch); layout.addWidget(self.btn_toggle); layout.addStretch()
+
+    def update_load_display(self, stats):
+        self.cpu_load_lbl.setText(f"CPU: {stats['cpu_load']}%")
+        self.cpu_temp_lbl.setText(f"({stats['cpu_temp']}°C)" if stats['cpu_temp'] > 0 else "")
+        if stats['has_gpu']:
+            v = stats.get('gpu_vendor', 'GPU'); self.gpu_load_lbl.setText(f"{v}: {stats['gpu_load']}%"); self.gpu_temp_lbl.setText(f"({stats['gpu_temp']}°C)" if stats['gpu_temp'] > 0 else "")
+            self.gpu_load_lbl.setVisible(True); self.gpu_temp_lbl.setVisible(True)
+        else: self.gpu_load_lbl.setVisible(False); self.gpu_temp_lbl.setVisible(False)
+
     def update_threshold(self, v): self.STABILITY_THRESHOLD = float(v)
     def browse_watch(self):
         d = QFileDialog.getExistingDirectory(self, "Select Watch Folder"); 
@@ -57,10 +75,10 @@ class WatchTab(QWidget):
     def start_batch(self, files):
         self.worker = BatchTranscodeWorker(files, self.inp_dest.text(), self.settings.get_settings(), mode="convert", use_gpu=self.settings.is_gpu_enabled())
         self.worker.progress_signal.connect(self.pbar.setValue); self.worker.metrics_signal.connect(self.metrics_label.setText); self.worker.finished_signal.connect(self.on_batch_finished)
-        self.pbar.setVisible(True); self.metrics_label.setVisible(True); self.timer.stop()
+        self.pbar.setVisible(True); self.metrics_label.setVisible(True); self.stats_row.setVisible(True); self.timer.stop()
         for f in files: self.processed_files.add(f)
         self.worker.start()
     def on_batch_finished(self, success, msg):
-        self.pbar.setVisible(False); self.metrics_label.setVisible(False); self.metrics_label.setText(""); self.timer.start(2000)
+        self.pbar.setVisible(False); self.metrics_label.setVisible(False); self.stats_row.setVisible(False); self.metrics_label.setText(""); self.timer.start(2000)
         if success: self.status_label.setText("Watch Folder: ACTIVE"); SystemNotifier.notify("Watch Folder", "New proxies processed.")
         else: self.status_label.setText(f"ERROR: {msg}"); SystemNotifier.notify("Watch Folder Error", msg)

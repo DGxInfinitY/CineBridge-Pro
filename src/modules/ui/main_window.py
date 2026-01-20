@@ -78,6 +78,8 @@ class CineBridgeApp(QMainWindow):
         self.sys_monitor = SystemMonitor()
         self.sys_monitor.stats_signal.connect(self.tab_ingest.update_load_display)
         self.sys_monitor.stats_signal.connect(self.tab_convert.update_load_display)
+        self.sys_monitor.stats_signal.connect(self.tab_delivery.update_load_display)
+        self.sys_monitor.stats_signal.connect(self.tab_watch.update_load_display)
         self.sys_monitor.start()
 
         # Startup Logic
@@ -109,6 +111,11 @@ class CineBridgeApp(QMainWindow):
         self.settings.setValue("show_copy_log", self.tab_ingest.copy_log.isVisible())
         self.settings.setValue("show_trans_log", self.tab_ingest.transcode_log.isVisible())
         self.settings.sync() 
+        
+        if hasattr(self, 'sys_monitor'):
+            self.sys_monitor.stop()
+            self.sys_monitor.wait(1000)
+            
         event.accept()
 
     def check_system_theme(self):
