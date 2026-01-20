@@ -7,11 +7,14 @@ from PyQt6.QtGui import QPixmap
 from PyQt6.QtCore import Qt
 
 class JobReportDialog(QDialog):
-    def __init__(self, title, message, parent=None):
+    def __init__(self, title, message, parent=None, is_error=False):
         super().__init__(parent); self.setWindowTitle(title); self.setFixedWidth(450); layout = QVBoxLayout()
         layout.setContentsMargins(30, 30, 30, 30); layout.setSpacing(20)
-        header_lay = QHBoxLayout(); icon_label = QLabel(); icon_label.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_DialogApplyButton).pixmap(32, 32))
-        header_lay.addWidget(icon_label); msg_label = QLabel(message); msg_label.setWordWrap(True); msg_label.setStyleSheet("font-size: 14px; font-weight: bold;")
+        
+        icon_type = QStyle.StandardPixmap.SP_MessageBoxCritical if is_error else QStyle.StandardPixmap.SP_DialogApplyButton
+        
+        header_lay = QHBoxLayout(); icon_label = QLabel(); icon_label.setPixmap(self.style().standardIcon(icon_type).pixmap(32, 32))
+        header_lay.addWidget(icon_label); msg_label = QLabel(message); msg_label.setWordWrap(True); msg_label.setStyleSheet(f"font-size: 14px; font-weight: bold; {'color: #E74C3C;' if is_error else ''}")
         header_lay.addWidget(msg_label, 1); layout.addLayout(header_lay)
         ok_btn = QPushButton("OK"); ok_btn.setMinimumHeight(40); ok_btn.setFixedWidth(100); ok_btn.clicked.connect(self.accept)
         btn_lay = QHBoxLayout(); btn_lay.addStretch(); btn_lay.addWidget(ok_btn); btn_lay.addStretch(); layout.addLayout(btn_lay); self.setLayout(layout)

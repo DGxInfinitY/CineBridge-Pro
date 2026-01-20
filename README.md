@@ -133,6 +133,12 @@ For professional Digital Imaging Technicians (DITs) or complex workflows, powerf
 
 ## 📝 Change Log
 
+### v4.17.6 (Dev)
+* **UI/UX:** **Consolidated Dashboard.** Merged hardware monitoring and transcode metrics into a single, unified status row for better vertical space usage.
+* **Feature:** **Enhanced Progress Tracking.** New dual-stage status reporting (Copy -> Transcode) with "File X/Y" counters and detailed copy progress.
+* **Refinement:** **Verbose Logging.** Improved transcoding logs with clearer codec details and duration statistics.
+* **Stability:** **Standardized Dialogs.** Unified all error and success messages to use the consistent Job Report dialog system.
+
 ### v4.16.7 (Current Release)
 * **Feature:** **DJI Metadata Support.** Improved delineation of DJI devices (Avata 2, Action 2, etc.) using internal model IDs.
 * **Maintenance:** **Test Suite Expansion.** Comprehensive regression testing and hardening of professional features (Watch Folder, Reports, Registry).

@@ -157,6 +157,10 @@ class CopyWorker(QThread):
                             self.speed_signal.emit(f"{((bytes_done-last_bytes)/(now-last_time))/1048576:.1f} MB/s")
                             last_time = now; last_bytes = bytes_done
                         self.progress_signal.emit(int((bytes_done/total_work_bytes)*100))
+                        
+                    # Emit file progress status
+                    pct_files = int(((idx + 1) / total_files) * 100)
+                    self.status_signal.emit(f"Copying {idx + 1}/{total_files} ({pct_files}%) - {name}")
                 
                 for d in dest_paths: shutil.copystat(src, d)
                 

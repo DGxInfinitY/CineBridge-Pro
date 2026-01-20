@@ -2,6 +2,7 @@ import os
 import platform
 import subprocess
 import re
+from PyQt6.QtCore import QSettings
 from .common import EnvUtils, debug_log
 from .engine import MediaInfoExtractor
 
@@ -54,14 +55,34 @@ class DeviceRegistry:
     }
 
     DJI_MODELS = {
-        "FC8436": "DJI Neo 2", # Hypothetical ID for Neo 2 based on prompt
+        "FC8436": "DJI Neo 2", # Hypothetical ID
         "FC8284": "DJI Avata 2",
         "FC3582": "DJI Mini 3 Pro",
         "FC848": "DJI Air 3",
         "OT-210": "DJI Action 2",
         "AC003": "DJI Osmo Action 3",
-        "AC004": "DJI Osmo Action 4"
+        "AC004": "DJI Osmo Action 4",
+        "AC005": "DJI Action 5 Pro", # Hypothetical
+        "AC005PRO": "DJI Action 5 Pro"
     }
+    
+    _OVERRIDES = None
+
+    @staticmethod
+    def load_overrides():
+        if DeviceRegistry._OVERRIDES is None:
+            s = QSettings("CineBridge", "CineBridgePro")
+            DeviceRegistry._OVERRIDES = s.value("device_overrides", {}, type=dict)
+        return DeviceRegistry._OVERRIDES
+
+    @staticmethod
+    def save_override(key, name):
+        if not key: return
+        DeviceRegistry.load_overrides()
+        DeviceRegistry._OVERRIDES[key] = name
+        s = QSettings("CineBridge", "CineBridgePro")
+        s.setValue("device_overrides", DeviceRegistry._OVERRIDES)
+        debug_log(f"DeviceRegistry: Saved override '{key}' -> '{name}'")
 
     @staticmethod
     def safe_list_dir(path, timeout=5):
@@ -77,9 +98,16 @@ class DeviceRegistry:
 
     @staticmethod
     def identify(mount_point, usb_hints=set()):
+        DeviceRegistry.load_overrides()
+        
+        # Check direct path override first
+        if mount_point in DeviceRegistry._OVERRIDES:
+            debug_log(f"DeviceRegistry: Found override for path {mount_point}")
+            return DeviceRegistry._OVERRIDES[mount_point], mount_point, None, mount_point
+
         root_items = DeviceRegistry.safe_list_dir(mount_point)
-        if not root_items: return "Generic Storage", mount_point, None
-        best_match = None; best_score = 0; best_root = mount_point; best_exts = None
+        if not root_items: return "Generic Storage", mount_point, None, None
+        best_match = None; best_score = 0; best_root = mount_point; best_exts = None; detected_id = None
 
         def check_structure(base_path, pattern):
             if not pattern or pattern == ".": return None
@@ -138,18 +166,28 @@ class DeviceRegistry:
                     meta = MediaInfoExtractor.get_device_metadata(sample_file)
                     model = meta.get('model')
                     if model:
-                        # Check map or use raw model string
-                        best_match = DeviceRegistry.DJI_MODELS.get(model, f"DJI {model}")
+                        detected_id = model
+                        # 1. Check Model Override
+                        if model in DeviceRegistry._OVERRIDES:
+                            best_match = DeviceRegistry._OVERRIDES[model]
+                        # 2. Check Known Models
+                        elif model in DeviceRegistry.DJI_MODELS:
+                            best_match = DeviceRegistry.DJI_MODELS[model]
+                        # 3. Smart Fallback
+                        else:
+                            clean_model = model.strip()
+                            if "DJI" in clean_model.upper(): best_match = clean_model
+                            else: best_match = f"DJI {clean_model}"
             except Exception as e: debug_log(f"DJI Metadata check failed: {e}")
 
-        if best_score >= 20: return best_match, best_root, best_exts
+        if best_score >= 20: return best_match, best_root, best_exts, detected_id
         internal = check_structure(mount_point, "Internal shared storage") or check_structure(mount_point, "Internal Storage")
         if internal:
             dcim = check_structure(internal, "DCIM")
             if dcim:
                 cam = check_structure(dcim, "Camera")
-                if cam: return "Android/Phone", cam, {'.MP4', '.JPG', '.JPEG', '.DNG', '.HEIC'}
-        return "Generic Storage", mount_point, None
+                if cam: return "Android/Phone", cam, {'.MP4', '.JPG', '.JPEG', '.DNG', '.HEIC'}, None
+        return "Generic Storage", mount_point, None, None
 
 class DriveDetector:
     IGNORED_KEYWORDS = ["boot", "recovery", "snap", "loop", "var", "tmp", "sys"]

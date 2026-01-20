@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, 
     QFileDialog, QProgressBar, QTextEdit, QMessageBox, QCheckBox, QGroupBox, 
     QComboBox, QTabWidget, QFrame, QSplitter, QTreeWidget, QTreeWidgetItem, 
-    QGridLayout, QAbstractItemView, QToolButton
+    QGridLayout, QAbstractItemView, QToolButton, QInputDialog
 )
 from PyQt6.QtGui import QAction, QIcon, QPixmap, QImage
 from PyQt6.QtCore import Qt, QTimer, QSize, QBuffer, QByteArray, QIODevice
@@ -30,11 +30,20 @@ class IngestTab(QWidget):
         self.scan_btn = QPushButton(" REFRESH DEVICES "); self.scan_btn.setMinimumHeight(50); self.scan_btn.clicked.connect(self.run_auto_scan)
         self.auto_info_label = QLabel("Scanning..."); self.auto_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.result_card = QFrame(); self.result_card.setVisible(False); self.result_card.setObjectName("ResultCard"); res_lay = QVBoxLayout()
+        
+        # Result Header with Edit Button
+        res_header = QHBoxLayout()
         self.result_label = QLabel(); self.result_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.edit_device_btn = QToolButton(); self.edit_device_btn.setText("✏️"); self.edit_device_btn.setToolTip("Rename this device")
+        self.edit_device_btn.clicked.connect(self.rename_current_device)
+        self.edit_device_btn.setStyleSheet("QToolButton { border: none; background: transparent; font-size: 16px; } QToolButton:hover { background: #444; border-radius: 4px; }")
+        
+        res_header.addStretch(); res_header.addWidget(self.result_label); res_header.addWidget(self.edit_device_btn); res_header.addStretch()
+        
         self.select_device_box = QComboBox(); self.select_device_box.setVisible(False); 
         self.select_device_box.currentIndexChanged.connect(self.on_device_selection_change)
         self.select_device_box.currentIndexChanged.connect(self.reset_ingest_mode)
-        res_lay.addWidget(self.result_label); res_lay.addWidget(self.select_device_box); self.result_card.setLayout(res_lay)
+        res_lay.addLayout(res_header); res_lay.addWidget(self.select_device_box); self.result_card.setLayout(res_lay)
         auto_lay.addWidget(self.scan_btn); auto_lay.addWidget(self.auto_info_label); auto_lay.addWidget(self.result_card); auto_lay.addStretch()
         self.tab_auto.setLayout(auto_lay); self.tab_manual = QWidget(); man_lay = QVBoxLayout()
         self.source_input = QLineEdit(); self.browse_src = QPushButton("Browse"); self.browse_src.clicked.connect(self.browse_source)
@@ -121,16 +130,29 @@ class IngestTab(QWidget):
         self.storage_bar = QProgressBar(); self.storage_bar.setVisible(False); dash_layout.addWidget(self.storage_bar)
         self.progress_bar = QProgressBar(); dash_layout.addWidget(self.progress_bar)
         
-        self.transcode_metrics_label = QLabel(""); self.transcode_metrics_label.setVisible(False); self.transcode_metrics_label.setStyleSheet("color: #3498DB; font-family: Consolas; font-size: 11px;"); dash_layout.addWidget(self.transcode_metrics_label)
-        self.transcode_status_label = QLabel(""); self.transcode_status_label.setVisible(False); self.transcode_status_label.setStyleSheet("color: #E67E22; font-weight: bold;"); dash_layout.addWidget(self.transcode_status_label)
+        # Unified Metrics Row
+        self.unified_metrics_row = QWidget(); self.unified_metrics_row.setVisible(False); um_lay = QHBoxLayout(self.unified_metrics_row); um_lay.setContentsMargins(0, 5, 0, 0)
         
-        self.stats_row = QWidget(); self.stats_row.setVisible(False); sr_lay = QHBoxLayout(self.stats_row); sr_lay.setContentsMargins(0,0,0,0); sr_lay.setSpacing(10)
+        # 1. Transcode Progress/Status (Left)
+        self.transcode_status_label = QLabel(""); self.transcode_status_label.setStyleSheet("color: #E67E22; font-weight: bold;")
+        
+        # 2. Transcode Metrics (Center)
+        self.transcode_metrics_label = QLabel(""); self.transcode_metrics_label.setStyleSheet("color: #3498DB; font-family: Consolas; font-size: 11px;")
+        
+        # 3. Hardware Stats (Right)
         self.cpu_load_lbl = QLabel("CPU: 0%"); self.cpu_load_lbl.setStyleSheet("color: #E74C3C; font-weight: bold; font-size: 11px;")
         self.cpu_temp_lbl = QLabel(""); self.cpu_temp_lbl.setStyleSheet("color: #E74C3C; font-size: 11px;")
         self.gpu_load_lbl = QLabel(""); self.gpu_load_lbl.setStyleSheet("color: #3498DB; font-weight: bold; font-size: 11px;")
         self.gpu_temp_lbl = QLabel(""); self.gpu_temp_lbl.setStyleSheet("color: #3498DB; font-size: 11px;")
-        sr_lay.addStretch(); sr_lay.addWidget(self.cpu_load_lbl); sr_lay.addWidget(self.cpu_temp_lbl); sr_lay.addWidget(self.gpu_load_lbl); sr_lay.addWidget(self.gpu_temp_lbl); sr_lay.addStretch()
-        dash_layout.addWidget(self.stats_row); self.layout.addWidget(dash_frame)
+
+        um_lay.addWidget(self.transcode_status_label)
+        um_lay.addStretch()
+        um_lay.addWidget(self.transcode_metrics_label)
+        um_lay.addStretch()
+        um_lay.addWidget(self.cpu_load_lbl); um_lay.addWidget(self.cpu_temp_lbl)
+        um_lay.addWidget(self.gpu_load_lbl); um_lay.addWidget(self.gpu_temp_lbl)
+        
+        dash_layout.addWidget(self.unified_metrics_row); self.layout.addWidget(dash_frame)
 
         btn_layout = QHBoxLayout(); self.import_btn = QPushButton("SCAN SOURCE"); self.import_btn.setObjectName("StartBtn"); self.import_btn.clicked.connect(self.on_import_click)
         self.cancel_btn = QPushButton("STOP"); self.cancel_btn.setObjectName("StopBtn"); self.cancel_btn.setEnabled(False); self.cancel_btn.clicked.connect(self.cancel_import)
@@ -147,7 +169,7 @@ class IngestTab(QWidget):
 
     def clear_logs(self): self.copy_log.clear(); self.transcode_log.clear()
     def toggle_logs(self, show_copy, show_transcode): self.copy_log.setVisible(show_copy); self.transcode_log.setVisible(show_transcode); self.splitter.setVisible(show_copy or show_transcode)
-    def toggle_transcode_ui(self, checked): self.btn_config_trans.setVisible(checked); self.transcode_status_label.setVisible(checked); self.update_transfer_button_text()
+    def toggle_transcode_ui(self, checked): self.btn_config_trans.setVisible(checked); self.update_transfer_button_text()
     def open_transcode_config(self): TranscodeConfigDialog(self.transcode_widget, self).exec()
     def open_structure_config(self):
         dlg = StructureConfigDialog(self.structure_template, self)
@@ -165,8 +187,7 @@ class IngestTab(QWidget):
             self.gpu_load_lbl.setVisible(True); self.gpu_temp_lbl.setVisible(True)
         else: self.gpu_load_lbl.setVisible(False); self.gpu_temp_lbl.setVisible(False)
     def set_transcode_active(self, active):
-        self.stats_row.setVisible(active); self.transcode_status_label.setVisible(active)
-        self.transcode_metrics_label.setVisible(active)
+        self.unified_metrics_row.setVisible(active)
         if not active: self.transcode_metrics_label.setText("")
     def browse_source(self):
         d = QFileDialog.getExistingDirectory(self, "Source", self.source_input.text())
@@ -201,8 +222,20 @@ class IngestTab(QWidget):
             self.import_btn.setText("SCAN SOURCE"); self.import_btn.setStyleSheet(""); self.tree.clear()
     def on_device_selection_change(self, idx):
         if idx >= 0: self.update_result_ui(self.found_devices[idx], True)
+    
+    def rename_current_device(self):
+        if not hasattr(self, 'current_device_obj') or not self.current_device_obj: return
+        dev = self.current_device_obj
+        current_name = dev.get('display_name', 'Unknown')
+        key = dev.get('id') or dev.get('root') or dev.get('path')
+        
+        text, ok = QInputDialog.getText(self, "Rename Device", f"Enter new name for '{current_name}':\n(Will be saved for this Model/Drive)", text=current_name)
+        if ok and text.strip():
+            DeviceRegistry.save_override(key, text.strip())
+            self.run_auto_scan()
+
     def update_result_ui(self, dev, multi):
-        self.current_detected_path = dev['path']; self.source_input.setText(dev['path'])
+        self.current_device_obj = dev; self.current_detected_path = dev['path']; self.source_input.setText(dev['path'])
         name = dev.get('display_name', 'Generic Storage'); path_short = dev['path']
         msg = f"✅ {name}" if not dev['empty'] else f"⚠️ {name} (Empty)"
         if len(path_short) > 35: path_short = path_short[:15] + "..." + path_short[-15:]
@@ -343,13 +376,15 @@ class IngestTab(QWidget):
                 debug_log("Ingest: Transcoding is active - initializing engine"); self.transcode_worker = AsyncTranscoder(tc_settings, self.transcode_widget.is_gpu_enabled())
                 self.transcode_worker.log_signal.connect(self.append_transcode_log)
                 self.transcode_worker.metrics_signal.connect(self.transcode_metrics_label.setText)
+                self.transcode_worker.status_signal.connect(self.transcode_status_label.setText)
+                self.transcode_worker.progress_signal.connect(self.progress_bar.setValue)
                 self.transcode_worker.all_finished_signal.connect(self.on_all_transcodes_finished); self.transcode_worker.start(); self.set_transcode_active(True)
             debug_log("Ingest: Initializing CopyWorker threads"); self.copy_worker = CopyWorker(src, dests, self.project_name_input.text(), self.check_date.isChecked(), self.check_dupe.isChecked(), False, cam_name, self.check_verify.isChecked(), selected, tc_settings if tc_enabled else None)
             self.copy_worker.log_signal.connect(self.append_copy_log); self.copy_worker.progress_signal.connect(self.progress_bar.setValue); self.copy_worker.status_signal.connect(self.status_label.setText); self.copy_worker.speed_signal.connect(self.speed_label.setText); self.copy_worker.finished_signal.connect(self.on_copy_finished); self.copy_worker.storage_check_signal.connect(self.update_storage_display_bar)
             if tc_enabled: self.copy_worker.file_ready_signal.connect(self.queue_for_transcode); self.copy_worker.transcode_count_signal.connect(self.transcode_worker.set_total_jobs)
             self.copy_worker.start(); debug_log("Ingest: CopyWorker successfully started")
         except Exception as e:
-            error_log(f"Ingest Critical Failure: {e}"); QMessageBox.critical(self, "Critical Error", f"Failed to start ingest: {e}"); self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False)
+            error_log(f"Ingest Critical Failure: {e}"); JobReportDialog("Critical Error", f"Failed to start ingest: {e}", self, is_error=True).exec(); self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False)
 
     def update_storage_display_bar(self, needed, free, is_enough):
         self.storage_bar.setVisible(True); needed_gb = needed / (1024**3); free_gb = free / (1024**3)
@@ -374,7 +409,7 @@ class IngestTab(QWidget):
         if not success:
             self.append_copy_log(f"❌ INGEST FAILED: {msg}")
             SystemNotifier.notify("Ingest Failed", msg, "dialog-error")
-            QMessageBox.critical(self, "Ingest Error", f"Ingest failed: {msg}")
+            JobReportDialog("Ingest Error", f"<h3>Ingest Failed</h3><p>{msg}</p>", self, is_error=True).exec()
             self.cancel_import(); self.import_btn.setText("FAILED"); self.import_btn.setStyleSheet("background-color: #C0392B; color: white;")
             return
 

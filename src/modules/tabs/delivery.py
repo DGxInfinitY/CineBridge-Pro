@@ -67,5 +67,5 @@ class DeliveryTab(QWidget):
             SystemNotifier.notify("Render Complete", "Delivery render finished."); self.status_label.setText("Delivery Render Complete!")
             JobReportDialog("Render Complete", "Final Render Successful. Your master is ready for distribution.", self).exec()
         else:
-            QMessageBox.critical(self, "Render Failed", msg); self.status_label.setText("Failed.")
+            JobReportDialog("Render Failed", msg, self, is_error=True).exec(); self.status_label.setText("Failed.")
         self.toggle_ui_state(False)
