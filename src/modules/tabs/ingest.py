@@ -4,10 +4,20 @@ from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, 
     QFileDialog, QProgressBar, QTextEdit, QMessageBox, QCheckBox, QGroupBox, 
     QComboBox, QTabWidget, QFrame, QSplitter, QTreeWidget, QTreeWidgetItem, 
-    QGridLayout, QAbstractItemView, QToolButton, QInputDialog
+    QGridLayout, QAbstractItemView, QToolButton, QInputDialog, QStackedWidget
 )
 from PyQt6.QtGui import QAction, QIcon, QPixmap, QImage
-from PyQt6.QtCore import Qt, QTimer, QSize, QBuffer, QByteArray, QIODevice
+from PyQt6.QtCore import Qt, QTimer, QSize, QBuffer, QByteArray, QIODevice, pyqtSignal
+
+class ClickableLabel(QLabel):
+    clicked = pyqtSignal()
+    def mousePressEvent(self, event): self.clicked.emit(); super().mousePressEvent(event)
+
+class CancelableLineEdit(QLineEdit):
+    cancelled = pyqtSignal()
+    def keyPressEvent(self, event):
+        if event.key() == Qt.Key.Key_Escape: self.cancelled.emit()
+        else: super().keyPressEvent(event)
 
 from ..config import DEBUG_MODE, GUI_LOG_QUEUE, debug_log, info_log, error_log
 from ..utils import DeviceRegistry, ReportGenerator, MHLGenerator, SystemNotifier, MediaInfoExtractor, TranscodeEngine
@@ -31,21 +41,39 @@ class IngestTab(QWidget):
         self.auto_info_label = QLabel("Scanning..."); self.auto_info_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.result_card = QFrame(); self.result_card.setVisible(False); self.result_card.setObjectName("ResultCard"); res_lay = QVBoxLayout()
         
-        # Result Header with Edit Button
-        res_header = QHBoxLayout(); res_header.setContentsMargins(0, 0, 0, 0)
-        self.result_label = QLabel(); self.result_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.edit_device_btn = QPushButton("Rename"); self.edit_device_btn.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.edit_device_btn.setToolTip("Rename this device")
-        self.edit_device_btn.clicked.connect(self.rename_current_device)
-        self.edit_device_btn.setStyleSheet("QPushButton { font-size: 10px; padding: 2px 8px; border: 1px solid #777; border-radius: 4px; background-color: #333; color: white; } QPushButton:hover { background-color: #555; border-color: #aaa; }")
-        self.edit_device_btn.setFixedHeight(20)
+        # Result Header: Icon + Name Stack
+        res_header = QHBoxLayout(); res_header.setContentsMargins(0, 0, 0, 0); res_header.setSpacing(10)
+        self.status_icon_lbl = QLabel("✅"); self.status_icon_lbl.setStyleSheet("font-size: 18px;")
         
-        res_header.addStretch(); res_header.addWidget(self.result_label); res_header.addWidget(self.edit_device_btn); res_header.addStretch()
+        # Name Stack (Label / Editor)
+        self.name_stack = QStackedWidget()
+        self.name_stack.setFixedHeight(30)
         
+        # Page 0: Clickable Label
+        self.device_name_lbl = ClickableLabel("Device Name"); self.device_name_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.device_name_lbl.setStyleSheet("font-size: 16px; font-weight: bold; color: #27AE60;")
+        self.device_name_lbl.setToolTip("Click to rename")
+        self.device_name_lbl.clicked.connect(self.enable_rename_mode)
+        self.name_stack.addWidget(self.device_name_lbl)
+        
+        # Page 1: Line Edit
+        self.name_editor = CancelableLineEdit()
+        self.name_editor.setStyleSheet("font-size: 14px; padding: 2px; background-color: #222; border: 1px solid #3498DB; color: white;")
+        self.name_editor.returnPressed.connect(self.save_rename)
+        self.name_editor.editingFinished.connect(self.save_rename) # Save on blur
+        self.name_editor.cancelled.connect(self.cancel_rename)
+        self.name_stack.addWidget(self.name_editor)
+        
+        res_header.addStretch(); res_header.addWidget(self.status_icon_lbl); res_header.addWidget(self.name_stack); res_header.addStretch()
+        
+        self.path_lbl = QLabel("/path/to/device"); self.path_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
+        self.path_lbl.setStyleSheet("color: white; font-size: 11px;")
+
         self.select_device_box = QComboBox(); self.select_device_box.setVisible(False); 
         self.select_device_box.currentIndexChanged.connect(self.on_device_selection_change)
         self.select_device_box.currentIndexChanged.connect(self.reset_ingest_mode)
-        res_lay.addLayout(res_header); res_lay.addWidget(self.select_device_box); self.result_card.setLayout(res_lay)
+        
+        res_lay.addLayout(res_header); res_lay.addWidget(self.path_lbl); res_lay.addWidget(self.select_device_box); self.result_card.setLayout(res_lay)
         auto_lay.addWidget(self.scan_btn); auto_lay.addWidget(self.auto_info_label); auto_lay.addWidget(self.result_card); auto_lay.addStretch()
         self.tab_auto.setLayout(auto_lay); self.tab_manual = QWidget(); man_lay = QVBoxLayout()
         self.source_input = QLineEdit(); self.browse_src = QPushButton("Browse"); self.browse_src.clicked.connect(self.browse_source)
@@ -225,25 +253,44 @@ class IngestTab(QWidget):
     def on_device_selection_change(self, idx):
         if idx >= 0: self.update_result_ui(self.found_devices[idx], True)
     
-    def rename_current_device(self):
+    def enable_rename_mode(self):
         if not hasattr(self, 'current_device_obj') or not self.current_device_obj: return
-        dev = self.current_device_obj
-        current_name = dev.get('display_name', 'Unknown')
-        key = dev.get('id') or dev.get('root') or dev.get('path')
-        
-        text, ok = QInputDialog.getText(self, "Rename Device", f"Enter new name for '{current_name}':\n(Will be saved for this Model/Drive)", text=current_name)
-        if ok and text.strip():
-            DeviceRegistry.save_override(key, text.strip())
-            self.run_auto_scan()
+        self.name_editor.setText(self.current_device_obj.get('display_name', 'Unknown'))
+        self.name_stack.setCurrentIndex(1)
+        self.name_editor.setFocus()
+        self.name_editor.selectAll()
+
+    def cancel_rename(self):
+        self.name_stack.setCurrentIndex(0)
+
+    def save_rename(self):
+        if self.name_stack.currentIndex() != 1: return
+        text = self.name_editor.text().strip()
+        if text:
+            dev = self.current_device_obj
+            key = dev.get('id') or dev.get('root') or dev.get('path')
+            DeviceRegistry.save_override(key, text)
+            self.cancel_rename() # Switch back
+            self.run_auto_scan() # Refresh
+        else:
+            self.cancel_rename()
 
     def update_result_ui(self, dev, multi):
         self.current_device_obj = dev; self.current_detected_path = dev['path']; self.source_input.setText(dev['path'])
         name = dev.get('display_name', 'Generic Storage'); path_short = dev['path']
-        msg = f"✅ {name}" if not dev['empty'] else f"⚠️ {name} (Empty)"
-        if len(path_short) > 35: path_short = path_short[:15] + "..." + path_short[-15:]
-        self.result_label.setText(f"<h3 style='color:{'#27AE60' if not dev['empty'] else '#F39C12'}'>{msg}</h3><span style='color:white;'>{path_short}</span>")
+        
+        # Update Split Widgets
+        self.status_icon_lbl.setText("✅" if not dev['empty'] else "⚠️")
+        self.device_name_lbl.setText(name)
+        self.device_name_lbl.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {'#27AE60' if not dev['empty'] else '#F39C12'};")
+        
+        if len(path_short) > 40: path_short = path_short[:15] + "..." + path_short[-20:]
+        self.path_lbl.setText(path_short)
+        
         self.result_card.setStyleSheet(f"background-color: {'#2e3b33' if not dev['empty'] else '#4d3d2a'}; border: 2px solid {'#27AE60' if not dev['empty'] else '#F39C12'}; border-radius: 8px;")
         self.result_card.setVisible(True)
+        self.name_stack.setCurrentIndex(0) # Ensure label is shown
+        
         idx = self.device_combo.findText(name)
         if idx >= 0: self.device_combo.setCurrentIndex(idx)
         elif name == "Generic Storage":

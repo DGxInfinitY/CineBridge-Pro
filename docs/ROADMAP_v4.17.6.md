@@ -31,6 +31,7 @@
 ## 5. Device Identification (User Request)
 - [x] **Granular Detection:** Detect DJI Neo 2 and Action 5 Pro specifically.
 - [x] **User Overrides:** Allow manual renaming of devices with persistent storage.
+- [x] **Inline Editing:** Replaced buttons with clean click-to-rename text interaction.
 - [x] **Metadata Refinement:** Use internal model ID for identification and override keys.
 
 ## 6. Documentation
