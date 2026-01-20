@@ -1,6 +1,6 @@
-name: cinebridge-pro
+name: cinebridgepro
 base: core22
-version: '4.17.4'
+version: '4.17.5'
 summary: Professional DIT and Transcoding Suite
 description: |
   CineBridge Pro is a high-performance Digital Imaging Technician (DIT) 
@@ -33,7 +33,8 @@ parts:
   cinebridge:
     plugin: python
     source: .
-    python-requirements: requirements.txt
+    python-requirements:
+      - requirements.txt
     stage-packages:
       - ffmpeg
       - python3-tk
