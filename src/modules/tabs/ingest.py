@@ -55,12 +55,14 @@ class IngestTab(QWidget):
         # Page 0: Clickable Label
         self.device_name_lbl = ClickableLabel("Device Name"); self.device_name_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
         self.device_name_lbl.setStyleSheet("font-size: 16px; font-weight: bold; color: #27AE60;")
+        self.device_name_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.device_name_lbl.setToolTip("Click to rename")
         self.device_name_lbl.clicked.connect(self.enable_rename_mode)
         self.name_stack.addWidget(self.device_name_lbl)
         
         # Page 1: Line Edit
         self.name_editor = CancelableLineEdit()
+        self.name_editor.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.name_editor.setStyleSheet("font-size: 14px; padding: 2px; background-color: #222; border: 1px solid #3498DB; color: white;")
         self.name_editor.returnPressed.connect(self.save_rename)
         self.name_editor.cancelled.connect(self.cancel_rename)
@@ -70,7 +72,11 @@ class IngestTab(QWidget):
         self.btn_reset_overrides.clicked.connect(self.reset_device_overrides)
         self.btn_reset_overrides.setStyleSheet("QToolButton { border: none; background: transparent; color: white; font-size: 16px; font-weight: bold; } QToolButton:hover { color: #E74C3C; }")
         
-        res_header.addStretch(); res_header.addWidget(self.name_stack); res_header.addWidget(self.btn_reset_overrides); res_header.addStretch()
+        # Create a container for name + button to keep them tethered
+        name_container = QWidget(); nc_lay = QHBoxLayout(name_container); nc_lay.setContentsMargins(0,0,0,0); nc_lay.setSpacing(5)
+        nc_lay.addWidget(self.name_stack); nc_lay.addWidget(self.btn_reset_overrides)
+        
+        res_header.addStretch(); res_header.addWidget(name_container); res_header.addStretch()
         
         self.path_lbl = QLabel("/path/to/device"); self.path_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.path_lbl.setStyleSheet("color: white; font-size: 11px;")
@@ -79,6 +85,7 @@ class IngestTab(QWidget):
         self.select_device_box.currentIndexChanged.connect(self.on_device_selection_change)
         self.select_device_box.currentIndexChanged.connect(self.reset_ingest_mode)
         
+        res_lay.setContentsMargins(15, 15, 15, 15); res_lay.setSpacing(8)
         res_lay.addLayout(res_header); res_lay.addWidget(self.path_lbl); res_lay.addWidget(self.select_device_box); self.result_card.setLayout(res_lay)
         auto_lay.addWidget(self.scan_btn); auto_lay.addWidget(self.auto_info_label); auto_lay.addWidget(self.result_card); auto_lay.addStretch()
         self.tab_auto.setLayout(auto_lay); self.tab_manual = QWidget(); man_lay = QVBoxLayout()
