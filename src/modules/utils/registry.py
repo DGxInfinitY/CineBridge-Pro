@@ -180,6 +180,16 @@ class DeviceRegistry:
                             else: best_match = f"DJI {clean_model}"
             except Exception as e: debug_log(f"DJI Metadata check failed: {e}")
 
+            # Fallback: Check Volume Label if metadata failed
+            if not detected_id:
+                vol_label = os.path.basename(mount_point).upper()
+                if "OSMOACTION" in vol_label or "ACTION 5" in vol_label:
+                    best_match = "DJI Osmo Action (Generic)"
+                elif "NEO" in vol_label:
+                    best_match = "DJI Neo (Generic)"
+                elif "AVATA" in vol_label:
+                    best_match = "DJI Avata (Generic)"
+
         if best_score >= 20: return best_match, best_root, best_exts, detected_id
         internal = check_structure(mount_point, "Internal shared storage") or check_structure(mount_point, "Internal Storage")
         if internal:

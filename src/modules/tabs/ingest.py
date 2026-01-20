@@ -32,11 +32,13 @@ class IngestTab(QWidget):
         self.result_card = QFrame(); self.result_card.setVisible(False); self.result_card.setObjectName("ResultCard"); res_lay = QVBoxLayout()
         
         # Result Header with Edit Button
-        res_header = QHBoxLayout()
+        res_header = QHBoxLayout(); res_header.setContentsMargins(0, 0, 0, 0)
         self.result_label = QLabel(); self.result_label.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.edit_device_btn = QToolButton(); self.edit_device_btn.setText("✏️"); self.edit_device_btn.setToolTip("Rename this device")
+        self.edit_device_btn = QPushButton("Rename"); self.edit_device_btn.setCursor(Qt.CursorShape.PointingHandCursor)
+        self.edit_device_btn.setToolTip("Rename this device")
         self.edit_device_btn.clicked.connect(self.rename_current_device)
-        self.edit_device_btn.setStyleSheet("QToolButton { border: none; background: transparent; font-size: 16px; } QToolButton:hover { background: #444; border-radius: 4px; }")
+        self.edit_device_btn.setStyleSheet("QPushButton { font-size: 10px; padding: 2px 8px; border: 1px solid #777; border-radius: 4px; background-color: #333; color: white; } QPushButton:hover { background-color: #555; border-color: #aaa; }")
+        self.edit_device_btn.setFixedHeight(20)
         
         res_header.addStretch(); res_header.addWidget(self.result_label); res_header.addWidget(self.edit_device_btn); res_header.addStretch()
         
