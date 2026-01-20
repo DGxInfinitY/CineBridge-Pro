@@ -1,16 +1,13 @@
 import os
+import subprocess
+import signal
 from PyQt6.QtWidgets import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QTableWidget, 
     QTableWidgetItem, QHeaderView, QPushButton, QFrame, 
     QToolButton, QSlider, QSizePolicy, QStyle
 )
 from PyQt6.QtCore import Qt, QUrl
-try:
-    from PyQt6.QtMultimedia import QMediaPlayer, QAudioOutput
-    from PyQt6.QtMultimediaWidgets import QVideoWidget
-    HAS_MULTIMEDIA = True
-except ImportError:
-    HAS_MULTIMEDIA = False
+from ..utils import DependencyManager
 
 class MediaInfoDialog(QDialog):
     def __init__(self, media_info, parent=None):
@@ -27,86 +24,94 @@ class MediaInfoDialog(QDialog):
 
 class VideoPreviewDialog(QDialog):
     def __init__(self, video_path, parent=None):
-        super().__init__(parent); self.setWindowTitle(f"Preview: {os.path.basename(video_path)}"); self.resize(900, 600); layout = QVBoxLayout(); layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(0); self.setLayout(layout); self.video_path = video_path; self.player = None; self.video_widget = None; self.audio = None
-        if not HAS_MULTIMEDIA: layout.addWidget(QLabel("Video preview not available.\nMissing 'PyQt6.QtMultimedia' module.", alignment=Qt.AlignmentFlag.AlignCenter)); return
-        self.video_container = QFrame(); self.video_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding); self.video_layout = QVBoxLayout(self.video_container); self.video_layout.setContentsMargins(0,0,0,0); layout.addWidget(self.video_container)
-        ctrl_frame = QFrame(); ctrl_frame.setStyleSheet("background-color: #222; border-top: 1px solid #444;"); ctrl_frame.setFixedHeight(50); ctrl_layout = QHBoxLayout(); ctrl_layout.setContentsMargins(10, 5, 10, 5); ctrl_frame.setLayout(ctrl_layout); self.play_btn = QToolButton(); self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay)); self.play_btn.clicked.connect(self.toggle_play); ctrl_layout.addWidget(self.play_btn); self.lbl_curr = QLabel("00:00"); self.lbl_curr.setStyleSheet("color: #ccc; font-family: monospace;"); ctrl_layout.addWidget(self.lbl_curr); self.slider = QSlider(Qt.Orientation.Horizontal); self.slider.setRange(0, 0); self.slider.sliderMoved.connect(self.set_position); ctrl_layout.addWidget(self.slider); self.lbl_total = QLabel("00:00"); self.lbl_total.setStyleSheet("color: #ccc; font-family: monospace;"); ctrl_layout.addWidget(self.lbl_total); ctrl_layout.addSpacing(10); vol_icon = QLabel(); vol_icon.setPixmap(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaVolume).pixmap(16,16)); ctrl_layout.addWidget(vol_icon); self.vol_slider = QSlider(Qt.Orientation.Horizontal); self.vol_slider.setFixedWidth(80); self.vol_slider.setRange(0, 100); self.vol_slider.setValue(100); self.vol_slider.valueChanged.connect(self.set_volume); ctrl_layout.addWidget(self.vol_slider); self.fs_btn = QToolButton(); self.fs_btn.setText("⛶"); self.fs_btn.setToolTip("Toggle fullscreen"); self.fs_btn.clicked.connect(self.toggle_fullscreen); ctrl_layout.addWidget(self.fs_btn); layout.addWidget(ctrl_frame)
-    def init_player(self):
-        if self.player: return
-        self.player = QMediaPlayer()
-        self.audio = QAudioOutput()
-        self.player.setAudioOutput(self.audio)
-        self.audio.setVolume(self.vol_slider.value() / 100)
+        super().__init__(parent); self.setWindowTitle(f"Preview: {os.path.basename(video_path)}"); self.resize(900, 600)
+        self.video_path = video_path; self.process = None
         
-        self.video_widget = QVideoWidget()
-        self.video_widget.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        self.video_layout.addWidget(self.video_widget)
-        self.player.setVideoOutput(self.video_widget)
+        layout = QVBoxLayout(); layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(0); self.setLayout(layout)
         
-        self.player.positionChanged.connect(self.position_changed)
-        self.player.durationChanged.connect(self.duration_changed)
-        self.player.mediaStatusChanged.connect(self.status_changed)
-        self.player.errorOccurred.connect(self.handle_errors)
+        # Container for FFplay embedding
+        self.video_container = QFrame()
+        self.video_container.setStyleSheet("background-color: black;")
+        self.video_container.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        layout.addWidget(self.video_container)
+        
+        # Instructions / Status Bar
+        status_bar = QFrame(); status_bar.setFixedHeight(30); status_bar.setStyleSheet("background-color: #222; color: #888;")
+        sb_lay = QHBoxLayout(status_bar); sb_lay.setContentsMargins(10, 0, 10, 0)
+        self.lbl_status = QLabel("Loading player..."); sb_lay.addWidget(self.lbl_status)
+        sb_lay.addStretch()
+        sb_lay.addWidget(QLabel("Controls: [Space] Pause  [Right/Left] Seek  [F] Fullscreen  [Esc] Close"))
+        layout.addWidget(status_bar)
 
     def showEvent(self, event):
         super().showEvent(event)
-        if not HAS_MULTIMEDIA: return
-        self.init_player()
-        if self.video_path and self.player.playbackState() == QMediaPlayer.PlaybackState.StoppedState:
-            self.player.setSource(QUrl.fromLocalFile(self.video_path))
-            self.player.play()
-            self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
+        # Use QTimer to delay starting ffplay until the window is fully shown and window handle is valid
+        from PyQt6.QtCore import QTimer
+        QTimer.singleShot(100, self.start_ffplay)
+
+    def start_ffplay(self):
+        self.cleanup()
+        
+        # Locate ffplay
+        ffplay = DependencyManager.get_binary_path("ffplay")
+        if not ffplay:
+            # Fallback to assuming it's next to ffmpeg or in path
+            ffmpeg = DependencyManager.get_ffmpeg_path()
+            if ffmpeg:
+                d = os.path.dirname(ffmpeg)
+                guess = os.path.join(d, "ffplay" if os.name != 'nt' else "ffplay.exe")
+                if os.path.exists(guess): ffplay = guess
+        
+        if not ffplay:
+            # Last ditch attempt
+            try:
+                subprocess.run(['ffplay', '-version'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                ffplay = 'ffplay'
+            except: pass
+
+        if not ffplay:
+            self.lbl_status.setText("Error: ffplay not found.")
+            return
+
+        self.lbl_status.setText(f"Playing: {os.path.basename(self.video_path)}")
+        
+        # Build Command
+        # -noborder: Remove window decorations
+        # -loglevel quiet: Suppress console output
+        # -infbuf: Infinite buffer for robustness (prevents dropouts)
+        cmd = [ffplay, self.video_path, '-noborder', '-loglevel', 'quiet', '-infbuf', '-window_title', 'CineBridge_Embed']
+        
+        # Embedding
+        # Linux/Unix use SDL_WINDOWID environment variable
+        env = os.environ.copy()
+        
+        # Ensure we have a valid window ID
+        win_id = int(self.video_container.winId())
+        if win_id:
+            env['SDL_WINDOWID'] = str(win_id)
+        
+        try:
+            self.process = subprocess.Popen(cmd, env=env)
+        except Exception as e:
+            self.lbl_status.setText(f"Error launching player: {e}")
 
     def load_video(self, video_path):
-        if not HAS_MULTIMEDIA: return
-        self.cleanup() # Full reset to prevent GStreamer pipeline hangs
         self.video_path = video_path
         self.setWindowTitle(f"Preview: {os.path.basename(video_path)}")
-        self.play_btn.setEnabled(True)
-        
-        self.init_player()
-        self.player.setSource(QUrl.fromLocalFile(video_path))
-        self.player.play()
-        self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
+        if self.isVisible():
+            self.start_ffplay()
 
     def cleanup(self):
-        if self.player:
-            self.player.stop()
-            self.player.setSource(QUrl())
-            self.player.setVideoOutput(None)
-            self.player.deleteLater()
-            self.player = None
-        if self.audio:
-            self.audio.deleteLater()
-            self.audio = None
-        if self.video_widget:
-            self.video_layout.removeWidget(self.video_widget)
-            self.video_widget.deleteLater()
-            self.video_widget = None
+        if self.process:
+            if self.process.poll() is None:
+                # Try graceful termination first
+                self.process.terminate()
+                try:
+                    self.process.wait(timeout=0.5)
+                except subprocess.TimeoutExpired:
+                    self.process.kill()
+            self.process = None
 
-    def set_volume(self, v):
-        if self.audio: self.audio.setVolume(v / 100)
-    def toggle_play(self):
-        if not self.player: return
-        if self.player.playbackState() == QMediaPlayer.PlaybackState.PlayingState: self.player.pause(); self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
-        else: self.player.play(); self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
-    def toggle_fullscreen(self):
-        if self.isFullScreen(): self.showNormal()
-        else: self.showFullScreen()
-    def set_position(self, position):
-        if self.player: self.player.setPosition(position)
-    def position_changed(self, position):
-        if not self.slider.isSliderDown(): self.slider.setValue(position)
-        if self.player: self.update_time_label(position, self.player.duration())
-    def duration_changed(self, duration):
-        self.slider.setRange(0, duration)
-        if self.player: self.update_time_label(self.player.position(), duration)
-    def update_time_label(self, current_ms, total_ms):
-        def fmt(ms): return f"{(ms//1000)//60:02}:{(ms//1000)%60:02}"
-        self.lbl_curr.setText(fmt(current_ms)); self.lbl_total.setText(fmt(total_ms))
-    def status_changed(self, status):
-        if status == QMediaPlayer.MediaStatus.EndOfMedia: self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPlay))
-    def handle_errors(self, error, error_string):
-        self.play_btn.setEnabled(False); self.lbl_curr.setText("Error")
-        print(f"Video Error: {error} - {error_string}")
-    def closeEvent(self, event): self.cleanup(); event.accept()
+    def closeEvent(self, event):
+        self.cleanup()
+        event.accept()
