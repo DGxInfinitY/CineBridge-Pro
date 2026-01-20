@@ -68,6 +68,7 @@ class IngestTab(QWidget):
         
         self.btn_reset_overrides = QToolButton(); self.btn_reset_overrides.setText("↺"); self.btn_reset_overrides.setToolTip("Reset all name overrides")
         self.btn_reset_overrides.clicked.connect(self.reset_device_overrides)
+        self.btn_reset_overrides.setStyleSheet("QToolButton { border: none; background: transparent; color: white; font-size: 16px; font-weight: bold; } QToolButton:hover { color: #E74C3C; }")
         
         res_header.addStretch(); res_header.addWidget(self.name_stack); res_header.addWidget(self.btn_reset_overrides); res_header.addStretch()
         
