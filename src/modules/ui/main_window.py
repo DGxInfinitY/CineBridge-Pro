@@ -238,7 +238,6 @@ class CineBridgeApp(QMainWindow):
             self.set_theme("light")
             self.tab_ingest.check_date.setChecked(True)
             self.tab_ingest.check_dupe.setChecked(True)
-            self.tab_ingest.check_videos_only.setChecked(False)
             self.tab_ingest.check_transcode.setChecked(False)
             self.tab_ingest.toggle_logs(True, False)
             self.sync_gpu_toggle(False)
