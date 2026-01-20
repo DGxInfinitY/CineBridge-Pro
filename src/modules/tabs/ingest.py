@@ -54,7 +54,7 @@ class IngestTab(QWidget):
         
         # Page 0: Clickable Label
         self.device_name_lbl = ClickableLabel("Device Name"); self.device_name_lbl.setCursor(Qt.CursorShape.PointingHandCursor)
-        self.device_name_lbl.setStyleSheet("font-size: 16px; font-weight: bold; color: #27AE60;")
+        self.device_name_lbl.setStyleSheet("background-color: transparent; font-size: 16px; font-weight: bold; color: #27AE60;")
         self.device_name_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.device_name_lbl.setToolTip("Click to rename")
         self.device_name_lbl.clicked.connect(self.enable_rename_mode)
@@ -74,12 +74,13 @@ class IngestTab(QWidget):
         
         # Create a container for name + button to keep them tethered
         name_container = QWidget(); nc_lay = QHBoxLayout(name_container); nc_lay.setContentsMargins(0,0,0,0); nc_lay.setSpacing(5)
+        name_container.setStyleSheet("background: transparent;")
         nc_lay.addWidget(self.name_stack); nc_lay.addWidget(self.btn_reset_overrides)
         
         res_header.addStretch(); res_header.addWidget(name_container); res_header.addStretch()
         
         self.path_lbl = QLabel("/path/to/device"); self.path_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
-        self.path_lbl.setStyleSheet("color: white; font-size: 11px;")
+        self.path_lbl.setStyleSheet("background-color: transparent; color: white; font-size: 11px;")
 
         self.select_device_box = QComboBox(); self.select_device_box.setVisible(False); 
         self.select_device_box.currentIndexChanged.connect(self.on_device_selection_change)
