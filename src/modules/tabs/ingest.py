@@ -305,7 +305,8 @@ class IngestTab(QWidget):
         if len(path_short) > 40: path_short = path_short[:15] + "..." + path_short[-20:]
         self.path_lbl.setText(path_short)
         
-        self.result_card.setStyleSheet(f"background-color: {'#2e3b33' if not dev['empty'] else '#4d3d2a'}; border: 2px solid {'#27AE60' if not dev['empty'] else '#F39C12'}; border-radius: 8px;")
+        # Use ID selector to prevent style inheritance to children
+        self.result_card.setStyleSheet(f"#ResultCard {{ background-color: {'#2e3b33' if not dev['empty'] else '#4d3d2a'}; border: 2px solid {'#27AE60' if not dev['empty'] else '#F39C12'}; border-radius: 8px; }}")
         self.result_card.setVisible(True)
         self.name_stack.setCurrentIndex(0) # Ensure label is shown
         
