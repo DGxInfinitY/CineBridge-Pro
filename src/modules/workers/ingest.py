@@ -144,20 +144,19 @@ class CopyWorker(QThread):
             
             try:
                 h = xxhash.xxh64() if HAS_XXHASH else hashlib.md5()
-                with open(src, 'rb') as fsrc:
-                    handles = [open(d, 'wb') for d in dest_paths]
-                    try:
-                        while chunk := fsrc.read(4194304):
-                            if not self.is_running: break
-                            if self.verify_copy: h.update(chunk)
-                            for hand in handles: hand.write(chunk)
-                            bytes_done += len(chunk); now = time.time()
-                            if now - last_time >= 0.5:
-                                self.speed_signal.emit(f"{((bytes_done-last_bytes)/(now-last_time))/1048576:.1f} MB/s")
-                                last_time = now; last_bytes = bytes_done
-                            self.progress_signal.emit(int((bytes_done/total_work_bytes)*100))
-                    finally:
-                        for hand in handles: hand.close()
+                from contextlib import ExitStack
+                with open(src, 'rb') as fsrc, ExitStack() as stack:
+                    handles = [stack.enter_context(open(d, 'wb')) for d in dest_paths]
+                    while chunk := fsrc.read(4194304):
+                        if not self.is_running: break
+                        if self.verify_copy: h.update(chunk)
+                        for hand in handles: hand.write(chunk)
+                        bytes_done += len(chunk); now = time.time()
+                        if now - last_time >= 0.5:
+                            self.speed_signal.emit(f"{((bytes_done-last_bytes)/(now-last_time))/1048576:.1f} MB/s")
+                            last_time = now; last_bytes = bytes_done
+                        self.progress_signal.emit(int((bytes_done/total_work_bytes)*100))
+                
                 for d in dest_paths: shutil.copystat(src, d)
                 
                 self.log_signal.emit(f"✔️ Copied: {name} (to {len(dest_paths)} drives)")

@@ -230,15 +230,28 @@ class IngestTab(QWidget):
         debug_log(f"Ingest: Import button clicked. Mode={self.ingest_mode}")
         if self.ingest_mode == "scan": self.start_scan()
         else: self.start_transfer()
+
+    def get_current_filter_exts(self):
+        checked = self.combo_filter.get_checked_data()
+        if not checked: return None
+        exts = set()
+        for c in checked: 
+            if c: exts.update(c)
+        return list(exts) if exts else None
+
     def start_scan(self):
         src = self.current_detected_path if self.source_tabs.currentIndex() == 0 else self.source_input.text()
         if not src or not os.path.exists(src): return QMessageBox.warning(self, "Error", "Invalid Source")
         self.import_btn.setEnabled(False); self.status_label.setText("SCANNING SOURCE..."); self.tree.clear()
-        allowed_exts = None
+        
+        allowed_exts = self.get_current_filter_exts()
         if self.source_tabs.currentIndex() == 0 and self.found_devices:
              idx = self.select_device_box.currentIndex()
-             if idx >= 0 and idx < len(self.found_devices): allowed_exts = self.found_devices[idx].get('exts')
-        self.scanner = IngestScanner(src, self.check_videos_only.isChecked(), allowed_exts)
+             if idx >= 0 and idx < len(self.found_devices): 
+                 dev_exts = self.found_devices[idx].get('exts')
+                 if dev_exts: allowed_exts = dev_exts
+
+        self.scanner = IngestScanner(src, False, allowed_exts)
         self.scanner.finished_signal.connect(self.on_scan_complete); self.scanner.start()
     def on_scan_complete(self, grouped_files): self.last_scan_results = grouped_files; self.refresh_tree_view()
     def open_video_preview(self, item, column):
@@ -251,11 +264,12 @@ class IngestTab(QWidget):
         if not self.last_scan_results:
             p = QTreeWidgetItem(self.tree); p.setText(0, "Select a source and click 'SCAN SOURCE' to view media."); p.setFlags(p.flags() & ~Qt.ItemFlag.ItemIsUserCheckable); return
         
-        v_exts = DeviceRegistry.VIDEO_EXTS
+        filter_exts = self.get_current_filter_exts()
+        
         for date, files in sorted(self.last_scan_results.items(), reverse=True):
-            # Filter files if Video Only is checked
-            if self.check_videos_only.isChecked():
-                files = [f for f in files if os.path.splitext(f)[1].upper() in v_exts]
+            # Filter files if filter is active
+            if filter_exts:
+                files = [f for f in files if os.path.splitext(f)[1].upper() in filter_exts]
             
             if not files: continue
             
@@ -330,7 +344,7 @@ class IngestTab(QWidget):
                 self.transcode_worker.log_signal.connect(self.append_transcode_log)
                 self.transcode_worker.metrics_signal.connect(self.transcode_metrics_label.setText)
                 self.transcode_worker.all_finished_signal.connect(self.on_all_transcodes_finished); self.transcode_worker.start(); self.set_transcode_active(True)
-            debug_log("Ingest: Initializing CopyWorker threads"); self.copy_worker = CopyWorker(src, dests, self.project_name_input.text(), self.check_date.isChecked(), self.check_dupe.isChecked(), self.check_videos_only.isChecked(), cam_name, self.check_verify.isChecked(), selected, tc_settings if tc_enabled else None)
+            debug_log("Ingest: Initializing CopyWorker threads"); self.copy_worker = CopyWorker(src, dests, self.project_name_input.text(), self.check_date.isChecked(), self.check_dupe.isChecked(), False, cam_name, self.check_verify.isChecked(), selected, tc_settings if tc_enabled else None)
             self.copy_worker.log_signal.connect(self.append_copy_log); self.copy_worker.progress_signal.connect(self.progress_bar.setValue); self.copy_worker.status_signal.connect(self.status_label.setText); self.copy_worker.speed_signal.connect(self.speed_label.setText); self.copy_worker.finished_signal.connect(self.on_copy_finished); self.copy_worker.storage_check_signal.connect(self.update_storage_display_bar)
             if tc_enabled: self.copy_worker.file_ready_signal.connect(self.queue_for_transcode); self.copy_worker.transcode_count_signal.connect(self.transcode_worker.set_total_jobs)
             self.copy_worker.start(); debug_log("Ingest: CopyWorker successfully started")
