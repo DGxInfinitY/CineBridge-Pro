@@ -1,6 +1,6 @@
 name: cinebridge-pro
 base: core22
-version: '4.17.2'
+version: '4.17.3'
 summary: Professional DIT and Transcoding Suite
 description: |
   CineBridge Pro is a high-performance Digital Imaging Technician (DIT) 
