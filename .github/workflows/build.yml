@@ -231,6 +231,32 @@ jobs:
           sudo alien --to-rpm --scripts --keep-version cinebridgepro_linux_amd64.deb
           mv cinebridgepro-*.rpm cinebridgepro_linux_amd64.rpm
 
+      - name: Build AppImage
+        run: |
+          # Download AppImageTool
+          wget https://github.com/AppImage/appimagetool/releases/download/continuous/appimagetool-x86_64.AppImage
+          chmod +x appimagetool-x86_64.AppImage
+          
+          # Create AppDir structure
+          mkdir -p AppDir/usr/bin
+          # Copy the PyInstaller binary
+          cp dist/CineBridgePro_Linux_Portable AppDir/usr/bin/cinebridgepro
+          # Copy icon
+          cp assets/icon.png AppDir/cinebridgepro.png
+          # Copy desktop file
+          cp dist/deb/usr/share/applications/cinebridgepro.desktop AppDir/cinebridgepro.desktop
+          
+          # Create AppRun
+          cat <<EOF > AppDir/AppRun
+          #!/bin/sh
+          export PATH="\$APPDIR/usr/bin:\$PATH"
+          exec "\$APPDIR/usr/bin/cinebridgepro" "\$@"
+          EOF
+          chmod +x AppDir/AppRun
+          
+          # Generate AppImage
+          ARCH=x86_64 ./appimagetool-x86_64.AppImage AppDir CineBridgePro-x86_64.AppImage
+
       - name: Upload Artifacts
         uses: softprops/action-gh-release@v1
         if: startsWith(github.ref, 'refs/tags/')
@@ -239,6 +265,7 @@ jobs:
             cinebridgepro_linux_amd64.deb
             cinebridgepro_linux_amd64.rpm
             dist/CineBridgePro_Linux_Portable
+            CineBridgePro-x86_64.AppImage
 
   # =========================================================
   # 4. SNAP BUILD

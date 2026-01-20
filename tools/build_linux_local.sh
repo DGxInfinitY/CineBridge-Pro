@@ -26,7 +26,7 @@ fi
 
 # 2. Clean previous builds
 echo "🧹 Cleaning up..."
-rm -rf dist build *.spec cinebridgepro_linux_amd64.deb cinebridgepro_linux_amd64.rpm
+rm -rf dist build *.spec cinebridgepro_linux_amd64.deb cinebridgepro_linux_amd64.rpm AppDir *.AppImage
 
 # 3. Create Icon
 # Assumes assets/icon.png exists or is created from svg. 
@@ -107,6 +107,32 @@ if [ "$HAS_ALIEN" = true ]; then
     fi
     # Rename output
     mv cinebridgepro-*.rpm cinebridgepro_linux_amd64.rpm 2>/dev/null || true
+fi
+
+# 8. Build AppImage (if tool exists)
+if command -v appimagetool &> /dev/null || [ -f "appimagetool-x86_64.AppImage" ]; then
+    echo "📦 Building AppImage..."
+    TOOL="appimagetool"
+    if [ -f "appimagetool-x86_64.AppImage" ]; then
+        TOOL="./appimagetool-x86_64.AppImage"
+    fi
+    
+    mkdir -p AppDir/usr/bin
+    cp dist/CineBridgePro_Linux_Portable AppDir/usr/bin/cinebridgepro
+    cp assets/icon.png AppDir/cinebridgepro.png
+    cp dist/deb/usr/share/applications/cinebridgepro.desktop AppDir/cinebridgepro.desktop
+    
+    cat <<EOF > AppDir/AppRun
+#!/bin/sh
+export PATH="\$APPDIR/usr/bin:\$PATH"
+exec "\$APPDIR/usr/bin/cinebridgepro" "\$@"
+EOF
+    chmod +x AppDir/AppRun
+    
+    ARCH=x86_64 \$TOOL AppDir CineBridgePro-x86_64.AppImage
+    echo "✅ AppImage Created: CineBridgePro-x86_64.AppImage"
+else
+    echo "⚠️ appimagetool not found. Skipping AppImage."
 fi
 
 echo "✅ Build Complete!"
