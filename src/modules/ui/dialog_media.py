@@ -42,12 +42,13 @@ class FrameReaderThread(QThread):
 
         # FFmpeg command to output raw RGB frames at fixed resolution
         # -re: Read input at native framerate (simulate playback)
+        # fps=24: Reduce preview framerate to 24fps to save CPU/Bandwidth
         # scale/pad: Ensure output is exactly 640x360
         cmd = [
             ffmpeg, 
             '-re', 
             '-i', self.video_path,
-            '-vf', f'scale={self.width}:{self.height}:force_original_aspect_ratio=decrease,pad={self.width}:{self.height}:(ow-iw)/2:(oh-ih)/2',
+            '-vf', f'fps=24,scale={self.width}:{self.height}:force_original_aspect_ratio=decrease,pad={self.width}:{self.height}:(ow-iw)/2:(oh-ih)/2',
             '-f', 'image2pipe',
             '-pix_fmt', 'rgb24',
             '-vcodec', 'rawvideo',
@@ -95,12 +96,15 @@ class FrameReaderThread(QThread):
         
     def stop_process(self):
         if self.process:
-            self.process.terminate()
-            try:
-                self.process.wait(timeout=0.5)
-            except:
-                self.process.kill()
+            proc = self.process
             self.process = None
+            try:
+                proc.terminate()
+                try:
+                    proc.wait(timeout=0.5)
+                except subprocess.TimeoutExpired:
+                    proc.kill()
+            except: pass
 
 class VideoPreviewDialog(QDialog):
     def __init__(self, video_path, parent=None):
