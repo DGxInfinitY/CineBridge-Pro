@@ -42,8 +42,11 @@ class VideoPreviewDialog(QDialog):
         self.setWindowTitle(f"Preview: {os.path.basename(video_path)}")
         self.play_btn.setEnabled(True); self.play_btn.setIcon(self.style().standardIcon(QStyle.StandardPixmap.SP_MediaPause))
         if self.player:
-            self.player.setVideoOutput(None); self.player.setVideoOutput(self.video_widget)
-            self.player.setSource(QUrl.fromLocalFile(video_path)); self.player.play()
+            self.player.stop()
+            # On Linux/GStreamer, explicitly clearing source helps prevent pipeline hangs
+            self.player.setSource(QUrl()) 
+            self.player.setSource(QUrl.fromLocalFile(video_path))
+            self.player.play()
 
     def cleanup(self):
         if self.player: self.player.stop(); self.player.setSource(QUrl()); self.player.setVideoOutput(None); self.player.setAudioOutput(None); self.player.deleteLater(); self.player = None

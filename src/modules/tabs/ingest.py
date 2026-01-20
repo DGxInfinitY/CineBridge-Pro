@@ -376,7 +376,7 @@ class IngestTab(QWidget):
             if not files: continue
             
             d_item = QTreeWidgetItem(self.tree); d_item.setText(0, f"{date} ({len(files)} files)")
-            d_item.setFlags(d_item.flags() | Qt.ItemFlag.ItemIsUserCheckable | Qt.ItemFlag.ItemIsAutoTristate); d_item.setCheckState(0, Qt.CheckState.Checked)
+            d_item.setFlags(d_item.flags() | Qt.ItemFlag.ItemIsUserCheckable); d_item.setCheckState(0, Qt.CheckState.Checked)
             for f in files:
                 f_item = QTreeWidgetItem(d_item); f_item.setText(0, os.path.basename(f)); f_item.setData(0, Qt.ItemDataRole.UserRole, f)
                 f_item.setFlags(f_item.flags() | Qt.ItemFlag.ItemIsUserCheckable); f_item.setCheckState(0, Qt.CheckState.Checked); total += 1
