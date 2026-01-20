@@ -88,16 +88,15 @@ class VideoPreviewDialog(QDialog):
         h = self.video_container.height()
         
         # Build Command
-        # -x -y: Force initial size
+        # -threads 0: Use all CPU cores for decoding (fixes lag on high-res)
+        # -vf scale=960:-2: Downscale to 960px width (Low Res Preview) to ensure smooth playback
         # -loop 0: Loop indefinitely
-        # -framedrop: Drop video frames if CPU is too slow (keeps audio sync)
-        # -fflags nobuffer: Reduce latency
-        cmd = [ffplay, self.video_path, '-noborder', '-loglevel', 'quiet', '-framedrop', '-fflags', 'nobuffer', '-window_title', 'CineBridge_Embed', '-x', str(w), '-y', str(h), '-loop', '0']
+        cmd = [ffplay, self.video_path, '-noborder', '-loglevel', 'quiet', '-threads', '0', '-vf', 'scale=960:-2', '-fflags', 'nobuffer', '-window_title', 'CineBridge_Embed', '-x', str(w), '-y', str(h), '-loop', '0']
         
         # Embedding
         # Linux/Unix use SDL_WINDOWID environment variable
         env = os.environ.copy()
-        env['SDL_VIDEODRIVER'] = 'x11' # Force X11 backend for SDL to support embedding on Wayland/X11
+        # env['SDL_VIDEODRIVER'] = 'x11' # Removed: Let SDL detect best backend (XWayland usually handles this automatically)
         
         # Ensure we have a valid window ID
         win_id = int(self.video_container.winId())
