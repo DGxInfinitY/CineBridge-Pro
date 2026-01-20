@@ -4,11 +4,14 @@ import glob
 import platform
 import subprocess
 from PyQt6.QtCore import QThread, pyqtSignal
+from ..config import debug_log
+
 try:
     import psutil
     PSUTIL_AVAILABLE = True
 except ImportError:
     PSUTIL_AVAILABLE = False
+    debug_log("psutil not available.")
 
 class SystemMonitor(QThread):
     stats_signal = pyqtSignal(dict)
@@ -30,7 +33,7 @@ class SystemMonitor(QThread):
                         t = psutil.sensors_temperatures()
                         if 'coretemp' in t: stats['cpu_temp'] = int(t['coretemp'][0].current)
                         elif 'cpu_thermal' in t: stats['cpu_temp'] = int(t['cpu_thermal'][0].current)
-                except: pass
+                except Exception as e: debug_log(f"CPU Monitor: {e}")
             
             # 1. NVIDIA
             try:
@@ -38,7 +41,7 @@ class SystemMonitor(QThread):
                 if res.returncode == 0:
                     p = res.stdout.strip().split(',')
                     if len(p) >= 2: stats['gpu_load'] = int(p[0].strip()); stats['gpu_temp'] = int(p[1].strip()); stats['has_gpu'] = True; stats['gpu_vendor'] = 'NVIDIA'
-            except: pass
+            except Exception as e: debug_log(f"NVIDIA Monitor: {e}")
 
             # 2. AMD Linux
             if not stats['has_gpu'] and platform.system() == "Linux":
@@ -52,7 +55,7 @@ class SystemMonitor(QThread):
                             if tf:
                                 with open(tf[0], 'r') as f: stats['gpu_temp'] = int(int(f.read().strip()) / 1000)
                             break
-                except: pass
+                except Exception as e: debug_log(f"AMD Monitor: {e}")
 
             # 3. Windows AMD/Intel
             if not stats['has_gpu'] and platform.system() == "Windows":
@@ -64,6 +67,6 @@ class SystemMonitor(QThread):
                     l_res = subprocess.run(['powershell', '-Command', ps], capture_output=True, text=True, timeout=1)
                     if l_res.returncode == 0 and l_res.stdout.strip():
                         stats['gpu_load'] = int(float(l_res.stdout.strip())); stats['has_gpu'] = True; stats['gpu_vendor'] = vendor
-                except: pass
+                except Exception as e: debug_log(f"Windows GPU Monitor: {e}")
 
             self.stats_signal.emit(stats); time.sleep(2)

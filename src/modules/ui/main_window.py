@@ -4,7 +4,7 @@ import platform
 import subprocess
 from PyQt6.QtWidgets import QApplication, QMainWindow, QTabWidget, QToolButton, QMessageBox
 from PyQt6.QtGui import QIcon, QPalette
-from PyQt6.QtCore import Qt, QSettings, QTimer
+from PyQt6.QtCore import Qt, QSettings, QTimer, QThread, pyqtSignal
 
 from ..config import DEBUG_MODE, AppLogger, AppConfig, debug_log
 from ..utils import EnvUtils
@@ -13,6 +13,23 @@ from .styles import ThemeManager
 from .dialog_settings import SettingsDialog, AdvancedFeaturesDialog
 from .dialog_general import AboutDialog
 from ..tabs import IngestTab, ConvertTab, DeliveryTab, WatchTab, ReportsTab
+
+class ThemeWorker(QThread):
+    result_signal = pyqtSignal(bool)
+    def run(self):
+        is_dark = False
+        if platform.system() == "Linux":
+            try:
+                res = subprocess.run(["gsettings", "get", "org.gnome.desktop.interface", "color-scheme"], capture_output=True, text=True, timeout=0.5, env=EnvUtils.get_clean_env())
+                if "prefer-dark" in res.stdout: is_dark = True
+                else:
+                    res2 = subprocess.run(["gsettings", "get", "org.gnome.desktop.interface", "gtk-theme"], capture_output=True, text=True, timeout=0.5, env=EnvUtils.get_clean_env())
+                    if "dark" in res2.stdout.lower(): is_dark = True
+            except: pass
+        else:
+            # Fallback for non-Linux or manual
+            pass 
+        self.result_signal.emit(is_dark)
 
 class CineBridgeApp(QMainWindow):
     def __init__(self):
@@ -120,10 +137,19 @@ class CineBridgeApp(QMainWindow):
 
     def check_system_theme(self):
         if self.theme_mode != "system": return
-        system_is_dark = self.is_system_dark()
+        if platform.system() == "Linux":
+            if not hasattr(self, 'theme_worker'):
+                self.theme_worker = ThemeWorker()
+                self.theme_worker.result_signal.connect(self.on_theme_result)
+            if not self.theme_worker.isRunning():
+                self.theme_worker.start()
+        else:
+            self.on_theme_result(ThemeManager.is_dark_mode())
+
+    def on_theme_result(self, is_dark):
         current_app_is_dark = getattr(self, 'current_applied_is_dark', None)
-        if current_app_is_dark is None or system_is_dark != current_app_is_dark: 
-            self.set_theme("system")
+        if current_app_is_dark is None or is_dark != current_app_is_dark: 
+            self.set_theme("system", force_is_dark=is_dark)
 
     def is_system_dark(self):
         if platform.system() == "Linux":
@@ -233,11 +259,19 @@ class CineBridgeApp(QMainWindow):
         dlg = AboutDialog(self)
         dlg.exec()
 
-    def set_theme(self, mode):
+    def set_theme(self, mode, force_is_dark=None):
         self.theme_mode = mode
         self.settings.setValue("theme_mode", mode)
-        self.current_applied_is_dark = (mode == "dark") if mode != "system" else ThemeManager.is_dark_mode()
-        self.setStyleSheet(ThemeManager.get_style(mode))
+        
+        is_dark = False
+        if mode == "dark": is_dark = True
+        elif mode == "light": is_dark = False
+        else: # system
+            if force_is_dark is not None: is_dark = force_is_dark
+            else: is_dark = self.is_system_dark()
+            
+        self.current_applied_is_dark = is_dark
+        self.setStyleSheet(ThemeManager.get_style("dark" if is_dark else "light"))
         
         if hasattr(self, 'tab_ingest') and self.tab_ingest.result_card.isVisible():
              if self.tab_ingest.current_detected_path:
