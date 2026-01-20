@@ -13,6 +13,7 @@ class CopyWorker(QThread):
     
     def __init__(self, source, dest_list, project_name, sort_by_date, skip_dupes, videos_only, camera_override, verify_copy, file_list=None, transcode_settings=None, structure_template="{Date}/{Camera}/{Category}"):
         super().__init__(); self.source = source; self.dest_list = [d.strip() for d in dest_list if d.strip()]; self.project_name = project_name.strip(); self.sort_by_date = sort_by_date; self.skip_dupes = skip_dupes; self.videos_only = videos_only; self.camera_override = camera_override; self.verify_copy = verify_copy; self.file_list = file_list; self.transcode_settings = transcode_settings; self.structure_template = structure_template; self.is_running = True
+        self.transfer_data = []
     
     def get_mmt_category(self, filename):
         ext = os.path.splitext(filename.upper())[1]
