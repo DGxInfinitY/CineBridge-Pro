@@ -41,11 +41,15 @@ class FrameReaderThread(QThread):
         if not ffmpeg: return
 
         # FFmpeg command to output raw RGB frames at fixed resolution
+        # -hwaccel auto: Use GPU decoding if available (Critical for 4K)
+        # -threads 0: Use all CPU cores
         # -re: Read input at native framerate (simulate playback)
         # fps=24: Reduce preview framerate to 24fps to save CPU/Bandwidth
         # scale/pad: Ensure output is exactly 640x360
         cmd = [
             ffmpeg, 
+            '-hwaccel', 'auto',
+            '-threads', '0',
             '-re', 
             '-i', self.video_path,
             '-vf', f'fps=24,scale={self.width}:{self.height}:force_original_aspect_ratio=decrease,pad={self.width}:{self.height}:(ow-iw)/2:(oh-ih)/2',
