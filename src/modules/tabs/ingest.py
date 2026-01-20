@@ -30,6 +30,7 @@ from ..ui import TranscodeSettingsWidget, JobReportDialog, TranscodeConfigDialog
 class IngestTab(QWidget):
     def __init__(self, parent_app):
         super().__init__(); self.app = parent_app; self.layout = QVBoxLayout(); self.layout.setSpacing(10); self.layout.setContentsMargins(20, 20, 20, 20); self.setLayout(self.layout)
+        self.setFocusPolicy(Qt.FocusPolicy.ClickFocus)
         self.copy_worker = None; self.transcode_worker = None; self.scan_worker = None; self.found_devices = []; self.current_detected_path = None
         self.ingest_mode = "scan"; self.last_scan_results = None; self.preview_dlg = None
         self.setup_ui(); self.load_tab_settings()
@@ -65,7 +66,10 @@ class IngestTab(QWidget):
         self.name_editor.cancelled.connect(self.cancel_rename)
         self.name_stack.addWidget(self.name_editor)
         
-        res_header.addStretch(); res_header.addWidget(self.name_stack); res_header.addStretch()
+        self.btn_reset_overrides = QToolButton(); self.btn_reset_overrides.setText("↺"); self.btn_reset_overrides.setToolTip("Reset all name overrides")
+        self.btn_reset_overrides.clicked.connect(self.reset_device_overrides)
+        
+        res_header.addStretch(); res_header.addWidget(self.name_stack); res_header.addWidget(self.btn_reset_overrides); res_header.addStretch()
         
         self.path_lbl = QLabel("/path/to/device"); self.path_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.path_lbl.setStyleSheet("color: white; font-size: 11px;")
@@ -114,10 +118,7 @@ class IngestTab(QWidget):
         self.device_combo.addItem("Auto-Detect", "auto")
         for profile_name in sorted(DeviceRegistry.PROFILES.keys()): self.device_combo.addItem(profile_name, profile_name)
         self.device_combo.addItem("Generic Storage", "Generic_Device"); logic_row.addWidget(self.device_combo)
-        
-        self.btn_reset_overrides = QToolButton(); self.btn_reset_overrides.setText("↺"); self.btn_reset_overrides.setToolTip("Reset all device name overrides")
-        self.btn_reset_overrides.clicked.connect(self.reset_device_overrides)
-        logic_row.addWidget(self.btn_reset_overrides); settings_layout.addLayout(logic_row)
+        settings_layout.addLayout(logic_row)
 
         rules_grid = QGridLayout()
         self.check_date = QCheckBox("Sort Date"); self.check_date.setToolTip("Organize media by capture date.")
