@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (
     QTableWidgetItem, QHeaderView, QPushButton, QFrame, 
     QToolButton, QSlider, QSizePolicy, QStyle
 )
-from PyQt6.QtCore import Qt, QUrl
+from PyQt6.QtCore import Qt, QUrl, QTimer
 from ..utils import DependencyManager
 
 class MediaInfoDialog(QDialog):
