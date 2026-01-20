@@ -20,8 +20,8 @@ class ScanWorker(QThread):
                 try: 
                     if len(DriveDetector.safe_list_dir(mount)) > 0: has_files = True
                 except: pass
-                name, true_path, exts = DeviceRegistry.identify(mount, usb_hints)
-                results.append({'path': true_path, 'display_name': name, 'root': mount, 'empty': not has_files, 'exts': exts})
+                name, true_path, exts, unique_id = DeviceRegistry.identify(mount, usb_hints)
+                results.append({'path': true_path, 'display_name': name, 'root': mount, 'empty': not has_files, 'exts': exts, 'id': unique_id})
             final = []; seen = set()
             for r in sorted(results, key=lambda x: len(x['path']), reverse=True):
                 if r['path'] not in seen: final.append(r); seen.add(r['path'])

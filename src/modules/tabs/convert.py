@@ -83,7 +83,7 @@ class ConvertTab(QWidget):
             SystemNotifier.notify("Conversion Complete", "Batch transcode finished."); self.status_label.setText("Batch Complete!")
             JobReportDialog("Conversion Complete", "Transcode Successful. Your media is ready for edit.", self).exec()
         else:
-            QMessageBox.critical(self, "Transcode Failed", msg); self.status_label.setText("Failed.")
+            JobReportDialog("Transcode Failed", msg, self, is_error=True).exec(); self.status_label.setText("Failed.")
         self.toggle_ui_state(False)
     def show_context_menu(self, pos):
         i = self.list.itemAt(pos)

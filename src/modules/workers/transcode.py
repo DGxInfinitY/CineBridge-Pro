@@ -33,10 +33,16 @@ class AsyncTranscoder(QThread):
                 else: self.is_idle = True; time.sleep(0.5); continue
             self.is_idle = False; job = self.queue.popleft(); display_total = self.total_expected_jobs if self.total_expected_jobs > 0 else (self.completed_jobs + len(self.queue) + 1)
             base_status = f"Transcoding {self.completed_jobs + 1}/{display_total}: {job['name']}"
-            self.status_signal.emit(base_status); self.log_signal.emit(f"🎬 Transcoding Started: {job['name']}")
+            self.status_signal.emit(base_status); 
+            
+            # Detailed Start Log
+            v_codec = self.settings.get('v_codec', 'auto'); res = self.settings.get('resolution', 'Source')
+            self.log_signal.emit(f"🎬 Transcoding Started: {job['name']} [{v_codec.upper()} | {res}]")
+            
             cmd = TranscodeEngine.build_command(job['in'], job['out'], self.settings, self.use_gpu)
             if not cmd: self.completed_jobs += 1; continue
-            duration = TranscodeEngine.get_duration(job['in'])
+            
+            duration = TranscodeEngine.get_duration(job['in']); start_time = time.time()
             try:
                 startupinfo = None
                 if platform.system() == 'Windows': startupinfo = subprocess.STARTUPINFO(); startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
@@ -50,8 +56,12 @@ class AsyncTranscoder(QThread):
                             pct, speed_str = TranscodeEngine.parse_progress(line, duration)
                             if pct > 0: self.progress_signal.emit(pct)
                             if speed_str: self.metrics_signal.emit(f"🎬 {speed_str}")
-                if process.returncode == 0: self.log_signal.emit(f"✅ Transcode Finished: {job['name']}")
-                else: self.log_signal.emit(f"❌ Transcode Failed: {job['name']}")
+                
+                elapsed = time.time() - start_time
+                if process.returncode == 0: 
+                    self.log_signal.emit(f"✅ Transcode Finished: {job['name']} (took {elapsed:.1f}s)")
+                else: 
+                    self.log_signal.emit(f"❌ Transcode Failed: {job['name']} (Exit: {process.returncode})")
             except Exception as e: error_log(f"Transcode Critical Error: {e}")
             self.completed_jobs += 1
     def stop(self): self.is_running = False
