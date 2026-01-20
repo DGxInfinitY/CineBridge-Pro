@@ -521,6 +521,8 @@ class IngestTab(QWidget):
 
     def on_all_transcodes_finished(self):
         self.status_label.setText("✅ ALL JOBS COMPLETE")
+        self.transcode_status_label.setText("✅ ALL TRANSCODE(S) COMPLETE")
+        self.transcode_metrics_label.setText("")
         SystemNotifier.notify("Job Complete", "Ingest and Transcoding finished."); self.import_btn.setEnabled(True); self.import_btn.setText("COMPLETE"); self.import_btn.setStyleSheet("background-color: #27AE60; color: white;")
         v = " and verified" if self.check_verify.isChecked() else ""; JobReportDialog("Job Complete", f"<h3>Job Successful</h3><p>All ingest{v} and transcode operations finished successfully.<br>Your media is ready for edit.</p>", self).exec(); self.reset_timer.start(30000)
 
