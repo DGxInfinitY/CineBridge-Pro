@@ -2,9 +2,15 @@ import os
 from datetime import datetime
 from PyQt6.QtWidgets import (
     QWidget, QVBoxLayout, QHBoxLayout, QLabel, QLineEdit, QPushButton, 
-    QFileDialog, QProgressBar, QGroupBox, QFrame, QSpinBox, QFormLayout, QMessageBox
+    QFileDialog, QProgressBar, QGroupBox, QFrame, QSpinBox, QFormLayout, QMessageBox,
+    QCheckBox
 )
 from PyQt6.QtCore import Qt, QTimer, QSettings
+
+from modules.ui.widgets import TranscodeSettingsWidget
+from modules.workers.transcode import BatchTranscodeWorker
+from modules.utils.registry import DeviceRegistry
+from modules.utils.notifier import SystemNotifier
 
 class WatchTab(QWidget):
     def __init__(self):
