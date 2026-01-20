@@ -26,6 +26,7 @@ class VideoPreviewDialog(QDialog):
     def __init__(self, video_path, parent=None):
         super().__init__(parent); self.setWindowTitle(f"Preview: {os.path.basename(video_path)}"); self.resize(900, 600)
         self.video_path = video_path; self.process = None
+        self.monitor_timer = QTimer(self); self.monitor_timer.setInterval(500); self.monitor_timer.timeout.connect(self.monitor_process)
         
         layout = QVBoxLayout(); layout.setContentsMargins(0, 0, 0, 0); layout.setSpacing(0); self.setLayout(layout)
         
@@ -36,18 +37,26 @@ class VideoPreviewDialog(QDialog):
         layout.addWidget(self.video_container)
         
         # Instructions / Status Bar
-        status_bar = QFrame(); status_bar.setFixedHeight(30); status_bar.setStyleSheet("background-color: #222; color: #888;")
+        status_bar = QFrame(); status_bar.setFixedHeight(40); status_bar.setStyleSheet("background-color: #222; color: #ccc; border-top: 1px solid #444;")
         sb_lay = QHBoxLayout(status_bar); sb_lay.setContentsMargins(10, 0, 10, 0)
         self.lbl_status = QLabel("Loading player..."); sb_lay.addWidget(self.lbl_status)
         sb_lay.addStretch()
-        sb_lay.addWidget(QLabel("Controls: [Space] Pause  [Right/Left] Seek  [F] Fullscreen  [Esc] Close"))
+        sb_lay.addWidget(QLabel("<b>Controls:</b> Space=Pause | Arrows=Seek | F=Fullscreen | Esc=Close"))
+        sb_lay.addSpacing(20)
+        btn_close = QPushButton("Close Preview"); btn_close.setFixedSize(100, 24); btn_close.clicked.connect(self.close)
+        btn_close.setStyleSheet("background-color: #C0392B; color: white; border: none; border-radius: 3px;")
+        sb_lay.addWidget(btn_close)
         layout.addWidget(status_bar)
 
     def showEvent(self, event):
         super().showEvent(event)
         # Use QTimer to delay starting ffplay until the window is fully shown and window handle is valid
-        from PyQt6.QtCore import QTimer
         QTimer.singleShot(100, self.start_ffplay)
+
+    def monitor_process(self):
+        if self.process and self.process.poll() is not None:
+            self.monitor_timer.stop()
+            self.close()
 
     def start_ffplay(self):
         self.cleanup()
@@ -63,7 +72,6 @@ class VideoPreviewDialog(QDialog):
                 if os.path.exists(guess): ffplay = guess
         
         if not ffplay:
-            # Last ditch attempt
             try:
                 subprocess.run(['ffplay', '-version'], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
                 ffplay = 'ffplay'
@@ -75,11 +83,14 @@ class VideoPreviewDialog(QDialog):
 
         self.lbl_status.setText(f"Playing: {os.path.basename(self.video_path)}")
         
+        # Calculate size to prevent auto-fullscreen
+        w = self.video_container.width()
+        h = self.video_container.height()
+        
         # Build Command
-        # -noborder: Remove window decorations
-        # -loglevel quiet: Suppress console output
-        # -infbuf: Infinite buffer for robustness (prevents dropouts)
-        cmd = [ffplay, self.video_path, '-noborder', '-loglevel', 'quiet', '-infbuf', '-window_title', 'CineBridge_Embed']
+        # -x -y: Force initial size
+        # -loop 0: Loop indefinitely
+        cmd = [ffplay, self.video_path, '-noborder', '-loglevel', 'quiet', '-infbuf', '-window_title', 'CineBridge_Embed', '-x', str(w), '-y', str(h), '-loop', '0']
         
         # Embedding
         # Linux/Unix use SDL_WINDOWID environment variable
@@ -92,6 +103,7 @@ class VideoPreviewDialog(QDialog):
         
         try:
             self.process = subprocess.Popen(cmd, env=env)
+            self.monitor_timer.start()
         except Exception as e:
             self.lbl_status.setText(f"Error launching player: {e}")
 
@@ -102,6 +114,7 @@ class VideoPreviewDialog(QDialog):
             self.start_ffplay()
 
     def cleanup(self):
+        self.monitor_timer.stop()
         if self.process:
             if self.process.poll() is None:
                 # Try graceful termination first
