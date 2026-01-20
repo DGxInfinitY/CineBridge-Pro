@@ -85,6 +85,13 @@ class DeviceRegistry:
         debug_log(f"DeviceRegistry: Saved override '{key}' -> '{name}'")
 
     @staticmethod
+    def clear_overrides():
+        DeviceRegistry._OVERRIDES = {}
+        s = QSettings("CineBridge", "CineBridgePro")
+        s.remove("device_overrides")
+        debug_log("DeviceRegistry: Cleared all overrides")
+
+    @staticmethod
     def safe_list_dir(path, timeout=5):
         if platform.system() == "Linux" and ("gvfs" in path or "mtp" in path.lower()):
             try:

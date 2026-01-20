@@ -18,6 +18,9 @@ class CancelableLineEdit(QLineEdit):
     def keyPressEvent(self, event):
         if event.key() == Qt.Key.Key_Escape: self.cancelled.emit()
         else: super().keyPressEvent(event)
+    def focusOutEvent(self, event):
+        self.cancelled.emit()
+        super().focusOutEvent(event)
 
 from ..config import DEBUG_MODE, GUI_LOG_QUEUE, debug_log, info_log, error_log
 from ..utils import DeviceRegistry, ReportGenerator, MHLGenerator, SystemNotifier, MediaInfoExtractor, TranscodeEngine
@@ -43,7 +46,6 @@ class IngestTab(QWidget):
         
         # Result Header: Icon + Name Stack
         res_header = QHBoxLayout(); res_header.setContentsMargins(0, 0, 0, 0); res_header.setSpacing(10)
-        self.status_icon_lbl = QLabel("✅"); self.status_icon_lbl.setStyleSheet("font-size: 18px;")
         
         # Name Stack (Label / Editor)
         self.name_stack = QStackedWidget()
@@ -60,11 +62,10 @@ class IngestTab(QWidget):
         self.name_editor = CancelableLineEdit()
         self.name_editor.setStyleSheet("font-size: 14px; padding: 2px; background-color: #222; border: 1px solid #3498DB; color: white;")
         self.name_editor.returnPressed.connect(self.save_rename)
-        self.name_editor.editingFinished.connect(self.save_rename) # Save on blur
         self.name_editor.cancelled.connect(self.cancel_rename)
         self.name_stack.addWidget(self.name_editor)
         
-        res_header.addStretch(); res_header.addWidget(self.status_icon_lbl); res_header.addWidget(self.name_stack); res_header.addStretch()
+        res_header.addStretch(); res_header.addWidget(self.name_stack); res_header.addStretch()
         
         self.path_lbl = QLabel("/path/to/device"); self.path_lbl.setAlignment(Qt.AlignmentFlag.AlignCenter)
         self.path_lbl.setStyleSheet("color: white; font-size: 11px;")
@@ -112,7 +113,11 @@ class IngestTab(QWidget):
         self.device_combo.setToolTip("Select a specific camera profile or use Auto-Detect.")
         self.device_combo.addItem("Auto-Detect", "auto")
         for profile_name in sorted(DeviceRegistry.PROFILES.keys()): self.device_combo.addItem(profile_name, profile_name)
-        self.device_combo.addItem("Generic Storage", "Generic_Device"); logic_row.addWidget(self.device_combo); settings_layout.addLayout(logic_row)
+        self.device_combo.addItem("Generic Storage", "Generic_Device"); logic_row.addWidget(self.device_combo)
+        
+        self.btn_reset_overrides = QToolButton(); self.btn_reset_overrides.setText("↺"); self.btn_reset_overrides.setToolTip("Reset all device name overrides")
+        self.btn_reset_overrides.clicked.connect(self.reset_device_overrides)
+        logic_row.addWidget(self.btn_reset_overrides); settings_layout.addLayout(logic_row)
 
         rules_grid = QGridLayout()
         self.check_date = QCheckBox("Sort Date"); self.check_date.setToolTip("Organize media by capture date.")
@@ -275,12 +280,16 @@ class IngestTab(QWidget):
         else:
             self.cancel_rename()
 
+    def reset_device_overrides(self):
+        if QMessageBox.question(self, "Reset Overrides", "Clear all custom device names?", QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No) == QMessageBox.StandardButton.Yes:
+            DeviceRegistry.clear_overrides()
+            self.run_auto_scan()
+
     def update_result_ui(self, dev, multi):
         self.current_device_obj = dev; self.current_detected_path = dev['path']; self.source_input.setText(dev['path'])
         name = dev.get('display_name', 'Generic Storage'); path_short = dev['path']
         
         # Update Split Widgets
-        self.status_icon_lbl.setText("✅" if not dev['empty'] else "⚠️")
         self.device_name_lbl.setText(name)
         self.device_name_lbl.setStyleSheet(f"font-size: 16px; font-weight: bold; color: {'#27AE60' if not dev['empty'] else '#F39C12'};")
         
