@@ -47,11 +47,14 @@ class AsyncTranscoder(QThread):
                 startupinfo = None
                 if platform.system() == 'Windows': startupinfo = subprocess.STARTUPINFO(); startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                 process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, universal_newlines=True, startupinfo=startupinfo, env=EnvUtils.get_clean_env())
+                
+                last_errors = deque(maxlen=10)
                 while True:
                     if not self.is_running: process.kill(); process.wait(); break
                     line = process.stderr.readline()
                     if not line and process.poll() is not None: break
                     if line:
+                        last_errors.append(line.strip())
                         if duration > 0:
                             pct, speed_str = TranscodeEngine.parse_progress(line, duration)
                             if pct > 0: self.progress_signal.emit(pct)
@@ -61,7 +64,8 @@ class AsyncTranscoder(QThread):
                 if process.returncode == 0: 
                     self.log_signal.emit(f"✅ Transcode Finished: {job['name']} (took {elapsed:.1f}s)")
                 else: 
-                    self.log_signal.emit(f"❌ Transcode Failed: {job['name']} (Exit: {process.returncode})")
+                    err_msg = " | ".join(list(last_errors))
+                    self.log_signal.emit(f"❌ Transcode Failed: {job['name']} (Exit: {process.returncode}) Log: {err_msg}")
             except Exception as e: error_log(f"Transcode Critical Error: {e}")
             self.completed_jobs += 1
     def stop(self): self.is_running = False
@@ -110,18 +114,24 @@ class BatchTranscodeWorker(QThread):
                 startupinfo = None
                 if platform.system() == 'Windows': startupinfo = subprocess.STARTUPINFO(); startupinfo.dwFlags |= subprocess.STARTF_USESHOWWINDOW
                 process = subprocess.Popen(cmd, stdout=subprocess.DEVNULL, stderr=subprocess.PIPE, universal_newlines=True, startupinfo=startupinfo, env=EnvUtils.get_clean_env())
+                
+                last_errors = deque(maxlen=10)
                 while True:
                     if not self.is_running: process.kill(); process.wait(); break
                     line = process.stderr.readline()
                     if not line and process.poll() is not None: break
-                    if line and duration > 0:
-                        pct, speed = TranscodeEngine.parse_progress(line, duration)
-                        if pct > 0: self.progress_signal.emit(pct)
-                        if speed: self.metrics_signal.emit(f"🎬 {speed}")
+                    if line:
+                        last_errors.append(line.strip())
+                        if duration > 0:
+                            pct, speed = TranscodeEngine.parse_progress(line, duration)
+                            if pct > 0: self.progress_signal.emit(pct)
+                            if speed: self.metrics_signal.emit(f"🎬 {speed}")
                 
                 if not self.is_running: break
 
-                if process.returncode != 0: self.log_signal.emit(f"❌ Error transcoding {filename}")
+                if process.returncode != 0: 
+                    err_msg = " | ".join(list(last_errors))
+                    self.log_signal.emit(f"❌ Error transcoding {filename} (Exit: {process.returncode}). Log: {err_msg}")
             except Exception as e: error_log(f"Batch Transcode Error: {e}")
         
         if self.is_running:

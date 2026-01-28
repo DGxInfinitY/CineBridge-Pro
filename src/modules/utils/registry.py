@@ -104,6 +104,29 @@ class DeviceRegistry:
             except: return []
 
     @staticmethod
+    def read_gopro_version(mount_point):
+        """Attempts to read GoPro version from version.txt in common locations."""
+        candidates = [
+            os.path.join(mount_point, "MISC", "version.txt"),
+            os.path.join(mount_point, "version.txt"),
+            os.path.join(mount_point, "get_info_msg") # Older GoPros
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                try:
+                    with open(c, 'r', errors='ignore') as f:
+                        content = f.read(1024)
+                        # Look for "HERO10 Black" etc.
+                        match = re.search(r"HERO\d+\s?(Black|Mini|Session)?", content, re.IGNORECASE)
+                        if match: return f"GoPro {match.group(0)}"
+                        # Check "model" field in JSON-like structure
+                        if "info version" in content.lower():
+                             # Older style
+                             return "GoPro Hero (Legacy)"
+                except: pass
+        return None
+
+    @staticmethod
     def identify(mount_point, usb_hints=set()):
         DeviceRegistry.load_overrides()
         
@@ -112,8 +135,25 @@ class DeviceRegistry:
             debug_log(f"DeviceRegistry: Found override for path {mount_point}")
             return DeviceRegistry._OVERRIDES[mount_point], mount_point, None, mount_point
 
+        vol_label, vol_uuid = DriveDetector.get_volume_info(mount_point)
+        if vol_label: debug_log(f"DeviceRegistry: Volume Label '{vol_label}' found for {mount_point}")
+
         root_items = DeviceRegistry.safe_list_dir(mount_point)
-        if not root_items: return "Generic Storage", mount_point, None, None
+        
+        # Fast File Checks (GoPro)
+        gp_version = DeviceRegistry.read_gopro_version(mount_point)
+        if gp_version:
+            debug_log(f"DeviceRegistry: Identified {gp_version} via version file.")
+            # Find the DCIM folder
+            dcim = os.path.join(mount_point, "DCIM")
+            best_root = dcim if os.path.exists(dcim) else mount_point
+            # Try to find specific 100GOPRO inside
+            if os.path.exists(dcim):
+                for d in DeviceRegistry.safe_list_dir(dcim):
+                    if "GOPRO" in os.path.basename(d).upper(): best_root = d; break
+            return gp_version, best_root, DeviceRegistry.PROFILES["GoPro Hero"]["exts"], gp_version
+
+        if not root_items and not vol_label: return "Generic Storage", mount_point, None, None
         best_match = None; best_score = 0; best_root = mount_point; best_exts = None; detected_id = None
 
         def check_structure(base_path, pattern):
@@ -131,6 +171,28 @@ class DeviceRegistry:
                 if found_next: curr = found_next
                 else: return None
             return curr
+
+        # 1. Check Volume Label Strong Matches
+        if vol_label:
+            vl = vol_label.upper()
+            if "OSMO" in vl or "ACTION" in vl: best_match = "DJI Osmo Action (Generic)"; best_score = 200
+            elif "NEO" in vl: best_match = "DJI Neo (Generic)"; best_score = 200
+            elif "AVATA" in vl: best_match = "DJI Avata (Generic)"; best_score = 200
+            elif "LUMIX" in vl: best_match = "Panasonic Lumix"; best_score = 200
+            elif "NIKON" in vl: best_match = "Nikon Camera"; best_score = 200
+            elif "SONY" in vl: best_match = "Sony Pro (Alpha/FX)"; best_score = 200
+            
+            if best_score == 200:
+                 # Try to find a logical root even if label matched
+                 for name, profile in DeviceRegistry.PROFILES.items():
+                     if name == best_match or (best_match.startswith("DJI") and name == "DJI Device"):
+                         for root_hint in profile['roots']:
+                            found = check_structure(mount_point, root_hint)
+                            if found: best_root = found; break
+                         best_exts = profile['exts']
+                         break
+                 # If we have a strong label match, we return it, but we still let the structure check verify roots below
+                 # actually, let's set base score and continue to refine root
 
         for name, profile in DeviceRegistry.PROFILES.items():
             score = 0; detected_root = None
@@ -157,34 +219,56 @@ class DeviceRegistry:
             for sig in profile['signatures']:
                 for hint in usb_hints:
                     if sig.lower() in hint.lower(): score += 5
+            
+            # Boost score if volume label matches profile signature
+            if vol_label:
+                for sig in profile['signatures']:
+                    if sig.upper() in vol_label.upper(): score += 50
+
             if score > best_score: best_score = score; best_match = name; best_root = detected_root if detected_root else mount_point; best_exts = profile['exts']
 
         # Metadata Refinement for DJI
-        if best_match == "DJI Device":
+        if best_match and "DJI" in best_match:
             try:
-                # Find a sample video file
-                sample_file = None
-                items = DeviceRegistry.safe_list_dir(best_root)
-                for item in items:
-                    if os.path.splitext(item)[1].upper() in {'.MP4', '.MOV'}:
-                        sample_file = item; break
+                # 1. Check for specific log files that indicate model
+                # Some drones leave fc_log.log or upgrade_log.log
+                log_files = [f for f in root_items if f.lower().endswith('.log') or f.lower().endswith('.txt')]
+                for lf in log_files:
+                    try:
+                        with open(lf, 'r', errors='ignore') as f:
+                            head = f.read(2048)
+                            if "Neo" in head: detected_id = "DJI Neo 2"
+                            if "Avata" in head: detected_id = "DJI Avata 2"
+                            if "Action 5" in head: detected_id = "DJI Action 5 Pro"
+                    except: pass
                 
-                if sample_file:
-                    meta = MediaInfoExtractor.get_device_metadata(sample_file)
-                    model = meta.get('model')
-                    if model:
-                        detected_id = model
-                        # 1. Check Model Override
-                        if model in DeviceRegistry._OVERRIDES:
-                            best_match = DeviceRegistry._OVERRIDES[model]
-                        # 2. Check Known Models
-                        elif model in DeviceRegistry.DJI_MODELS:
-                            best_match = DeviceRegistry.DJI_MODELS[model]
-                        # 3. Smart Fallback
-                        else:
-                            clean_model = model.strip()
-                            if "DJI" in clean_model.upper(): best_match = clean_model
-                            else: best_match = f"DJI {clean_model}"
+                if detected_id:
+                     best_match = detected_id
+
+                # 2. Metadata check (if logs failed)
+                if not detected_id:
+                    sample_file = None
+                    items = DeviceRegistry.safe_list_dir(best_root)
+                    for item in items:
+                        if os.path.splitext(item)[1].upper() in {'.MP4', '.MOV'}:
+                            sample_file = item; break
+                    
+                    if sample_file:
+                        meta = MediaInfoExtractor.get_device_metadata(sample_file)
+                        model = meta.get('model')
+                        if model:
+                            detected_id = model
+                            # 1. Check Model Override
+                            if model in DeviceRegistry._OVERRIDES:
+                                best_match = DeviceRegistry._OVERRIDES[model]
+                            # 2. Check Known Models
+                            elif model in DeviceRegistry.DJI_MODELS:
+                                best_match = DeviceRegistry.DJI_MODELS[model]
+                            # 3. Smart Fallback
+                            else:
+                                clean_model = model.strip()
+                                if "DJI" in clean_model.upper(): best_match = clean_model
+                                else: best_match = f"DJI {clean_model}"
             except Exception as e: debug_log(f"DJI Metadata check failed: {e}")
 
             # Fallback: Check Volume Label if metadata failed
@@ -219,6 +303,41 @@ class DriveDetector:
     def safe_list_dir(path, timeout=5): return DeviceRegistry.safe_list_dir(path, timeout)
     @staticmethod
     def safe_exists(path): return os.path.exists(path)
+    @staticmethod
+    def get_volume_info(mount_point):
+        """Returns (label, uuid) for a mount point using lsblk on Linux."""
+        if platform.system() != "Linux": return None, None
+        try:
+            # -n: no headings, -o: output columns, -J: json output (safer parsing)
+            # However, older lsblk might not support -J. Let's use pairs.
+            # -r: raw output
+            cmd = ['lsblk', '-n', '-o', 'MOUNTPOINT,LABEL,UUID', '-r']
+            res = subprocess.run(cmd, capture_output=True, text=True, env=EnvUtils.get_clean_env())
+            if res.returncode == 0:
+                for line in res.stdout.splitlines():
+                    parts = line.split() # MOUNTPOINT LABEL UUID
+                    # Parts can be variable if LABEL is missing.
+                    # safer: find the line starting with mount_point
+                    if line.startswith(mount_point):
+                        # This matches "/media/user/drive" but also "/media/user/drive2"
+                        # Ensure exact match or suffix
+                        
+                        # Better approach: lsblk for the specific device is hard if we only have mountpoint
+                        # We can reverse lookup mountpoint
+                        pass
+            
+            # Direct approach for specific mount point
+            cmd_direct = ['lsblk', '-n', '-o', 'LABEL,UUID', mount_point]
+            res_d = subprocess.run(cmd_direct, capture_output=True, text=True, env=EnvUtils.get_clean_env())
+            if res_d.returncode == 0:
+                parts = res_d.stdout.strip().split()
+                if not parts: return None, None
+                label = parts[0] if len(parts) >= 1 else None
+                uuid = parts[1] if len(parts) >= 2 else None
+                return label, uuid
+        except: pass
+        return None, None
+
     @staticmethod
     def get_potential_mounts():
         mounts = []

@@ -106,7 +106,7 @@ class IngestTab(QWidget):
         
         self.btn_structure = QToolButton(); self.btn_structure.setText("📂 Folder Structure Configuration..."); self.btn_structure.clicked.connect(self.open_structure_config)
         self.dest_inner.addWidget(self.btn_structure)
-        self.structure_template = "{Date}/{Camera}/{Category}" # Default
+        self.structure_template = "{Camera}/{Date}" # Default
         
         # Pro Destinations
         self.dest_2_wrap = QWidget(); d2_lay = QVBoxLayout(); d2_lay.setContentsMargins(0,0,0,0); self.dest_2_wrap.setLayout(d2_lay)
@@ -448,7 +448,22 @@ class IngestTab(QWidget):
                 self.transcode_worker.status_signal.connect(self.transcode_status_label.setText)
                 self.transcode_worker.progress_signal.connect(self.progress_bar.setValue)
                 self.transcode_worker.all_finished_signal.connect(self.on_all_transcodes_finished); self.transcode_worker.start(); self.set_transcode_active(True)
-            debug_log("Ingest: Initializing CopyWorker threads"); self.copy_worker = CopyWorker(src, dests, self.project_name_input.text(), self.check_date.isChecked(), self.check_dupe.isChecked(), False, cam_name, self.check_verify.isChecked(), selected, tc_settings if tc_enabled else None)
+            debug_log("Ingest: Initializing CopyWorker threads")
+            
+            # Apply Source Root / Structure Strategy
+            source_root = self.app.settings.value("struct_source_root", "Source")
+            tc_mode = self.app.settings.value("struct_tc_mode", "edit_ready")
+            tc_folder = self.app.settings.value("struct_tc_folder", "Source") # In edit_ready mode, this is Source folder
+            
+            full_template = self.structure_template
+            
+            if tc_mode == "edit_ready":
+                sub_folder = tc_folder if tc_folder else "Source"
+                full_template = os.path.join(full_template, sub_folder)
+            elif source_root: 
+                full_template = os.path.join(source_root, full_template)
+
+            self.copy_worker = CopyWorker(src, dests, self.project_name_input.text(), self.check_date.isChecked(), self.check_dupe.isChecked(), False, cam_name, self.check_verify.isChecked(), selected, tc_settings if tc_enabled else None, structure_template=full_template)
             self.copy_worker.log_signal.connect(self.append_copy_log); self.copy_worker.progress_signal.connect(self.progress_bar.setValue); self.copy_worker.status_signal.connect(self.status_label.setText); self.copy_worker.speed_signal.connect(self.speed_label.setText); self.copy_worker.finished_signal.connect(self.on_copy_finished); self.copy_worker.storage_check_signal.connect(self.update_storage_display_bar)
             if tc_enabled: self.copy_worker.file_ready_signal.connect(self.queue_for_transcode); self.copy_worker.transcode_count_signal.connect(self.transcode_worker.set_total_jobs)
             self.copy_worker.start(); debug_log("Ingest: CopyWorker successfully started")
@@ -464,10 +479,43 @@ class IngestTab(QWidget):
             self.storage_bar.setValue(100); self.storage_bar.setFormat(f"⚠️ INSUFFICIENT SPACE! Need {needed_gb:.2f} GB, Have {free_gb:.2f} GB"); self.storage_bar.setStyleSheet("QProgressBar::chunk { background-color: #C0392B; }")
         if not is_enough: SystemNotifier.notify("Ingest Failed", "Insufficient storage space on destination drive.", "dialog-error")
 
-    def queue_for_transcode(self, src, dest, name):
+    def queue_for_transcode(self, src, dest, name, rel_path):
         if self.transcode_worker:
             if TranscodeEngine.is_edit_friendly(dest, self.transcode_widget.get_settings().get('v_codec')): self.transcode_worker.report_skipped(name); return
-            out = os.path.join(os.path.dirname(dest), "Edit_Ready", f"{os.path.splitext(name)[0]}_EDIT.mov"); os.makedirs(os.path.dirname(out), exist_ok=True); self.transcode_worker.add_job(dest, out, name)
+            
+            # Logic for Parallel vs Nested vs Edit-Ready
+            tc_mode = self.app.settings.value("struct_tc_mode", "edit_ready")
+            tc_folder = self.app.settings.value("struct_tc_folder", "Source")
+            src_root = self.app.settings.value("struct_source_root", "Source")
+            
+            final_rel = rel_path
+            
+            if tc_mode == "parallel":
+                if src_root and rel_path.startswith(src_root):
+                    final_rel = rel_path.replace(src_root, tc_folder, 1)
+                else:
+                    final_rel = os.path.join(tc_folder, rel_path)
+            
+            # Determine Output Path
+            if tc_mode == "parallel":
+                if dest.endswith(rel_path):
+                    project_root = dest[:-len(rel_path)]
+                    out = os.path.join(project_root, final_rel)
+                else:
+                    out = os.path.join(os.path.dirname(dest), tc_folder, f"{os.path.splitext(name)[0]}_EDIT.mov")
+            elif tc_mode == "edit_ready":
+                # Source is nested deep: .../Date/Source/File.mp4
+                # Proxy should be: .../Date/File_EDIT.mov (Up one level)
+                out = os.path.join(os.path.dirname(dest), "..", f"{os.path.splitext(name)[0]}_EDIT.mov")
+                out = os.path.abspath(out)
+            else:
+                out = os.path.join(os.path.dirname(dest), tc_folder, f"{os.path.splitext(name)[0]}_EDIT.mov")
+            
+            out_base, _ = os.path.splitext(out)
+            out = out_base + "_EDIT.mov"
+            
+            os.makedirs(os.path.dirname(out), exist_ok=True)
+            self.transcode_worker.add_job(dest, out, name)
 
     def cancel_import(self):
         if self.copy_worker: self.copy_worker.stop()
@@ -533,7 +581,7 @@ class IngestTab(QWidget):
         s = self.app.settings; self.source_input.setText(s.value("last_source", "")); self.dest_input.setText(s.value("last_dest", "")); self.check_date.setChecked(s.value("sort_date", True, type=bool)); self.check_dupe.setChecked(s.value("skip_dupe", True, type=bool)); 
         self.combo_filter.set_checked_texts(s.value("filter_mode", "All Media"))
         self.check_transcode.setChecked(s.value("transcode_dnx", False, type=bool)); self.check_verify.setChecked(s.value("verify_copy", False, type=bool)); self.check_report.setChecked(s.value("gen_report", True, type=bool)); self.check_mhl.setChecked(s.value("gen_mhl", False, type=bool))
-        self.structure_template = s.value("struct_template", "{Date}/{Camera}/{Category}")
+        self.structure_template = s.value("struct_template", "{Camera}/{Date}")
         self.toggle_transcode_ui(self.check_transcode.isChecked())
 
     def closeEvent(self, event):
