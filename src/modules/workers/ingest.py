@@ -8,7 +8,7 @@ from ..utils import DeviceRegistry, HAS_XXHASH, TranscodeEngine
 if HAS_XXHASH: import xxhash
 
 class CopyWorker(QThread):
-    log_signal = pyqtSignal(str); progress_signal = pyqtSignal(int); status_signal = pyqtSignal(str); speed_signal = pyqtSignal(str); file_ready_signal = pyqtSignal(str, str, str); transcode_count_signal = pyqtSignal(int); finished_signal = pyqtSignal(bool, str)
+    log_signal = pyqtSignal(str); progress_signal = pyqtSignal(int); status_signal = pyqtSignal(str); speed_signal = pyqtSignal(str); file_ready_signal = pyqtSignal(str, str, str, str); transcode_count_signal = pyqtSignal(int); finished_signal = pyqtSignal(bool, str)
     storage_check_signal = pyqtSignal(int, int, bool)
     
     def __init__(self, source, dest_list, project_name, sort_by_date, skip_dupes, videos_only, camera_override, verify_copy, file_list=None, transcode_settings=None, structure_template="{Date}/{Camera}/{Category}"):
@@ -130,17 +130,18 @@ class CopyWorker(QThread):
         for idx, src in enumerate(files_to_process):
             if not self.is_running: break
             name = os.path.basename(src); sz = os.path.getsize(src); dest_paths = []
+            
+            # Helper to generate relative path
+            date_str = self.get_media_date(src)
+            cam_str = self.camera_override if self.camera_override != "Generic_Device" else "Generic"
+            cat_str = self.get_mmt_category(name)
+            
+            rel_path_dir = self.structure_template.replace("{Date}", date_str).replace("{Camera}", cam_str).replace("{Category}", cat_str)
+            rel_path_dir = rel_path_dir.lstrip("/\\")
+            rel_path_full = os.path.join(rel_path_dir, name)
+
             for base in active_dests:
-                # Apply custom structure template
-                date_str = self.get_media_date(src)
-                cam_str = self.camera_override if self.camera_override != "Generic_Device" else "Generic"
-                cat_str = self.get_mmt_category(name)
-                
-                rel_path = self.structure_template.replace("{Date}", date_str).replace("{Camera}", cam_str).replace("{Category}", cat_str)
-                # Sanitize path to prevent absolute path injection or .. traversal
-                rel_path = rel_path.lstrip("/\\")
-                
-                td = os.path.join(base, rel_path)
+                td = os.path.join(base, rel_path_dir)
                 os.makedirs(td, exist_ok=True); dest_paths.append(os.path.join(td, name))
             
             try:
@@ -204,7 +205,7 @@ class CopyWorker(QThread):
                     'hash': current_hash,
                     'status': "OK" if current_hash != "FAILED" else "VERIFY FAILED"
                 })
-                if os.path.splitext(name)[1].upper() in v_exts: self.file_ready_signal.emit(src, dest_paths[0], name)
+                if os.path.splitext(name)[1].upper() in v_exts: self.file_ready_signal.emit(src, dest_paths[0], name, rel_path_full)
             except Exception as e:
                 self.log_signal.emit(f"❌ Error {name}: {e}")
         

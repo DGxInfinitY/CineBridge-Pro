@@ -75,11 +75,11 @@ class TranscodeConfigDialog(QDialog):
 
 class StructureConfigDialog(QDialog):
     def __init__(self, current_template, parent=None):
-        super().__init__(parent); self.setWindowTitle("Folder Structure Configuration"); self.resize(500, 250)
+        super().__init__(parent); self.setWindowTitle("Folder Structure Configuration"); self.resize(500, 400)
+        self.settings = QSettings("CineBridgePro", "Config")
         layout = QVBoxLayout(); layout.setSpacing(15); self.setLayout(layout)
         
-        layout.addWidget(QLabel("<b>Select Output Structure</b>"))
-        layout.addWidget(QLabel("Define how files are organized inside the Project folder."))
+        layout.addWidget(QLabel("<b>1. File Organization (Subfolders)</b>"))
         
         self.combo_presets = QComboBox()
         self.presets = {
@@ -89,55 +89,88 @@ class StructureConfigDialog(QDialog):
             "Type Centric (Type/Date)": "{Category}/{Date}",
             "Flat (Files in Project root)": ""
         }
-        for name, tmpl in self.presets.items():
-            self.combo_presets.addItem(name, tmpl)
+        for name, tmpl in self.presets.items(): self.combo_presets.addItem(name, tmpl)
+        self.combo_presets.addItem("Custom...", "custom"); layout.addWidget(self.combo_presets)
         
-        self.combo_presets.addItem("Custom...", "custom")
-        layout.addWidget(self.combo_presets)
-        
-        self.inp_custom = QLineEdit()
-        self.inp_custom.setPlaceholderText("e.g. {Date}/{Camera}")
-        self.inp_custom.setText(current_template)
+        self.inp_custom = QLineEdit(); self.inp_custom.setPlaceholderText("e.g. {Date}/{Camera}"); self.inp_custom.setText(current_template)
         layout.addWidget(self.inp_custom)
         
-        self.lbl_preview = QLabel()
-        self.lbl_preview.setStyleSheet("color: #777; font-style: italic;")
-        layout.addWidget(self.lbl_preview)
+        # New: Source Root and Transcode Strategy
+        layout.addWidget(QLabel("<b>2. Root Folders</b>"))
+        root_grid = QVBoxLayout() # Using VBox for simplicity
+        
+        # Source Root
+        row_src = QHBoxLayout(); row_src.addWidget(QLabel("Source Media Root:"))
+        self.inp_src_root = QLineEdit(); self.inp_src_root.setPlaceholderText("(Optional) e.g. Source"); self.inp_src_root.setText(self.settings.value("struct_source_root", "Source"))
+        row_src.addWidget(self.inp_src_root); root_grid.addLayout(row_src)
+        
+        # Transcode Settings
+        row_tc = QHBoxLayout(); row_tc.addWidget(QLabel("Transcode Folder:"))
+        self.inp_tc_folder = QLineEdit(); self.inp_tc_folder.setText(self.settings.value("struct_tc_folder", "Proxies"))
+        row_tc.addWidget(self.inp_tc_folder); root_grid.addLayout(row_tc)
+        
+        self.chk_parallel = QComboBox(); self.chk_parallel.addItems(["Nested (inside Source folder)", "Parallel (Separate 'Proxies' tree)"])
+        mode = self.settings.value("struct_tc_mode", "parallel") # Defaulting to parallel as requested
+        self.chk_parallel.setCurrentIndex(1 if mode == "parallel" else 0)
+        root_grid.addWidget(self.chk_parallel)
+        
+        layout.addLayout(root_grid)
+        
+        self.lbl_preview = QLabel(); self.lbl_preview.setStyleSheet("color: #777; font-style: italic; margin-top: 10px;"); layout.addWidget(self.lbl_preview)
         
         self.combo_presets.currentIndexChanged.connect(self.on_combo_change)
         self.inp_custom.textChanged.connect(self.update_preview)
+        self.inp_src_root.textChanged.connect(self.update_preview)
+        self.inp_tc_folder.textChanged.connect(self.update_preview)
+        self.chk_parallel.currentIndexChanged.connect(self.update_preview)
         
         # Set initial state
         found = False
         for i in range(self.combo_presets.count()):
-            if self.combo_presets.itemData(i) == current_template:
-                self.combo_presets.setCurrentIndex(i); found = True; break
-        if not found:
-            self.combo_presets.setCurrentIndex(self.combo_presets.count() - 1) # Custom
-            self.inp_custom.setEnabled(True)
-        else:
-            self.inp_custom.setEnabled(False)
+            if self.combo_presets.itemData(i) == current_template: self.combo_presets.setCurrentIndex(i); found = True; break
+        if not found: self.combo_presets.setCurrentIndex(self.combo_presets.count() - 1); self.inp_custom.setEnabled(True)
+        else: self.inp_custom.setEnabled(False)
             
         self.update_preview()
         
         btns = QHBoxLayout(); btns.addStretch()
-        btn_ok = QPushButton("OK"); btn_ok.clicked.connect(self.accept)
+        btn_ok = QPushButton("OK"); btn_ok.clicked.connect(self.save_and_accept)
         btn_cancel = QPushButton("Cancel"); btn_cancel.clicked.connect(self.reject)
         btns.addWidget(btn_cancel); btns.addWidget(btn_ok); layout.addLayout(btns)
 
     def on_combo_change(self):
         data = self.combo_presets.currentData()
-        if data == "custom":
-            self.inp_custom.setEnabled(True); self.inp_custom.setFocus()
-        else:
-            self.inp_custom.setEnabled(False); self.inp_custom.setText(data)
+        if data == "custom": self.inp_custom.setEnabled(True); self.inp_custom.setFocus()
+        else: self.inp_custom.setEnabled(False); self.inp_custom.setText(data)
         self.update_preview()
 
     def update_preview(self):
         tmpl = self.inp_custom.text()
-        example = tmpl.replace("{Date}", "2023-10-27").replace("{Camera}", "Sony_FX3").replace("{Category}", "videos")
-        path = os.path.join("Project_Name", example, "C001.mp4")
-        self.lbl_preview.setText(f"Preview: {path}")
+        src_root = self.inp_src_root.text().strip()
+        tc_folder = self.inp_tc_folder.text().strip()
+        is_parallel = self.chk_parallel.currentIndex() == 1
+        
+        sub = tmpl.replace("{Date}", "2023-10-27").replace("{Camera}", "Sony_FX3").replace("{Category}", "videos")
+        
+        full_src = os.path.join("Project", src_root, sub, "C001.mp4") if src_root else os.path.join("Project", sub, "C001.mp4")
+        
+        if is_parallel:
+            # Parallel: Project/Proxies/2023.../C001.mov
+            full_tc = os.path.join("Project", tc_folder, sub, "C001_EDIT.mov")
+        else:
+            # Nested: Project/Source/.../Proxies/C001.mov
+            full_tc = os.path.join(os.path.dirname(full_src), tc_folder, "C001_EDIT.mov")
+            
+        self.lbl_preview.setText(f"Source: {full_src}\nTranscode: {full_tc}")
+
+    def save_and_accept(self):
+        self.settings.setValue("struct_source_root", self.inp_src_root.text().strip())
+        self.settings.setValue("struct_tc_folder", self.inp_tc_folder.text().strip())
+        self.settings.setValue("struct_tc_mode", "parallel" if self.chk_parallel.currentIndex() == 1 else "nested")
+        self.accept()
 
     def get_template(self):
+        # We handle root injection in IngestTab or CopyWorker, but here we just return the sub-template.
+        # However, to avoid breaking existing signature, we return the sub-template.
+        # But we need to make sure IngestTab reads the new settings.
         return self.inp_custom.text()

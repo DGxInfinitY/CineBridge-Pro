@@ -43,10 +43,16 @@ class TranscodeEngine:
             cmd.extend(['-c:v', v_codec, '-profile:v', v_profile])
             if v_codec == 'dnxhd': cmd.extend(['-pix_fmt', 'yuv422p'])
         elif v_codec in ['libx264', 'libx265']:
-            if hw_method == "cuda" and v_codec == 'libx264': cmd.extend(['-c:v', 'h264_nvenc', '-preset', 'fast'])
-            elif hw_method == "cuda" and v_codec == 'libx265': cmd.extend(['-c:v', 'hevc_nvenc', '-preset', 'fast'])
-            elif hw_method == "qsv" and v_codec == 'libx264': cmd.extend(['-c:v', 'h264_qsv', '-preset', 'fast'])
-            elif hw_method == "qsv" and v_codec == 'libx265': cmd.extend(['-c:v', 'hevc_qsv', '-preset', 'fast'])
+            if hw_method == "cuda" and v_codec == 'libx264': 
+                # High Quality H.264 NVENC: P4 preset, Constant QP 23
+                cmd.extend(['-c:v', 'h264_nvenc', '-preset', 'p4', '-rc', 'constqp', '-qp', '23'])
+            elif hw_method == "cuda" and v_codec == 'libx265': 
+                # High Quality H.265 NVENC: P4 preset, Constant QP 23
+                cmd.extend(['-c:v', 'hevc_nvenc', '-preset', 'p4', '-rc', 'constqp', '-qp', '23'])
+            elif hw_method == "qsv" and v_codec == 'libx264': 
+                cmd.extend(['-c:v', 'h264_qsv', '-preset', 'medium', '-global_quality', '23', '-look_ahead', '1'])
+            elif hw_method == "qsv" and v_codec == 'libx265': 
+                cmd.extend(['-c:v', 'hevc_qsv', '-preset', 'medium', '-global_quality', '23', '-look_ahead', '1'])
             elif hw_method == "vaapi" and v_codec == 'libx264': cmd.extend(['-c:v', 'h264_vaapi'])
             elif hw_method == "vaapi" and v_codec == 'libx265': cmd.extend(['-c:v', 'hevc_vaapi'])
             else:
