@@ -104,6 +104,29 @@ class DeviceRegistry:
             except: return []
 
     @staticmethod
+    def read_gopro_version(mount_point):
+        """Attempts to read GoPro version from version.txt in common locations."""
+        candidates = [
+            os.path.join(mount_point, "MISC", "version.txt"),
+            os.path.join(mount_point, "version.txt"),
+            os.path.join(mount_point, "get_info_msg") # Older GoPros
+        ]
+        for c in candidates:
+            if os.path.exists(c):
+                try:
+                    with open(c, 'r', errors='ignore') as f:
+                        content = f.read(1024)
+                        # Look for "HERO10 Black" etc.
+                        match = re.search(r"HERO\d+\s?(Black|Mini|Session)?", content, re.IGNORECASE)
+                        if match: return f"GoPro {match.group(0)}"
+                        # Check "model" field in JSON-like structure
+                        if "info version" in content.lower():
+                             # Older style
+                             return "GoPro Hero (Legacy)"
+                except: pass
+        return None
+
+    @staticmethod
     def identify(mount_point, usb_hints=set()):
         DeviceRegistry.load_overrides()
         
@@ -116,6 +139,20 @@ class DeviceRegistry:
         if vol_label: debug_log(f"DeviceRegistry: Volume Label '{vol_label}' found for {mount_point}")
 
         root_items = DeviceRegistry.safe_list_dir(mount_point)
+        
+        # Fast File Checks (GoPro)
+        gp_version = DeviceRegistry.read_gopro_version(mount_point)
+        if gp_version:
+            debug_log(f"DeviceRegistry: Identified {gp_version} via version file.")
+            # Find the DCIM folder
+            dcim = os.path.join(mount_point, "DCIM")
+            best_root = dcim if os.path.exists(dcim) else mount_point
+            # Try to find specific 100GOPRO inside
+            if os.path.exists(dcim):
+                for d in DeviceRegistry.safe_list_dir(dcim):
+                    if "GOPRO" in os.path.basename(d).upper(): best_root = d; break
+            return gp_version, best_root, DeviceRegistry.PROFILES["GoPro Hero"]["exts"], gp_version
+
         if not root_items and not vol_label: return "Generic Storage", mount_point, None, None
         best_match = None; best_score = 0; best_root = mount_point; best_exts = None; detected_id = None
 
@@ -193,29 +230,45 @@ class DeviceRegistry:
         # Metadata Refinement for DJI
         if best_match and "DJI" in best_match:
             try:
-                # Find a sample video file
-                sample_file = None
-                items = DeviceRegistry.safe_list_dir(best_root)
-                for item in items:
-                    if os.path.splitext(item)[1].upper() in {'.MP4', '.MOV'}:
-                        sample_file = item; break
+                # 1. Check for specific log files that indicate model
+                # Some drones leave fc_log.log or upgrade_log.log
+                log_files = [f for f in root_items if f.lower().endswith('.log') or f.lower().endswith('.txt')]
+                for lf in log_files:
+                    try:
+                        with open(lf, 'r', errors='ignore') as f:
+                            head = f.read(2048)
+                            if "Neo" in head: detected_id = "DJI Neo 2"
+                            if "Avata" in head: detected_id = "DJI Avata 2"
+                            if "Action 5" in head: detected_id = "DJI Action 5 Pro"
+                    except: pass
                 
-                if sample_file:
-                    meta = MediaInfoExtractor.get_device_metadata(sample_file)
-                    model = meta.get('model')
-                    if model:
-                        detected_id = model
-                        # 1. Check Model Override
-                        if model in DeviceRegistry._OVERRIDES:
-                            best_match = DeviceRegistry._OVERRIDES[model]
-                        # 2. Check Known Models
-                        elif model in DeviceRegistry.DJI_MODELS:
-                            best_match = DeviceRegistry.DJI_MODELS[model]
-                        # 3. Smart Fallback
-                        else:
-                            clean_model = model.strip()
-                            if "DJI" in clean_model.upper(): best_match = clean_model
-                            else: best_match = f"DJI {clean_model}"
+                if detected_id:
+                     best_match = detected_id
+
+                # 2. Metadata check (if logs failed)
+                if not detected_id:
+                    sample_file = None
+                    items = DeviceRegistry.safe_list_dir(best_root)
+                    for item in items:
+                        if os.path.splitext(item)[1].upper() in {'.MP4', '.MOV'}:
+                            sample_file = item; break
+                    
+                    if sample_file:
+                        meta = MediaInfoExtractor.get_device_metadata(sample_file)
+                        model = meta.get('model')
+                        if model:
+                            detected_id = model
+                            # 1. Check Model Override
+                            if model in DeviceRegistry._OVERRIDES:
+                                best_match = DeviceRegistry._OVERRIDES[model]
+                            # 2. Check Known Models
+                            elif model in DeviceRegistry.DJI_MODELS:
+                                best_match = DeviceRegistry.DJI_MODELS[model]
+                            # 3. Smart Fallback
+                            else:
+                                clean_model = model.strip()
+                                if "DJI" in clean_model.upper(): best_match = clean_model
+                                else: best_match = f"DJI {clean_model}"
             except Exception as e: debug_log(f"DJI Metadata check failed: {e}")
 
             # Fallback: Check Volume Label if metadata failed
