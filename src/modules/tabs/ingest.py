@@ -448,18 +448,25 @@ class IngestTab(QWidget):
                 self.transcode_worker.status_signal.connect(self.transcode_status_label.setText)
                 self.transcode_worker.progress_signal.connect(self.progress_bar.setValue)
                 self.transcode_worker.all_finished_signal.connect(self.on_all_transcodes_finished); self.transcode_worker.start(); self.set_transcode_active(True)
-            debug_log("Ingest: Initializing CopyWorker threads")
+                        debug_log("Ingest: Initializing CopyWorker threads")
+                        
+                        # Apply Source Root / Structure Strategy
+                        source_root = self.app.settings.value("struct_source_root", "Source")
+                        tc_mode = self.app.settings.value("struct_tc_mode", "edit_ready")
+                        tc_folder = self.app.settings.value("struct_tc_folder", "Source") # In edit_ready mode, this is Source folder
+                        
+                        full_template = self.structure_template
+                        
+                        if tc_mode == "edit_ready":
+                            sub_folder = tc_folder if tc_folder else "Source"
+                            full_template = os.path.join(full_template, sub_folder)
+                        elif source_root: 
+                            full_template = os.path.join(source_root, full_template)
             
-            # Apply Source Root Setting
-            source_root = self.app.settings.value("struct_source_root", "Source")
-            full_template = self.structure_template
-            if source_root: full_template = os.path.join(source_root, full_template)
-
-            self.copy_worker = CopyWorker(src, dests, self.project_name_input.text(), self.check_date.isChecked(), self.check_dupe.isChecked(), False, cam_name, self.check_verify.isChecked(), selected, tc_settings if tc_enabled else None, structure_template=full_template)
-            self.copy_worker.log_signal.connect(self.append_copy_log); self.copy_worker.progress_signal.connect(self.progress_bar.setValue); self.copy_worker.status_signal.connect(self.status_label.setText); self.copy_worker.speed_signal.connect(self.speed_label.setText); self.copy_worker.finished_signal.connect(self.on_copy_finished); self.copy_worker.storage_check_signal.connect(self.update_storage_display_bar)
-            if tc_enabled: self.copy_worker.file_ready_signal.connect(self.queue_for_transcode); self.copy_worker.transcode_count_signal.connect(self.transcode_worker.set_total_jobs)
-            self.copy_worker.start(); debug_log("Ingest: CopyWorker successfully started")
-        except Exception as e:
+                        self.copy_worker = CopyWorker(src, dests, self.project_name_input.text(), self.check_date.isChecked(), self.check_dupe.isChecked(), False, cam_name, self.check_verify.isChecked(), selected, tc_settings if tc_enabled else None, structure_template=full_template)
+                        self.copy_worker.log_signal.connect(self.append_copy_log); self.copy_worker.progress_signal.connect(self.progress_bar.setValue); self.copy_worker.status_signal.connect(self.status_label.setText); self.copy_worker.speed_signal.connect(self.speed_label.setText); self.copy_worker.finished_signal.connect(self.on_copy_finished); self.copy_worker.storage_check_signal.connect(self.update_storage_display_bar)
+                        if tc_enabled: self.copy_worker.file_ready_signal.connect(self.queue_for_transcode); self.copy_worker.transcode_count_signal.connect(self.transcode_worker.set_total_jobs)
+                        self.copy_worker.start(); debug_log("Ingest: CopyWorker successfully started")        except Exception as e:
             error_log(f"Ingest Critical Failure: {e}"); JobReportDialog("Critical Error", f"Failed to start ingest: {e}", self, is_error=True).exec(); self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False)
 
     def update_storage_display_bar(self, needed, free, is_enough):
@@ -475,14 +482,14 @@ class IngestTab(QWidget):
         if self.transcode_worker:
             if TranscodeEngine.is_edit_friendly(dest, self.transcode_widget.get_settings().get('v_codec')): self.transcode_worker.report_skipped(name); return
             
-            # Logic for Parallel vs Nested
-            tc_mode = self.app.settings.value("struct_tc_mode", "parallel")
-            tc_folder = self.app.settings.value("struct_tc_folder", "Proxies")
+            # Logic for Parallel vs Nested vs Edit-Ready
+            tc_mode = self.app.settings.value("struct_tc_mode", "edit_ready")
+            tc_folder = self.app.settings.value("struct_tc_folder", "Source")
             src_root = self.app.settings.value("struct_source_root", "Source")
             
             final_rel = rel_path
+            
             if tc_mode == "parallel":
-                # If path starts with source_root, swap it
                 if src_root and rel_path.startswith(src_root):
                     final_rel = rel_path.replace(src_root, tc_folder, 1)
                 else:
@@ -495,6 +502,11 @@ class IngestTab(QWidget):
                     out = os.path.join(project_root, final_rel)
                 else:
                     out = os.path.join(os.path.dirname(dest), tc_folder, f"{os.path.splitext(name)[0]}_EDIT.mov")
+            elif tc_mode == "edit_ready":
+                # Source is nested deep: .../Date/Source/File.mp4
+                # Proxy should be: .../Date/File_EDIT.mov (Up one level)
+                out = os.path.join(os.path.dirname(dest), "..", f"{os.path.splitext(name)[0]}_EDIT.mov")
+                out = os.path.abspath(out)
             else:
                 out = os.path.join(os.path.dirname(dest), tc_folder, f"{os.path.splitext(name)[0]}_EDIT.mov")
             

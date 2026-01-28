@@ -105,13 +105,18 @@ class StructureConfigDialog(QDialog):
         row_src.addWidget(self.inp_src_root); root_grid.addLayout(row_src)
         
         # Transcode Settings
-        row_tc = QHBoxLayout(); row_tc.addWidget(QLabel("Transcode Folder:"))
-        self.inp_tc_folder = QLineEdit(); self.inp_tc_folder.setText(self.settings.value("struct_tc_folder", "Proxies"))
+        row_tc = QHBoxLayout(); row_tc.addWidget(QLabel("Transcode/Source Subfolder:"))
+        self.inp_tc_folder = QLineEdit(); self.inp_tc_folder.setText(self.settings.value("struct_tc_folder", "Edit_Ready"))
         row_tc.addWidget(self.inp_tc_folder); root_grid.addLayout(row_tc)
         
-        self.chk_parallel = QComboBox(); self.chk_parallel.addItems(["Nested (inside Source folder)", "Parallel (Separate 'Proxies' tree)"])
-        mode = self.settings.value("struct_tc_mode", "parallel") # Defaulting to parallel as requested
-        self.chk_parallel.setCurrentIndex(1 if mode == "parallel" else 0)
+        self.chk_parallel = QComboBox()
+        self.chk_parallel.addItem("Nested (Source at root, Proxy in subfolder)", "nested")
+        self.chk_parallel.addItem("Parallel (Separate trees)", "parallel")
+        self.chk_parallel.addItem("Edit-Ready Primary (Transcode at root, Source in subfolder)", "edit_ready")
+        
+        mode = self.settings.value("struct_tc_mode", "edit_ready") 
+        idx = self.chk_parallel.findData(mode)
+        self.chk_parallel.setCurrentIndex(idx if idx >= 0 else 2) # Default to Edit-Ready Primary
         root_grid.addWidget(self.chk_parallel)
         
         layout.addLayout(root_grid)
@@ -146,27 +151,47 @@ class StructureConfigDialog(QDialog):
 
     def update_preview(self):
         tmpl = self.inp_custom.text()
-        src_root = self.inp_src_root.text().strip()
-        tc_folder = self.inp_tc_folder.text().strip()
-        is_parallel = self.chk_parallel.currentIndex() == 1
+        src_root = self.inp_src_root.text().strip() # Used for Parallel/Nested roots
+        tc_folder_name = self.inp_tc_folder.text().strip()
+        mode = self.chk_parallel.currentData()
         
         sub = tmpl.replace("{Date}", "2023-10-27").replace("{Camera}", "Sony_FX3").replace("{Category}", "videos")
         
-        full_src = os.path.join("Project", src_root, sub, "C001.mp4") if src_root else os.path.join("Project", sub, "C001.mp4")
-        
-        if is_parallel:
-            # Parallel: Project/Proxies/2023.../C001.mov
-            full_tc = os.path.join("Project", tc_folder, sub, "C001_EDIT.mov")
-        else:
-            # Nested: Project/Source/.../Proxies/C001.mov
-            full_tc = os.path.join(os.path.dirname(full_src), tc_folder, "C001_EDIT.mov")
+        if mode == "parallel":
+            # Source: Project/Source/Sub/File.mp4
+            # Proxy:  Project/Proxies/Sub/File_EDIT.mov
+            full_src = os.path.join("Project", src_root if src_root else "Source", sub, "C001.mp4")
+            full_tc = os.path.join("Project", tc_folder_name if tc_folder_name else "Proxies", sub, "C001_EDIT.mov")
+            
+        elif mode == "edit_ready":
+            # Source: Project/Sub/Source/File.mp4 (Source Nested)
+            # Proxy:  Project/Sub/C001_EDIT.mov (Proxy at Root)
+            # src_root is ignored or treated as the "Source Subfolder Name" if user wants?
+            # Actually, let's use tc_folder_name as the "Source" folder name for clarity in this mode?
+            # Or use src_root? The UI says "Transcode/Source Subfolder".
+            
+            # Let's standardize: 
+            # In Edit-Ready Mode:
+            # - src_root input: Ignored (or maybe used as Project sub-root?)
+            # - tc_folder input: Name of the folder where SOURCE files go (e.g. "Source")
+            
+            source_sub = tc_folder_name if tc_folder_name else "Source"
+            full_src = os.path.join("Project", sub, source_sub, "C001.mp4")
+            full_tc = os.path.join("Project", sub, "C001_EDIT.mov")
+
+        else: # nested (Classic)
+            # Source: Project/Source/Sub/File.mp4 (if root set)
+            # Proxy:  Project/Source/Sub/Proxies/File_EDIT.mov
+            root = src_root if src_root else ""
+            full_src = os.path.join("Project", root, sub, "C001.mp4")
+            full_tc = os.path.join(os.path.dirname(full_src), tc_folder_name if tc_folder_name else "Edit_Ready", "C001_EDIT.mov")
             
         self.lbl_preview.setText(f"Source: {full_src}\nTranscode: {full_tc}")
 
     def save_and_accept(self):
         self.settings.setValue("struct_source_root", self.inp_src_root.text().strip())
         self.settings.setValue("struct_tc_folder", self.inp_tc_folder.text().strip())
-        self.settings.setValue("struct_tc_mode", "parallel" if self.chk_parallel.currentIndex() == 1 else "nested")
+        self.settings.setValue("struct_tc_mode", self.chk_parallel.currentData())
         self.accept()
 
     def get_template(self):
