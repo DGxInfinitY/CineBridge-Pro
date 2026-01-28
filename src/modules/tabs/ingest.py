@@ -106,7 +106,7 @@ class IngestTab(QWidget):
         
         self.btn_structure = QToolButton(); self.btn_structure.setText("📂 Folder Structure Configuration..."); self.btn_structure.clicked.connect(self.open_structure_config)
         self.dest_inner.addWidget(self.btn_structure)
-        self.structure_template = "{Date}/{Camera}/{Category}" # Default
+        self.structure_template = "{Camera}/{Date}" # Default
         
         # Pro Destinations
         self.dest_2_wrap = QWidget(); d2_lay = QVBoxLayout(); d2_lay.setContentsMargins(0,0,0,0); self.dest_2_wrap.setLayout(d2_lay)
@@ -581,7 +581,7 @@ class IngestTab(QWidget):
         s = self.app.settings; self.source_input.setText(s.value("last_source", "")); self.dest_input.setText(s.value("last_dest", "")); self.check_date.setChecked(s.value("sort_date", True, type=bool)); self.check_dupe.setChecked(s.value("skip_dupe", True, type=bool)); 
         self.combo_filter.set_checked_texts(s.value("filter_mode", "All Media"))
         self.check_transcode.setChecked(s.value("transcode_dnx", False, type=bool)); self.check_verify.setChecked(s.value("verify_copy", False, type=bool)); self.check_report.setChecked(s.value("gen_report", True, type=bool)); self.check_mhl.setChecked(s.value("gen_mhl", False, type=bool))
-        self.structure_template = s.value("struct_template", "{Date}/{Camera}/{Category}")
+        self.structure_template = s.value("struct_template", "{Camera}/{Date}")
         self.toggle_transcode_ui(self.check_transcode.isChecked())
 
     def closeEvent(self, event):
