@@ -448,25 +448,26 @@ class IngestTab(QWidget):
                 self.transcode_worker.status_signal.connect(self.transcode_status_label.setText)
                 self.transcode_worker.progress_signal.connect(self.progress_bar.setValue)
                 self.transcode_worker.all_finished_signal.connect(self.on_all_transcodes_finished); self.transcode_worker.start(); self.set_transcode_active(True)
-                        debug_log("Ingest: Initializing CopyWorker threads")
-                        
-                        # Apply Source Root / Structure Strategy
-                        source_root = self.app.settings.value("struct_source_root", "Source")
-                        tc_mode = self.app.settings.value("struct_tc_mode", "edit_ready")
-                        tc_folder = self.app.settings.value("struct_tc_folder", "Source") # In edit_ready mode, this is Source folder
-                        
-                        full_template = self.structure_template
-                        
-                        if tc_mode == "edit_ready":
-                            sub_folder = tc_folder if tc_folder else "Source"
-                            full_template = os.path.join(full_template, sub_folder)
-                        elif source_root: 
-                            full_template = os.path.join(source_root, full_template)
+            debug_log("Ingest: Initializing CopyWorker threads")
             
-                        self.copy_worker = CopyWorker(src, dests, self.project_name_input.text(), self.check_date.isChecked(), self.check_dupe.isChecked(), False, cam_name, self.check_verify.isChecked(), selected, tc_settings if tc_enabled else None, structure_template=full_template)
-                        self.copy_worker.log_signal.connect(self.append_copy_log); self.copy_worker.progress_signal.connect(self.progress_bar.setValue); self.copy_worker.status_signal.connect(self.status_label.setText); self.copy_worker.speed_signal.connect(self.speed_label.setText); self.copy_worker.finished_signal.connect(self.on_copy_finished); self.copy_worker.storage_check_signal.connect(self.update_storage_display_bar)
-                        if tc_enabled: self.copy_worker.file_ready_signal.connect(self.queue_for_transcode); self.copy_worker.transcode_count_signal.connect(self.transcode_worker.set_total_jobs)
-                        self.copy_worker.start(); debug_log("Ingest: CopyWorker successfully started")        except Exception as e:
+            # Apply Source Root / Structure Strategy
+            source_root = self.app.settings.value("struct_source_root", "Source")
+            tc_mode = self.app.settings.value("struct_tc_mode", "edit_ready")
+            tc_folder = self.app.settings.value("struct_tc_folder", "Source") # In edit_ready mode, this is Source folder
+            
+            full_template = self.structure_template
+            
+            if tc_mode == "edit_ready":
+                sub_folder = tc_folder if tc_folder else "Source"
+                full_template = os.path.join(full_template, sub_folder)
+            elif source_root: 
+                full_template = os.path.join(source_root, full_template)
+
+            self.copy_worker = CopyWorker(src, dests, self.project_name_input.text(), self.check_date.isChecked(), self.check_dupe.isChecked(), False, cam_name, self.check_verify.isChecked(), selected, tc_settings if tc_enabled else None, structure_template=full_template)
+            self.copy_worker.log_signal.connect(self.append_copy_log); self.copy_worker.progress_signal.connect(self.progress_bar.setValue); self.copy_worker.status_signal.connect(self.status_label.setText); self.copy_worker.speed_signal.connect(self.speed_label.setText); self.copy_worker.finished_signal.connect(self.on_copy_finished); self.copy_worker.storage_check_signal.connect(self.update_storage_display_bar)
+            if tc_enabled: self.copy_worker.file_ready_signal.connect(self.queue_for_transcode); self.copy_worker.transcode_count_signal.connect(self.transcode_worker.set_total_jobs)
+            self.copy_worker.start(); debug_log("Ingest: CopyWorker successfully started")
+        except Exception as e:
             error_log(f"Ingest Critical Failure: {e}"); JobReportDialog("Critical Error", f"Failed to start ingest: {e}", self, is_error=True).exec(); self.import_btn.setEnabled(True); self.cancel_btn.setEnabled(False)
 
     def update_storage_display_bar(self, needed, free, is_enough):
